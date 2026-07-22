@@ -1,0 +1,43 @@
+# Internal planning material - not part of the public portfolio repo.
+# Keep this locally, never push it. Only actual product code, architecture
+# diagrams, tech-stack docs, README, and BENCHMARKS.md are public.
+docs/PRD.md
+docs/plan/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.iws
+
+# Java / Gradle
+build/
+.gradle/
+out/
+*.class
+!gradle/wrapper/gradle-wrapper.jar
+
+# Node / React (operator console)
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+yarn-error.log*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and runtime artifacts
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes / local data
+docker/data/
