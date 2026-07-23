@@ -82,6 +82,30 @@ class ModuleDependencyDirectionTest {
     }
 
     @Test
+    void routerDependsOnlyOnCoreAmongInternalGatewayModules() {
+        // gateway-router is application/orchestration, sitting just inside
+        // the hexagon boundary. It may depend on gateway-core (the ports
+        // it implements and calls) and nothing else internal: not the
+        // driven adapters it talks to only through ports, not the driving
+        // adapters that call it. RoutingPolicyRepository's adapterFactory
+        // pattern exists specifically so gateway-router never needs a
+        // direct MockProviderAdapter (or any concrete adapter) reference.
+        ArchRuleDefinition.noClasses()
+                .that().resideInAPackage("com.aether.gateway.router..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "com.aether.gateway.providers..",
+                        "com.aether.gateway.cache..",
+                        "com.aether.gateway.quota..",
+                        "com.aether.gateway.registry..",
+                        "com.aether.gateway.observability..",
+                        "com.aether.gateway.proxy..",
+                        "com.aether.gateway.admin..",
+                        "com.aether.gateway.mockprovider..")
+                .allowEmptyShould(true)
+                .check(allClasses);
+    }
+
+    @Test
     void mockProviderHasNoInternalGatewayDependency() {
         ArchRuleDefinition.noClasses()
                 .that().resideInAPackage("com.aether.gateway.mockprovider..")

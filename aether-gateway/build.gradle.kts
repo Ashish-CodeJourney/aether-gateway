@@ -29,4 +29,32 @@ subprojects {
     tasks.withType<Test> {
         useJUnitPlatform()
     }
+
+    // ADR-009 / TESTING-STRATEGY.md: integration tests (Testcontainers,
+    // real Postgres/Redis) live in their own source set, run as a
+    // separate Gradle task from fast unit tests so CI can report and
+    // gate on them distinctly.
+    val sourceSets = the<JavaPluginExtension>().sourceSets
+    val integrationTest = sourceSets.create("integrationTest") {
+        java.srcDir("src/integrationTest/java")
+        resources.srcDir("src/integrationTest/resources")
+        compileClasspath += sourceSets["main"].output + sourceSets["test"].output
+        runtimeClasspath += output + compileClasspath
+    }
+
+    configurations["integrationTestImplementation"].extendsFrom(configurations["testImplementation"])
+    configurations["integrationTestRuntimeOnly"].extendsFrom(configurations["testRuntimeOnly"])
+
+    tasks.register<Test>("integrationTest") {
+        description = "Runs integration tests (Testcontainers, real infra)."
+        group = "verification"
+        testClassesDirs = integrationTest.output.classesDirs
+        classpath = integrationTest.runtimeClasspath
+        useJUnitPlatform()
+        shouldRunAfter(tasks.named("test"))
+    }
+
+    tasks.named("check") {
+        dependsOn(tasks.named("integrationTest"))
+    }
 }

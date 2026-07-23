@@ -13,7 +13,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
 
 aether:
-  mock-provider:
-    base-url: ${MOCK_PROVIDER_URL:http://localhost:8081}
+  routing:
+    config-path: ${ROUTING_CONFIG_PATH:routing.yaml}

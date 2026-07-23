@@ -1,0 +1,21 @@
+# Same shape as routing.yaml (see docs/design/routing-policy.md), but
+# using Docker Compose service DNS names instead of localhost ports,
+# since the gateway and mock provider containers are not on the host
+# network. Bind-mounted into the gateway container (see
+# docker-compose.yml) rather than baked into the image, so it can be
+# edited on the host and hot-reloaded via POST /admin/routes/reload
+# without rebuilding anything (F2.7).
+providers:
+  mock-primary:
+    baseUrl: http://mock-primary:8081
+  mock-fallback:
+    baseUrl: http://mock-fallback:8081
+
+routes:
+  - alias: mock
+    chain:
+      - provider: mock-primary
+        model: mock
+        weight: 100
+      - provider: mock-fallback
+        model: mock

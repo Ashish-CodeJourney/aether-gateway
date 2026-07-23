@@ -47,3 +47,28 @@ observing replica's own network path.
   local breaker behavior, and (later, if multi-replica testing is added)
   a test that a published hint accelerates a second replica's breaker
   opening without ever closing it early.
+
+## Addendum (Phase 05 implementation note)
+
+A real bug surfaced during manual M2 verification, worth recording
+because it is a subtler version of "never fast-close" than the original
+decision anticipated. The hint's 30s TTL legitimately outlives a much
+shorter local `waitDurationInOpenState` (5s in this project's config).
+The first implementation consulted `isHintedOpen` on every single call
+whenever the local breaker was CLOSED; since the *same* replica that
+opened the breaker also published the hint, and kept it fresh with every
+subsequent blocked call, the hint stayed alive well past the point the
+breaker had already recovered locally via its own half-open probes, so
+the very next call would immediately force it back OPEN, permanently
+starving recovery even though nothing was actually still failing.
+
+The fix: only consult the hint when the breaker has **no local call
+history at all** (`getMetrics().getNumberOfSuccessfulCalls() +
+getNumberOfFailedCalls() == 0`), not merely "currently CLOSED." This
+matches the hint's actual purpose, letting a freshly-started replica with
+zero data of its own fast-open based on another replica's observation,
+while guaranteeing that the moment a breaker has any local evidence,
+fresh or stale, local evidence always wins over a hint, closing the loop
+this ADR's "never fast-close" language did not fully anticipate: a hint
+must not just fail to *close* a breaker, it must not re-*open* one that
+local evidence has already closed.

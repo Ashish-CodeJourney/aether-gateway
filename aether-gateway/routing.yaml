@@ -1,0 +1,19 @@
+# F2.3: model alias -> ordered provider chain. See docs/design/routing-policy.md.
+# Local dev / test default: two mock-provider instances on different
+# ports, standing in for a real primary/fallback pair (PRD section 14 -
+# real providers cannot be made to fail on command, so M2's failover
+# proof is built and tested entirely against these).
+providers:
+  mock-primary:
+    baseUrl: http://localhost:8082
+  mock-fallback:
+    baseUrl: http://localhost:8083
+
+routes:
+  - alias: mock
+    chain:
+      - provider: mock-primary
+        model: mock
+        weight: 100
+      - provider: mock-fallback
+        model: mock

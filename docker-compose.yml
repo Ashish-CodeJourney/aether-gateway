@@ -25,12 +25,25 @@ services:
       timeout: 3s
       retries: 10
 
-  mock-provider:
+  # Two mock-provider instances, standing in for a real primary/fallback
+  # provider pair (PRD section 14: real providers cannot be made to fail
+  # on command, so M2's routing/resilience behaviour is built and proven
+  # entirely against these). See routing.docker.yaml.
+  mock-primary:
     build:
       context: .
       dockerfile: aether-gateway/mock-provider/Dockerfile
     ports:
-      - "8081:8081"
+      - "8082:8081"
+    environment:
+      MOCK_PROVIDER_PORT: "8081"
+
+  mock-fallback:
+    build:
+      context: .
+      dockerfile: aether-gateway/mock-provider/Dockerfile
+    ports:
+      - "8083:8081"
     environment:
       MOCK_PROVIDER_PORT: "8081"
 
@@ -45,13 +58,17 @@ services:
       GATEWAY_DB_URL: jdbc:postgresql://postgres:5432/aether
       GATEWAY_DB_USER: postgres
       GATEWAY_DB_PASSWORD: postgres
-      MOCK_PROVIDER_URL: http://mock-provider:8081
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
+      ROUTING_CONFIG_PATH: /config/routing.yaml
+    volumes:
+      - ./routing.docker.yaml:/config/routing.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mock-provider:
+      mock-primary:
+        condition: service_started
+      mock-fallback:
         condition: service_started

@@ -10,6 +10,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,14 +24,21 @@ import java.util.Map;
  * or any other internal module (see this module's build.gradle.kts), so
  * every interaction below is over HTTP/process boundaries only, never a
  * shared JVM classpath with the system under test.
+ *
+ * <p>Two mock-provider instances are started ("primary" and "fallback")
+ * so Phase 05 (M2) scenarios can exercise real failover; a generated
+ * routing.yaml wires the gateway's "mock" route to both, at whatever
+ * ports were actually allocated for this test run.
  */
 public final class AcceptanceEnvironment {
 
     private static PostgreSQLContainer<?> postgres;
     private static GenericContainer<?> redis;
-    private static Process mockProviderProcess;
+    private static Process mockPrimaryProcess;
+    private static Process mockFallbackProcess;
     private static Process gatewayProcess;
-    private static int mockProviderPort;
+    private static int mockPrimaryPort;
+    private static int mockFallbackPort;
     private static int gatewayPort;
     private static boolean started = false;
 
@@ -53,11 +62,17 @@ public final class AcceptanceEnvironment {
                 .withExposedPorts(6379);
         redis.start();
 
-        mockProviderPort = findFreePort();
-        Map<String, String> mockProviderEnv = new HashMap<>();
-        mockProviderEnv.put("MOCK_PROVIDER_PORT", String.valueOf(mockProviderPort));
-        mockProviderProcess = startJar(System.getProperty("mock.provider.jar"), mockProviderEnv);
-        waitForHealthy(mockProviderBaseUrl());
+        mockPrimaryPort = findFreePort();
+        mockPrimaryProcess = startJar(System.getProperty("mock.provider.jar"),
+                Map.of("MOCK_PROVIDER_PORT", String.valueOf(mockPrimaryPort)));
+        waitForHealthy(mockPrimaryBaseUrl());
+
+        mockFallbackPort = findFreePort();
+        mockFallbackProcess = startJar(System.getProperty("mock.provider.jar"),
+                Map.of("MOCK_PROVIDER_PORT", String.valueOf(mockFallbackPort)));
+        waitForHealthy(mockFallbackBaseUrl());
+
+        Path routingConfig = writeRoutingConfig();
 
         gatewayPort = findFreePort();
         Map<String, String> gatewayEnv = new HashMap<>();
@@ -65,9 +80,9 @@ public final class AcceptanceEnvironment {
         gatewayEnv.put("GATEWAY_DB_URL", "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether");
         gatewayEnv.put("GATEWAY_DB_USER", "postgres");
         gatewayEnv.put("GATEWAY_DB_PASSWORD", "postgres");
-        gatewayEnv.put("MOCK_PROVIDER_URL", mockProviderBaseUrl());
         gatewayEnv.put("SPRING_DATA_REDIS_HOST", "localhost");
         gatewayEnv.put("SPRING_DATA_REDIS_PORT", String.valueOf(redis.getMappedPort(6379)));
+        gatewayEnv.put("ROUTING_CONFIG_PATH", routingConfig.toAbsolutePath().toString());
         gatewayProcess = startJar(System.getProperty("gateway.proxy.jar"), gatewayEnv);
         waitForHealthy(gatewayBaseUrl());
 
@@ -78,8 +93,11 @@ public final class AcceptanceEnvironment {
         if (gatewayProcess != null) {
             gatewayProcess.destroy();
         }
-        if (mockProviderProcess != null) {
-            mockProviderProcess.destroy();
+        if (mockPrimaryProcess != null) {
+            mockPrimaryProcess.destroy();
+        }
+        if (mockFallbackProcess != null) {
+            mockFallbackProcess.destroy();
         }
         if (postgres != null) {
             postgres.stop();
@@ -94,8 +112,40 @@ public final class AcceptanceEnvironment {
         return "http://localhost:" + gatewayPort;
     }
 
+    /** The provider M0/M1 scenarios exercise; same instance as {@link #mockPrimaryBaseUrl()}. */
     public static String mockProviderBaseUrl() {
-        return "http://localhost:" + mockProviderPort;
+        return mockPrimaryBaseUrl();
+    }
+
+    public static String mockPrimaryBaseUrl() {
+        return "http://localhost:" + mockPrimaryPort;
+    }
+
+    public static String mockFallbackBaseUrl() {
+        return "http://localhost:" + mockFallbackPort;
+    }
+
+    private static Path writeRoutingConfig() throws IOException {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:%d
+                  mock-fallback:
+                    baseUrl: http://localhost:%d
+
+                routes:
+                  - alias: mock
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                      - provider: mock-fallback
+                        model: mock
+                """.formatted(mockPrimaryPort, mockFallbackPort);
+        Path path = Files.createTempFile("aether-routing-", ".yaml");
+        Files.writeString(path, yaml);
+        path.toFile().deleteOnExit();
+        return path;
     }
 
     private static Process startJar(String jarPath, Map<String, String> env) throws IOException {
