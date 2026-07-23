@@ -81,28 +81,28 @@ precisely the failure mode the entity guard exists to catch.
 
 ## Progress
 
-Status as of 2026-07-22 (Phase 01, task 7 - schema and initial draft, not
-full labelling):
+Status as of 2026-07-23 (Phase 01, task 7 - ongoing):
 
 | Bucket | Target | Drafted | % |
 |---|---|---|---|
-| Near-duplicates | 150 | 5 (5 pairs) | 3% |
-| Adversarial near-misses | 100 | 5 (5 pairs) | 5% |
-| Unrelated | 150 | 8 | 5% |
+| Near-duplicates | 150 | 40 (20 pairs) | 27% |
+| Adversarial near-misses | 100 | 40 (20 pairs) | 40% |
+| Unrelated | 150 | 38 | 25% |
 | Long-context | 100 | 2 | 2% |
 
-This is well short of the phase's 25%-per-bucket minimum (PRD-derived task
-7 target in `docs/plan/01-requirements-and-planning.md`). The schema is
-proven for near-duplicates, adversarial, and unrelated (each holds real,
-hand-labelled prompts). The bulk of hand-labelling for all four buckets
-remains open work. Continue filling in each bucket incrementally; do not
-defer it all to Phase 07.
+Near-duplicates, adversarial, and unrelated are now past the phase's
+25%-per-bucket minimum (PRD-derived task 7 target in
+`docs/plan/01-requirements-and-planning.md`). All entries in these three
+buckets are real, hand-labelled prompts, not filler.
 
-**Long-context is honestly incomplete, not just under target.** The two
-entries in `long-context.jsonl` are structural placeholders (~60 tokens,
-literal `[PLACEHOLDER: ...]` text) that prove the JSON schema parses, not
-real long-context samples. Real entries need to come from actual long
-documents already on hand (large code files, README-length docs, meeting
-transcripts), pasted or referenced in, not hand-written from scratch. This
-bucket needs real content before it can be called "started" in the sense
-the other three buckets are.
+**Long-context remains the weak bucket.** The two entries in
+`long-context.jsonl` are now genuine long-form content (a ~2,000-word
+technical article and a ~270-line Java source file, roughly 1,000-2,000
+tokens each) rather than placeholder text, but each entry is still under
+the 4k-token target, and at 2 of 100 the bucket is far below the 25%
+floor the other three buckets have reached. Reason: each long-context
+entry costs far more effort to produce authentically than a one-line
+prompt, so it lags by construction, not oversight. Plan: keep replacing
+and adding entries sourced from real long documents (large code files,
+long docs, meeting transcripts, papers) rather than hand-writing filler,
+and treat this bucket as carrying the most open risk into Phase 07 (M4).
