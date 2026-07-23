@@ -88,21 +88,21 @@ Status as of 2026-07-23 (Phase 01, task 7 - ongoing):
 | Near-duplicates | 150 | 40 (20 pairs) | 27% |
 | Adversarial near-misses | 100 | 40 (20 pairs) | 40% |
 | Unrelated | 150 | 38 | 25% |
-| Long-context | 100 | 2 | 2% |
+| Long-context | 100 | 4 | 4% |
 
 Near-duplicates, adversarial, and unrelated are now past the phase's
 25%-per-bucket minimum (PRD-derived task 7 target in
 `docs/plan/01-requirements-and-planning.md`). All entries in these three
 buckets are real, hand-labelled prompts, not filler.
 
-**Long-context remains the weak bucket.** The two entries in
-`long-context.jsonl` are now genuine long-form content (a ~2,000-word
-technical article and a ~270-line Java source file, roughly 1,000-2,000
-tokens each) rather than placeholder text, but each entry is still under
-the 4k-token target, and at 2 of 100 the bucket is far below the 25%
-floor the other three buckets have reached. Reason: each long-context
-entry costs far more effort to produce authentically than a one-line
-prompt, so it lags by construction, not oversight. Plan: keep replacing
-and adding entries sourced from real long documents (large code files,
-long docs, meeting transcripts, papers) rather than hand-writing filler,
-and treat this bucket as carrying the most open risk into Phase 07 (M4).
+**Long-context remains the weak bucket.** All four entries in
+`long-context.jsonl` are genuine long-form content (a technical article,
+a Java source file, a meeting transcript, and an API reference document,
+roughly 1,000-2,000 tokens each) rather than placeholder text, but each
+is still under the 4k-token target, and at 4 of 100 the bucket is far
+below the 25% floor the other three buckets have reached. Reason: each
+long-context entry costs far more effort to produce authentically than a
+one-line prompt, so it lags by construction, not oversight. Plan: keep
+adding entries sourced from real long documents (large code files, long
+docs, meeting transcripts, papers) rather than hand-writing filler, and
+treat this bucket as carrying the most open risk into Phase 07 (M4).
