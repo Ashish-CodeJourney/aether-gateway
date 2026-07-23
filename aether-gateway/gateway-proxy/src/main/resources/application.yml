@@ -1,0 +1,19 @@
+server:
+  port: ${GATEWAY_PORT:8080}
+
+spring:
+  application:
+    name: aether-gateway
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+  datasource:
+    url: ${GATEWAY_DB_URL:jdbc:postgresql://localhost:5432/aether}
+    username: ${GATEWAY_DB_USER:postgres}
+    password: ${GATEWAY_DB_PASSWORD:postgres}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+aether:
+  mock-provider:
+    base-url: ${MOCK_PROVIDER_URL:http://localhost:8081}

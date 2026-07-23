@@ -45,3 +45,26 @@ say plainly (PRD section 21, item 8).
   cancellation watcher against the upstream call, it must be isolated
   behind an interface with a non-preview fallback, since it is a preview
   feature independent of this WebFlux/MVC split.
+
+## Addendum (Phase 03 implementation note)
+
+Running a genuine second embedded servlet container (Tomcat/MVC)
+alongside the WebFlux/Netty server in the same process was evaluated and
+rejected as unneeded operational complexity for this project's size: two
+embedded servers means two ports, two thread pools, and two sets of
+server-level config to reason about, for a benefit (imperative-looking
+code on the non-streaming path) that is achievable more simply another
+way. The concrete implementation: `gateway-proxy` runs a single WebFlux
+(Netty) server for every endpoint, streaming and non-streaming alike.
+Non-streaming and admin endpoints are still written as simple,
+non-reactive-feeling code: blocking driven-adapter calls (JDBC via
+`JdbcClient`, synchronous Redis calls) are dispatched onto a virtual
+thread executor via `Mono.fromCallable(...).subscribeOn(Schedulers.
+fromExecutor(Executors.newVirtualThreadPerTaskExecutor()))`, so business
+logic stays imperative and virtual-thread-scaled without ever touching
+Reactor operators, while the streaming path alone uses native
+`Flux`/cancellation. This preserves both halves of the original decision,
+simple blocking code off the hot streaming path, virtual-thread
+scalability, cancellation semantics only where structurally required,
+without the operational cost of a second server.
+

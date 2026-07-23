@@ -1,0 +1,8 @@
+server:
+  port: ${MOCK_PROVIDER_PORT:8081}
+
+spring:
+  application:
+    name: mock-provider
+  jackson:
+    property-naming-strategy: SNAKE_CASE
