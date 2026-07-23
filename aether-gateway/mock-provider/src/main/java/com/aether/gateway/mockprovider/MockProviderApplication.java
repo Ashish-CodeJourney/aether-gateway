@@ -14,4 +14,9 @@ public class MockProviderApplication {
     public DefaultControlsHolder defaultControlsHolder() {
         return new DefaultControlsHolder();
     }
+
+    @Bean
+    public ActiveStreamTracker activeStreamTracker() {
+        return new ActiveStreamTracker();
+    }
 }

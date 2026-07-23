@@ -4,6 +4,7 @@ import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
 import com.aether.gateway.core.domain.ChatMessage;
+import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.Usage;
 import org.junit.jupiter.api.Test;
 
@@ -52,5 +53,25 @@ class ChatCompletionDtoMapperTest {
         assertThat(dto.choices()).hasSize(1);
         assertThat(dto.choices().get(0).message().content()).isEqualTo("hi there");
         assertThat(dto.usage().totalTokens()).isEqualTo(8);
+    }
+
+    @Test
+    void mapsANonFinalStreamChunkWithNoFinishReason() {
+        var chunk = new ProviderResponse.StreamChunk("resp-1", 0, "hel", false);
+
+        StreamChunkResponseDto dto = mapper.toDto(chunk);
+
+        assertThat(dto.id()).isEqualTo("resp-1");
+        assertThat(dto.choices().get(0).delta().content()).isEqualTo("hel");
+        assertThat(dto.choices().get(0).finishReason()).isNull();
+    }
+
+    @Test
+    void mapsAFinalStreamChunkWithAStopFinishReason() {
+        var chunk = new ProviderResponse.StreamChunk("resp-1", 2, "", true);
+
+        StreamChunkResponseDto dto = mapper.toDto(chunk);
+
+        assertThat(dto.choices().get(0).finishReason()).isEqualTo("stop");
     }
 }
