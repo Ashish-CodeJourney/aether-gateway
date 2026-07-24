@@ -8,7 +8,13 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      # Host port 5433, not 5432: many dev machines already run a local
+      # Postgres on 5432 (this project's own toolchain notes flag
+      # exactly that, docs/plan/STATUS.md's toolchain table), and the
+      # container's internal port (what "gateway" actually connects to,
+      # via the Docker network, service name "postgres") is unaffected
+      # either way.
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -61,8 +67,15 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
       ROUTING_CONFIG_PATH: /config/routing.yaml
+      COST_MODEL_CONFIG_PATH: /config/cost-model.yaml
+      # Phase 08 (M5): a named volume (below) keeps the ~90MB ONNX
+      # embedding model download (Phase 07/M4) across container
+      # restarts, instead of re-fetching it from GitHub every time.
+      AETHER_CACHE_ONNX_RESOURCE_CACHE_DIR: /onnx-cache
     volumes:
       - ./routing.docker.yaml:/config/routing.yaml:ro
+      - ./aether-gateway/cost-model.yaml:/config/cost-model.yaml:ro
+      - onnx-cache:/onnx-cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,3 +85,41 @@ services:
         condition: service_started
       mock-fallback:
         condition: service_started
+
+  # Phase 08 (M5): F6.1, scrapes the gateway's /actuator/prometheus.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      gateway:
+        condition: service_started
+
+  # F6.6: dashboard and datasource both provisioned as committed config
+  # (docker/grafana/), not clicked together by hand - see that
+  # directory's provisioning/ subfolder.
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      # Single mount, not a second one nested inside it: Grafana's own
+      # rootfs treats a bind-mounted directory as read-only, so trying
+      # to mount a *second* volume at a path underneath an already
+      # read-only-mounted directory fails ("read-only file system")
+      # when Docker tries to create the nested mountpoint. The dashboard
+      # JSON lives inside provisioning/dashboards/json/ on the host, so
+      # one mount covers datasources, the dashboard provider config, and
+      # the dashboard JSON itself.
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  onnx-cache:

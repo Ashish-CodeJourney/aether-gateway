@@ -11,9 +11,16 @@ import com.aether.gateway.core.port.BreakerStatusUseCase;
 import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
+import com.aether.gateway.core.port.CostModelPort;
+import com.aether.gateway.core.port.MetricsPort;
 import com.aether.gateway.core.port.ModelCatalogUseCase;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.core.port.QuotaPort;
+import com.aether.gateway.core.port.RequestLogPort;
+import com.aether.gateway.observability.CostModelRepository;
+import com.aether.gateway.observability.CostModelYamlParser;
+import com.aether.gateway.observability.JdbcRequestLogWriter;
+import com.aether.gateway.observability.MicrometerMetricsAdapter;
 import com.aether.gateway.providers.mock.MockProviderAdapter;
 import com.aether.gateway.quota.JdbcApiKeyRepository;
 import com.aether.gateway.quota.RedisConcurrencyCap;
@@ -30,6 +37,7 @@ import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -192,5 +200,35 @@ public class GatewayConfig {
                 new PgVectorCacheStore(jdbcClient),
                 embeddingGenerator,
                 defaultThreshold);
+    }
+
+    // Phase 08 (M5): F6.1-F6.4 observability. MeterRegistry is
+    // auto-configured by spring-boot-starter-actuator +
+    // micrometer-registry-prometheus (exposed at /actuator/prometheus);
+    // JdbcRequestLogWriter owns its own background thread so RequestLogPort.log
+    // never blocks the caller (F6.2's core correctness requirement).
+    @Bean
+    public MetricsPort metricsPort(MeterRegistry meterRegistry) {
+        return new MicrometerMetricsAdapter(meterRegistry);
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    public JdbcRequestLogWriter jdbcRequestLogWriter(JdbcClient jdbcClient) {
+        return new JdbcRequestLogWriter(jdbcClient);
+    }
+
+    @Bean
+    public RequestLogPort requestLogPort(JdbcRequestLogWriter jdbcRequestLogWriter) {
+        return jdbcRequestLogWriter;
+    }
+
+    @Bean
+    public CostModelRepository costModelRepository(@Value("${aether.cost-model.config-path}") String costModelConfigPath) {
+        return new CostModelRepository(Path.of(costModelConfigPath), new CostModelYamlParser());
+    }
+
+    @Bean
+    public CostModelPort costModelPort(CostModelRepository costModelRepository) {
+        return costModelRepository;
     }
 }

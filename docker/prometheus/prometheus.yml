@@ -1,0 +1,12 @@
+# F6.1: scrapes the gateway's Micrometer/Actuator Prometheus endpoint.
+# Scrape interval kept short (5s) so a manual demo/load-test session
+# shows up on the Grafana dashboard within seconds rather than minutes.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: aether-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["gateway:8080"]

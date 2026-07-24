@@ -17,6 +17,12 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation(libs.resilience4j.circuitbreaker)
     implementation(libs.resilience4j.bulkhead)
+    // Phase 08 (M5): F6.1 metrics (Prometheus-scraped via /actuator/prometheus)
+    // and F6.5 tracing.
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("io.micrometer:micrometer-tracing-bridge-otel")
+    implementation("io.opentelemetry:opentelemetry-exporter-logging")
     // Spring Boot 4's modular autoconfigure split Flyway support into its
     // own module (spring-boot-flyway), no longer pulled in transitively
     // by spring-boot-starter-jdbc; without it FlywayAutoConfiguration is

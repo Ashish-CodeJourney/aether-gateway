@@ -113,6 +113,15 @@ public final class AcceptanceEnvironment {
         // of re-fetching the ~90MB file on every run.
         gatewayEnv.put("AETHER_CACHE_ONNX_RESOURCE_CACHE_DIR",
                 Path.of(System.getProperty("java.io.tmpdir"), "aether-onnx-cache").toString());
+        // Phase 08 (M5): the checked-in cost-model.yaml, by absolute
+        // path - the default relative path ("cost-model.yaml") would
+        // resolve against this JVM's own working directory
+        // (gateway-acceptance-tests/), not the repo root where the file
+        // actually lives, and CostModelRepository throws on a missing
+        // file at construction time, which would otherwise crash the
+        // spawned gateway process before it ever started serving.
+        gatewayEnv.put("COST_MODEL_CONFIG_PATH",
+                Path.of("../cost-model.yaml").toAbsolutePath().normalize().toString());
         gatewayProcess = startJar(System.getProperty("gateway.proxy.jar"), gatewayEnv);
         waitForHealthy(gatewayBaseUrl());
 
@@ -212,6 +221,44 @@ public final class AcceptanceEnvironment {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
         }
+    }
+
+    /**
+     * Phase 08 (M5) / F6.2: request_log is written asynchronously by
+     * design (never blocking the response path), so scenarios must poll
+     * rather than assume the row is already there the instant the HTTP
+     * response comes back. Returns the single most recently created row
+     * - correct as long as a scenario sends requests one at a time and
+     * checks the log immediately after each, which is how every M5
+     * scenario here is written.
+     */
+    public static Map<String, Object> mostRecentRequestLogEntry() {
+        String jdbcUrl = "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether";
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl, "postgres", "postgres");
+                 PreparedStatement statement = connection.prepareStatement(
+                         "SELECT * FROM request_log ORDER BY created_at DESC LIMIT 1")) {
+                var resultSet = statement.executeQuery();
+                if (resultSet.next()) {
+                    Map<String, Object> row = new HashMap<>();
+                    var metaData = resultSet.getMetaData();
+                    for (int i = 1; i <= metaData.getColumnCount(); i++) {
+                        row.put(metaData.getColumnLabel(i), resultSet.getObject(i));
+                    }
+                    return row;
+                }
+            } catch (SQLException e) {
+                throw new IllegalStateException("Failed to query request_log", e);
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new IllegalStateException("No request_log row appeared within 5 seconds");
     }
 
     private static Path writeRoutingConfig() throws IOException {

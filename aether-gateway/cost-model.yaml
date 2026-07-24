@@ -1,0 +1,17 @@
+# F6.3: per-(provider, model) price per 1,000,000 tokens. External and
+# hot-reloadable (POST /admin/cost-model/reload), matching PRD section 8's
+# "config change requires no redeploy" requirement, same pattern as
+# routing.yaml's F2.7 reload. Prices for "mock" are illustrative
+# (chosen to be easy to sanity-check by hand: $0.50/$1.50 per 1M), since
+# there is no real invoice to match against for a mock provider; real
+# provider prices (Groq, Gemini, etc.) get added here once Phase 12
+# (M9) wires up real providers.
+models:
+  - provider: mock-primary
+    model: mock
+    inputPricePerMillion: 0.50
+    outputPricePerMillion: 1.50
+  - provider: mock-fallback
+    model: mock
+    inputPricePerMillion: 0.50
+    outputPricePerMillion: 1.50

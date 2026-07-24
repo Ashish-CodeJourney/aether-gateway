@@ -108,6 +108,36 @@ class ResilientRouterTest {
     }
 
     @Test
+    void attributesTheSuccessfulResponseToTheProviderThatActuallyServedIt() {
+        var primary = new FakeAdapter("mock-primary", new ProviderResponse.Completion(fakeSuccess("primary")));
+        var route = new RouteConfig("mock", List.of(new ChainMember("mock-primary", "mock", 100)));
+        var router = buildRouter(Map.of("mock-primary", primary), route);
+
+        var request = new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hi")), false);
+        var result = (ProviderResponse.Completion) router.complete(request);
+
+        assertThat(result.servedByProvider()).isEqualTo("mock-primary");
+        assertThat(result.attemptCount()).isEqualTo(1);
+        assertThat(result.failoverChain()).containsExactly("mock-primary");
+    }
+
+    @Test
+    void attributesAFailoverResponseWithTheFullChainAttempted() {
+        var primary = new FakeAdapter("mock-primary", new ProviderResponse.ProviderError("service_unavailable", "down", 503, true));
+        var fallback = new FakeAdapter("mock-fallback", new ProviderResponse.Completion(fakeSuccess("fallback")));
+        var route = new RouteConfig("mock", List.of(
+                new ChainMember("mock-primary", "mock", 100),
+                new ChainMember("mock-fallback", "mock", null)));
+        var router = buildRouter(Map.of("mock-primary", primary, "mock-fallback", fallback), route);
+
+        var request = new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hi")), false);
+        var result = (ProviderResponse.Completion) router.complete(request);
+
+        assertThat(result.servedByProvider()).isEqualTo("mock-fallback");
+        assertThat(result.failoverChain()).containsExactly("mock-primary", "mock-fallback");
+    }
+
+    @Test
     void failsOverToTheFallbackWhenThePrimaryReturnsARetryableError() {
         var primary = new FakeAdapter("mock-primary", new ProviderResponse.ProviderError("service_unavailable", "down", 503, true));
         var fallback = new FakeAdapter("mock-fallback", new ProviderResponse.Completion(fakeSuccess("fallback")));

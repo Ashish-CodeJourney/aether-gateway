@@ -97,7 +97,7 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
             Bulkhead bulkhead = bulkheadRegistry.bulkhead(member.provider());
             attempted.add(member.provider());
 
-            ProviderResponse outcome = attemptWithRetry(request, member, adapter, breaker, bulkhead, budget);
+            ProviderResponse outcome = attemptWithRetry(request, member, adapter, breaker, bulkhead, budget, attempted);
             if (outcome != null) {
                 return outcome;
             }
@@ -110,7 +110,7 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
 
     private ProviderResponse attemptWithRetry(
             ChatCompletionRequest request, ChainMember member, ProviderAdapter adapter,
-            CircuitBreaker breaker, Bulkhead bulkhead, TimeoutBudget budget) {
+            CircuitBreaker breaker, Bulkhead bulkhead, TimeoutBudget budget, List<String> attemptedProviders) {
 
         int attempt = 0;
         while (!budget.isExhausted()) {
@@ -162,9 +162,21 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
                 continue;
             }
 
-            return response;
+            return attributeResponse(response, member.provider(), attempt + 1, attemptedProviders);
         }
         return null;
+    }
+
+    /** F6.1/request_log: attaches which provider actually served the request and the failover chain so far, once known. */
+    private ProviderResponse attributeResponse(ProviderResponse response, String servedByProvider, int attemptCount, List<String> attemptedProviders) {
+        List<String> failoverChain = List.copyOf(attemptedProviders);
+        return switch (response) {
+            case ProviderResponse.Completion completion ->
+                    new ProviderResponse.Completion(completion.response(), servedByProvider, attemptCount, failoverChain);
+            case ProviderResponse.ProviderError error ->
+                    new ProviderResponse.ProviderError(error.errorCode(), error.message(), error.httpStatus(), error.retryable(), attemptCount, failoverChain);
+            case ProviderResponse.StreamChunk chunk -> chunk;
+        };
     }
 
     @Override
@@ -241,7 +253,7 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
         return new ProviderResponse.ProviderError(
                 "no_healthy_provider",
                 "All providers unavailable for model " + model + " (attempted: " + attempted + ")",
-                502, false);
+                502, false, attempted.size(), attempted);
     }
 
     private Flow.Publisher<ProviderResponse.StreamChunk> errorPublisher() {

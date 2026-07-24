@@ -18,6 +18,18 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  tracing:
+    sampling:
+      probability: 1.0
+
 aether:
   routing:
     config-path: ${ROUTING_CONFIG_PATH:routing.yaml}
@@ -26,3 +38,5 @@ aether:
   cache:
     onnx-resource-cache-dir: ${AETHER_CACHE_ONNX_RESOURCE_CACHE_DIR:/tmp/aether-onnx-cache}
     default-threshold: ${AETHER_CACHE_DEFAULT_THRESHOLD:0.94}
+  cost-model:
+    config-path: ${COST_MODEL_CONFIG_PATH:cost-model.yaml}

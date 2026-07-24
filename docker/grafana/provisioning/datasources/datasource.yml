@@ -1,0 +1,12 @@
+# F6.6: provisioned as config, not clicked together in the UI, so the
+# dashboard works out of the box on `docker compose up` with no manual
+# setup step.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

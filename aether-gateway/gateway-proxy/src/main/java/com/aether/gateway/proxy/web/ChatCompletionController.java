@@ -3,8 +3,12 @@ package com.aether.gateway.proxy.web;
 import com.aether.gateway.core.domain.ApiKeyContext;
 import com.aether.gateway.core.domain.CacheDecision;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
+import com.aether.gateway.core.domain.CostCalculator;
+import com.aether.gateway.core.domain.ModelPricing;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.QuotaDecision;
+import com.aether.gateway.core.domain.RequestLogEntry;
+import com.aether.gateway.core.domain.RequestMetrics;
 import com.aether.gateway.core.domain.RouteCacheConfig;
 import com.aether.gateway.core.domain.RouteConfig;
 import com.aether.gateway.core.domain.TokenEstimator;
@@ -12,7 +16,10 @@ import com.aether.gateway.core.port.ApiKeyLookupPort;
 import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
+import com.aether.gateway.core.port.CostModelPort;
+import com.aether.gateway.core.port.MetricsPort;
 import com.aether.gateway.core.port.QuotaPort;
+import com.aether.gateway.core.port.RequestLogPort;
 import com.aether.gateway.router.routing.RoutingSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,12 +36,14 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * ADR-002 addendum: the non-streaming path is business-logic-simple
@@ -64,7 +73,14 @@ public class ChatCompletionController {
     private static final String QUOTA_REMAINING_HEADER = "X-Aether-Quota-Remaining";
     private static final String CACHE_HEADER = "X-Aether-Cache";
     private static final String SIMILARITY_HEADER = "X-Aether-Similarity";
+    private static final String PROVIDER_HEADER = "X-Aether-Provider";
+    private static final String ATTEMPTS_HEADER = "X-Aether-Attempts";
+    private static final String COST_HEADER = "X-Aether-Cost-USD";
     private static final String ANONYMOUS_NAMESPACE = "anonymous";
+    // Phase 08 (M5): request_log.api_key_id is NOT NULL; this is the
+    // well-known, disabled placeholder row seeded by
+    // db/migrations/V5__anonymous_api_key.sql for exactly this purpose.
+    private static final UUID ANONYMOUS_API_KEY_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
     private static final Duration STREAM_REPLAY_WORD_DELAY = Duration.ofMillis(25);
 
     private final ChatCompletionUseCase chatCompletionUseCase;
@@ -74,6 +90,9 @@ public class ChatCompletionController {
     private final TokenEstimator tokenEstimator;
     private final CachePort cachePort;
     private final RoutingSource routingSource;
+    private final MetricsPort metricsPort;
+    private final RequestLogPort requestLogPort;
+    private final CostModelPort costModelPort;
     private final ChatCompletionDtoMapper mapper;
     private final Scheduler virtualThreadScheduler;
 
@@ -85,6 +104,9 @@ public class ChatCompletionController {
             TokenEstimator tokenEstimator,
             CachePort cachePort,
             RoutingSource routingSource,
+            MetricsPort metricsPort,
+            RequestLogPort requestLogPort,
+            CostModelPort costModelPort,
             ChatCompletionDtoMapper mapper,
             Scheduler virtualThreadScheduler) {
         this.chatCompletionUseCase = chatCompletionUseCase;
@@ -94,6 +116,9 @@ public class ChatCompletionController {
         this.tokenEstimator = tokenEstimator;
         this.cachePort = cachePort;
         this.routingSource = routingSource;
+        this.metricsPort = metricsPort;
+        this.requestLogPort = requestLogPort;
+        this.costModelPort = costModelPort;
         this.mapper = mapper;
         this.virtualThreadScheduler = virtualThreadScheduler;
     }
@@ -115,12 +140,13 @@ public class ChatCompletionController {
             @RequestBody ChatCompletionRequestDto requestDto) {
         ChatCompletionRequest domainRequest = mapper.toDomain(requestDto);
         boolean noCachePresent = noCacheHeader != null;
+        long requestStartNanos = System.nanoTime();
         return Mono.fromCallable(() -> checkQuota(authorization, domainRequest))
                 .subscribeOn(virtualThreadScheduler)
                 .flatMap(quotaOutcome -> Mono
                         .fromCallable(() -> checkCache(quotaOutcome, domainRequest, noCachePresent, thresholdOverride))
                         .subscribeOn(virtualThreadScheduler)
-                        .flatMap(cacheLookup -> dispatch(quotaOutcome, domainRequest, cacheLookup)));
+                        .flatMap(cacheLookup -> dispatch(quotaOutcome, domainRequest, cacheLookup, requestStartNanos)));
     }
 
     private sealed interface QuotaOutcome {
@@ -173,33 +199,37 @@ public class ChatCompletionController {
         return new CacheLookup(namespace, decision, routeCache);
     }
 
-    private Mono<ResponseEntity<Object>> dispatch(QuotaOutcome quotaOutcome, ChatCompletionRequest domainRequest, CacheLookup cacheLookup) {
+    private Mono<ResponseEntity<Object>> dispatch(
+            QuotaOutcome quotaOutcome, ChatCompletionRequest domainRequest, CacheLookup cacheLookup, long requestStartNanos) {
         if (quotaOutcome instanceof QuotaOutcome.Rejected rejected) {
-            return Mono.just(quotaRejectedResponse(rejected.rejected()));
+            return Mono.just(quotaRejectedResponse(rejected.rejected(), domainRequest, requestStartNanos));
         }
         ApiKeyContext key = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.key() : null;
         QuotaDecision.Allowed allowed = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.allowed() : null;
         long estimatedTokens = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.estimatedTokens() : 0;
 
         if (cacheLookup.decision() instanceof CacheDecision.ExactHit hit) {
-            return cacheHitResponse(hit.responseBodyJson(), null, key, allowed, domainRequest.stream());
+            return cacheHitResponse(hit.responseBodyJson(), null, key, allowed, domainRequest, cacheLookup, requestStartNanos);
         }
         if (cacheLookup.decision() instanceof CacheDecision.SemanticHit hit) {
-            return cacheHitResponse(hit.responseBodyJson(), hit.similarity(), key, allowed, domainRequest.stream());
+            return cacheHitResponse(hit.responseBodyJson(), hit.similarity(), key, allowed, domainRequest, cacheLookup, requestStartNanos);
         }
         // Miss or Bypass: no cached response available, dispatch to the provider normally.
         return domainRequest.stream()
-                ? streamingResponse(domainRequest, key, allowed, estimatedTokens, cacheLookup)
-                : nonStreamingResponse(domainRequest, key, allowed, cacheLookup);
+                ? streamingResponse(domainRequest, key, allowed, estimatedTokens, cacheLookup, requestStartNanos)
+                : nonStreamingResponse(domainRequest, key, allowed, cacheLookup, requestStartNanos);
     }
 
-    private ResponseEntity<Object> quotaRejectedResponse(QuotaDecision.Rejected rejected) {
+    private ResponseEntity<Object> quotaRejectedResponse(QuotaDecision.Rejected rejected, ChatCompletionRequest domainRequest, long requestStartNanos) {
         var body = new ErrorEnvelopeDto(
                 "https://aether.dev/problems/quota_exceeded",
                 rejected.reason(),
                 HttpStatus.TOO_MANY_REQUESTS.value(),
                 "Quota exceeded: " + rejected.reason(),
                 "/v1/chat/completions");
+        long totalMs = elapsedMillis(requestStartNanos);
+        recordObservability(domainRequest, null, null, "BYPASS", false, null,
+                0, 0, totalMs, totalMs, 0, List.of(), "QUOTA_EXCEEDED", rejected.reason());
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(QUOTA_REMAINING_HEADER, String.valueOf(rejected.remainingMonthlyTokens()))
                 .body((Object) body);
@@ -208,7 +238,9 @@ public class ChatCompletionController {
     // ---- Cache hits: F4.8 replay for streaming requests, direct body otherwise ----
 
     private Mono<ResponseEntity<Object>> cacheHitResponse(
-            String responseBodyJson, Double similarity, ApiKeyContext key, QuotaDecision.Allowed allowed, boolean streaming) {
+            String responseBodyJson, Double similarity, ApiKeyContext key, QuotaDecision.Allowed allowed,
+            ChatCompletionRequest domainRequest, CacheLookup cacheLookup, long requestStartNanos) {
+        boolean streaming = domainRequest.stream();
         // F4: a cache hit consumed no real provider tokens; reconcile the
         // reservation down to 0 so the cost saving is real, not just
         // avoided latency.
@@ -218,10 +250,18 @@ public class ChatCompletionController {
         }
         ChatCompletionResponseDto dto = mapper.responseFromJson(responseBodyJson);
         String cacheHeaderValue = similarity != null ? "SEMANTIC_HIT" : "EXACT_HIT";
+        long inputTokens = dto.usage() != null ? dto.usage().promptTokens() : 0;
+        long outputTokens = dto.usage() != null ? dto.usage().completionTokens() : 0;
+        long totalMs = elapsedMillis(requestStartNanos);
+        CostOutcome cost = recordObservability(
+                domainRequest, key, null, cacheHeaderValue, true, similarity,
+                inputTokens, outputTokens, totalMs, totalMs, 1, List.of(),
+                "OK", null);
 
         if (!streaming) {
             ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
-                    .header(CACHE_HEADER, cacheHeaderValue);
+                    .header(CACHE_HEADER, cacheHeaderValue)
+                    .header(COST_HEADER, cost.costUsd().toPlainString());
             if (similarity != null) {
                 builder.header(SIMILARITY_HEADER, String.valueOf(similarity));
             }
@@ -241,6 +281,7 @@ public class ChatCompletionController {
 
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .header(CACHE_HEADER, cacheHeaderValue)
+                .header(COST_HEADER, cost.costUsd().toPlainString())
                 .contentType(MediaType.TEXT_EVENT_STREAM);
         if (similarity != null) {
             builder.header(SIMILARITY_HEADER, String.valueOf(similarity));
@@ -259,7 +300,7 @@ public class ChatCompletionController {
     // ---- Cache miss / bypass: normal dispatch to the provider, storing on a genuine Miss only ----
 
     private Mono<ResponseEntity<Object>> nonStreamingResponse(
-            ChatCompletionRequest domainRequest, ApiKeyContext key, QuotaDecision.Allowed allowed, CacheLookup cacheLookup) {
+            ChatCompletionRequest domainRequest, ApiKeyContext key, QuotaDecision.Allowed allowed, CacheLookup cacheLookup, long requestStartNanos) {
         return Mono.fromCallable(() -> chatCompletionUseCase.complete(domainRequest))
                 .subscribeOn(virtualThreadScheduler)
                 .doOnNext(response -> {
@@ -267,7 +308,7 @@ public class ChatCompletionController {
                     maybeStore(cacheLookup, domainRequest, response);
                 })
                 .doOnError(error -> reconcileAndReleaseOnFailure(key, allowed))
-                .map(response -> toResponseEntity(response, allowed, cacheLookup.decision().headerValue()));
+                .map(response -> toResponseEntity(response, allowed, domainRequest, key, cacheLookup, requestStartNanos));
     }
 
     /** F4.5/F4.6: only ever stores on a genuine cache Miss (never Bypass) and only ever a successful, non-error completion. */
@@ -308,10 +349,24 @@ public class ChatCompletionController {
         quotaPort.releaseConcurrencySlot(key.keyId(), allowed.requestId());
     }
 
-    private ResponseEntity<Object> toResponseEntity(ProviderResponse providerResponse, QuotaDecision.Allowed allowed, String cacheHeaderValue) {
+    private ResponseEntity<Object> toResponseEntity(
+            ProviderResponse providerResponse, QuotaDecision.Allowed allowed, ChatCompletionRequest domainRequest,
+            ApiKeyContext key, CacheLookup cacheLookup, long requestStartNanos) {
+        String cacheHeaderValue = cacheLookup.decision().headerValue();
+        long totalMs = elapsedMillis(requestStartNanos);
         return switch (providerResponse) {
             case ProviderResponse.Completion completion -> {
-                var builder = ResponseEntity.ok().header(CACHE_HEADER, cacheHeaderValue);
+                CostOutcome cost = recordObservability(
+                        domainRequest, key, completion.servedByProvider(), cacheHeaderValue, false, null,
+                        completion.response().usage().promptTokens(), completion.response().usage().completionTokens(),
+                        totalMs, totalMs, completion.attemptCount(), completion.failoverChain(), "OK", null);
+                var builder = ResponseEntity.ok()
+                        .header(CACHE_HEADER, cacheHeaderValue)
+                        .header(COST_HEADER, cost.costUsd().toPlainString())
+                        .header(ATTEMPTS_HEADER, String.valueOf(completion.attemptCount()));
+                if (completion.servedByProvider() != null) {
+                    builder.header(PROVIDER_HEADER, completion.servedByProvider());
+                }
                 quotaHeader(builder, allowed);
                 yield builder.body((Object) mapper.toDto(completion.response()));
             }
@@ -323,7 +378,11 @@ public class ChatCompletionController {
                         error.httpStatus(),
                         error.message(),
                         "/v1/chat/completions");
-                var builder = ResponseEntity.status(status).header(CACHE_HEADER, cacheHeaderValue);
+                recordObservability(domainRequest, key, null, cacheHeaderValue, false, null,
+                        0, 0, totalMs, totalMs, error.attemptCount(), error.failoverChain(), "FAILED", error.errorCode());
+                var builder = ResponseEntity.status(status)
+                        .header(CACHE_HEADER, cacheHeaderValue)
+                        .header(ATTEMPTS_HEADER, String.valueOf(error.attemptCount()));
                 quotaHeader(builder, allowed);
                 yield builder.body((Object) body);
             }
@@ -340,22 +399,24 @@ public class ChatCompletionController {
     }
 
     private Mono<ResponseEntity<Object>> streamingResponse(
-            ChatCompletionRequest domainRequest, ApiKeyContext key, QuotaDecision.Allowed allowed, long estimatedTokens, CacheLookup cacheLookup) {
+            ChatCompletionRequest domainRequest, ApiKeyContext key, QuotaDecision.Allowed allowed, long estimatedTokens,
+            CacheLookup cacheLookup, long requestStartNanos) {
         // F1.5: capture partial usage (here, chunk count as a token-count
-        // proxy) when a stream is cancelled mid-way. In-process logging is
-        // sufficient at this phase; persistence into the request log
-        // arrives with Phase 08 (M5).
+        // proxy) when a stream is cancelled mid-way.
         AtomicInteger chunksSent = new AtomicInteger(0);
         StringBuilder accumulated = new StringBuilder();
         AtomicBoolean cancelled = new AtomicBoolean(false);
         AtomicBoolean sawError = new AtomicBoolean(false);
+        AtomicLong ttfbNanos = new AtomicLong(-1);
         String streamId = "aether-" + UUID.randomUUID();
+        metricsPort.streamStarted();
 
         Flux<ServerSentEvent<String>> body = JdkFlowAdapter
                 .flowPublisherToFlux(chatStreamUseCase.stream(domainRequest))
                 .doOnNext(chunk -> {
                     chunksSent.incrementAndGet();
                     accumulated.append(chunk.deltaContent());
+                    ttfbNanos.compareAndSet(-1, System.nanoTime());
                 })
                 .doOnError(e -> sawError.set(true))
                 .map(this::toSseEvent)
@@ -365,17 +426,26 @@ public class ChatCompletionController {
                     log.info("Stream for model {} cancelled by client after {} chunks", domainRequest.model(), chunksSent.get());
                 })
                 // Streaming responses don't surface actual token usage at
-                // this layer yet (Phase 08); reconcile with the original
-                // estimate (a no-op adjustment) so the reservation isn't
-                // left dangling until its 5-minute TTL expires, and always
-                // free the concurrency slot regardless of how the stream
-                // ended (completed, errored, or cancelled by the client).
+                // this layer yet (Phase 08 territory for a real per-token
+                // count; F6.1/F6.2 still record what's available: an
+                // estimated token count, real timing, and the terminal
+                // status); reconcile with the original quota estimate (a
+                // no-op adjustment) so the reservation isn't left dangling
+                // until its 5-minute TTL expires, and always free the
+                // concurrency slot regardless of how the stream ended
+                // (completed, errored, or cancelled by the client).
                 .doFinally(signal -> {
+                    metricsPort.streamEnded();
                     releaseStreamQuota(key, allowed, estimatedTokens);
                     // F4.6: never cache a cancelled stream or one that errored.
                     if (cacheLookup.decision() instanceof CacheDecision.Miss && !cancelled.get() && !sawError.get() && chunksSent.get() > 0) {
                         storeStreamedResponse(cacheLookup, domainRequest, streamId, accumulated.toString());
                     }
+                    String status = cancelled.get() ? "CANCELLED" : sawError.get() ? "FAILED" : "OK";
+                    long totalMs = elapsedMillis(requestStartNanos);
+                    long ttfbMs = ttfbNanos.get() < 0 ? totalMs : (ttfbNanos.get() - requestStartNanos) / 1_000_000;
+                    recordObservability(domainRequest, key, null, cacheLookup.decision().headerValue(), false, null,
+                            0, estimatedTokens, ttfbMs, totalMs, 1, List.of(), status, null);
                 });
 
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
@@ -399,5 +469,75 @@ public class ChatCompletionController {
 
     private ServerSentEvent<String> toSseEvent(ProviderResponse.StreamChunk chunk) {
         return ServerSentEvent.builder(mapper.toJson(mapper.toDto(chunk))).build();
+    }
+
+    // ---- F6.1/F6.2/F6.3/F6.4: metrics + async request log, shared by every terminal outcome above ----
+
+    private record CostOutcome(BigDecimal costUsd, BigDecimal savedUsd) {
+    }
+
+    /**
+     * The single place every request outcome (quota-rejected, cache hit,
+     * provider success, provider failure, streamed OK/CANCELLED/FAILED)
+     * funnels through to emit both the Micrometer metrics (F6.1) and the
+     * async request log entry (F6.2). Returns the computed cost/savings
+     * split so callers can also surface {@code X-Aether-Cost-USD}
+     * without recomputing it.
+     */
+    private CostOutcome recordObservability(
+            ChatCompletionRequest domainRequest, ApiKeyContext key, String servedByProvider,
+            String cacheOutcomeLabel, boolean isCacheHit, Double similarity,
+            long inputTokens, long outputTokens, long ttfbMs, long totalMs,
+            int attemptCount, List<String> failoverChain, String status, String errorCode) {
+
+        ModelPricing pricing = resolvePricing(servedByProvider, domainRequest.model());
+        BigDecimal amount = pricing != null ? CostCalculator.costUsd(pricing, inputTokens, outputTokens) : BigDecimal.ZERO;
+        BigDecimal costUsd = isCacheHit ? BigDecimal.ZERO : amount;
+        BigDecimal savedUsd = isCacheHit ? amount : BigDecimal.ZERO;
+        // For a cache hit, servedByProvider is null (no provider call
+        // happened); tag the log/metric with whichever provider's price
+        // was actually used to compute the savings estimate, so "top
+        // keys by cost" / spend-avoided panels attribute correctly
+        // instead of grouping every cache hit under "unknown".
+        String attributedProvider = servedByProvider != null ? servedByProvider : (pricing != null ? pricing.provider() : null);
+
+        UUID apiKeyId = key != null ? UUID.fromString(key.keyId()) : ANONYMOUS_API_KEY_ID;
+        String apiKeyTag = key != null ? key.keyId() : ANONYMOUS_NAMESPACE;
+
+        requestLogPort.log(new RequestLogEntry(
+                UUID.randomUUID(), apiKeyId, null, domainRequest.model(), attributedProvider, domainRequest.model(),
+                null, null, domainRequest.stream(), cacheOutcomeLabel, similarity,
+                (int) inputTokens, (int) outputTokens, costUsd, savedUsd,
+                (int) ttfbMs, (int) totalMs, attemptCount, failoverChain,
+                status, errorCode, Instant.now()));
+
+        metricsPort.recordRequest(new RequestMetrics(
+                attributedProvider, domainRequest.model(), domainRequest.model(), apiKeyTag,
+                cacheOutcomeLabel, status, totalMs, inputTokens, outputTokens, costUsd.doubleValue(), savedUsd.doubleValue()));
+
+        return new CostOutcome(costUsd, savedUsd);
+    }
+
+    /**
+     * A real provider call already knows exactly which provider served
+     * it. A cache hit does not (the stored response DTO carries no
+     * provider attribution), so its cost/savings estimate instead uses
+     * the route's primary (first chain member) provider's price for the
+     * same model - a defensible stand-in for "what this would have cost
+     * had it gone to the provider," which is F4.9/F6.4's requirement,
+     * versus reporting no savings number at all.
+     */
+    private ModelPricing resolvePricing(String provider, String model) {
+        if (provider != null) {
+            return costModelPort.pricingFor(provider, model).orElse(null);
+        }
+        return routingSource.routeFor(model)
+                .flatMap(route -> route.chain().stream().findFirst())
+                .flatMap(member -> costModelPort.pricingFor(member.provider(), model))
+                .orElse(null);
+    }
+
+    private long elapsedMillis(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
     }
 }
