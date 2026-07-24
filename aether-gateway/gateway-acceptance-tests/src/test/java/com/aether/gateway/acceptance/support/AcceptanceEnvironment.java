@@ -106,6 +106,13 @@ public final class AcceptanceEnvironment {
         // every reconciliation a no-op, so admission is decided purely,
         // deterministically, by the atomic reservation step.
         gatewayEnv.put("AETHER_QUOTA_ASSUMED_MAX_OUTPUT_TOKENS", "12");
+        // Phase 07 (M4): point at the same shared, stable ONNX cache
+        // directory used elsewhere in this project (see
+        // gateway-cache's CacheAdapterIntegrationTest), so the
+        // acceptance suite reuses the already-downloaded model instead
+        // of re-fetching the ~90MB file on every run.
+        gatewayEnv.put("AETHER_CACHE_ONNX_RESOURCE_CACHE_DIR",
+                Path.of(System.getProperty("java.io.tmpdir"), "aether-onnx-cache").toString());
         gatewayProcess = startJar(System.getProperty("gateway.proxy.jar"), gatewayEnv);
         waitForHealthy(gatewayBaseUrl());
 
@@ -223,6 +230,10 @@ public final class AcceptanceEnvironment {
                         weight: 100
                       - provider: mock-fallback
                         model: mock
+                    cache:
+                      enabled: true
+                      threshold: 0.94
+                      ttl: 6h
                 """.formatted(mockPrimaryPort, mockFallbackPort);
         Path path = Files.createTempFile("aether-routing-", ".yaml");
         Files.writeString(path, yaml);

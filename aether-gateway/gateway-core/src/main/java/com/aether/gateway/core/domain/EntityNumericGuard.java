@@ -21,6 +21,14 @@ import java.util.regex.Pattern;
  * will be missed. That is an accepted, documented limitation of a
  * guard, not a full entity-recognition system; false negatives here are
  * caught by threshold tuning and the false-hit-rate measurement instead.
+ *
+ * <p>Also out of scope, measured directly via the M4 threshold sweep:
+ * negation/polarity flips ("open" vs "closed") and spelled-out numbers
+ * ("two" vs "three") are invisible to this guard, since it only ever
+ * compares numbers, dates, and capitalized entities. See
+ * docs/design/cache-correctness.md's "Known, accepted limitations"
+ * section for the measured impact and why closing these gaps is a
+ * Phase 09 follow-up, not required here.
  */
 public final class EntityNumericGuard {
 

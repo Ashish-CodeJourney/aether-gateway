@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
 
 /** Thin HTTP wrapper; every acceptance step goes through this, never through gateway internals. */
 public class GatewayClient {
@@ -27,6 +28,21 @@ public class GatewayClient {
                 .header("Authorization", "Bearer " + bearerApiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** {@code bearerApiKey} and any entry in {@code extraHeaders} may be null/empty to omit them. */
+    public HttpResponse<String> postJson(String url, String jsonBody, String bearerApiKey, Map<String, String> extraHeaders) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json");
+        if (bearerApiKey != null) {
+            builder.header("Authorization", "Bearer " + bearerApiKey);
+        }
+        if (extraHeaders != null) {
+            extraHeaders.forEach(builder::header);
+        }
+        HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 

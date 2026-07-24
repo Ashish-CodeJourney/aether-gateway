@@ -78,4 +78,9 @@ public class ChatCompletionDtoMapper {
     public String toJson(Object value) {
         return sseJsonMapper.writeValueAsString(value);
     }
+
+    /** F4.1/F4.2: reconstructs a stored cache hit's body back into the response DTO, for a hit to look identical to a fresh response. */
+    public ChatCompletionResponseDto responseFromJson(String json) {
+        return sseJsonMapper.readValue(json, ChatCompletionResponseDto.class);
+    }
 }

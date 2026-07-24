@@ -2,6 +2,8 @@ package com.aether.gateway.router.routing;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class RoutingYamlParserTest {
@@ -76,6 +78,74 @@ class RoutingYamlParserTest {
         LoadedRoutingConfig config = parser.parse(yaml);
 
         assertThat(config.routes()).containsOnlyKeys("fast-chat", "creative-chat");
+    }
+
+    @Test
+    void parsesAPerRouteCacheBlock() {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:8082
+                routes:
+                  - alias: fast-chat
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                    cache:
+                      enabled: true
+                      threshold: 0.94
+                      ttl: 6h
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        var cache = config.routes().get("fast-chat").cache();
+        assertThat(cache.enabled()).isTrue();
+        assertThat(cache.threshold()).isEqualTo(0.94);
+        assertThat(cache.ttl()).isEqualTo(Duration.ofHours(6));
+    }
+
+    @Test
+    void aRouteWithNoCacheBlockDefaultsToDisabled() {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:8082
+                routes:
+                  - alias: fast-chat
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        assertThat(config.routes().get("fast-chat").cache().enabled()).isFalse();
+    }
+
+    @Test
+    void parsesShorthandTtlUnits() {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:8082
+                routes:
+                  - alias: fast-chat
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                    cache:
+                      enabled: true
+                      threshold: 0.9
+                      ttl: 45m
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        assertThat(config.routes().get("fast-chat").cache().ttl()).isEqualTo(Duration.ofMinutes(45));
     }
 
     @Test

@@ -8,6 +8,7 @@ import io.cucumber.java.en.When;
 
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -31,6 +32,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * from reconciliation racing other in-flight reservations. That equality
  * is what lets the "budget allowing exactly N requests" step compute an
  * exact budget and get a deterministic admit/reject split.
+ *
+ * <p>Phase 07 (M4): every request here sends {@code X-Aether-No-Cache}.
+ * All 100 concurrent requests in the exit-criterion scenario use the
+ * identical prompt below, and the "mock" route has caching enabled
+ * (Phase 07); without the bypass header, a cache hit's quota
+ * reservation is correctly reconciled down to 0 real tokens (a cache
+ * hit costs nothing), which - entirely correctly - frees up budget for
+ * more than 50 of the 100 identical requests to succeed. That is
+ * genuinely correct cache/quota interaction, not a bug, but it means a
+ * test whose whole point is proving quota admission is atomic must
+ * exclude caching to isolate the mechanism it's actually testing.
  */
 public class QuotaSteps {
 
@@ -40,6 +52,7 @@ public class QuotaSteps {
     private static final String REQUEST_BODY = """
             {"model": "mock", "messages": [{"role": "user", "content": "hi"}]}
             """;
+    private static final Map<String, String> NO_CACHE_HEADER = Map.of("X-Aether-No-Cache", "true");
 
     private final GatewayClient client = new GatewayClient();
 
@@ -73,7 +86,7 @@ public class QuotaSteps {
                 try {
                     startLatch.await();
                     responses.add(client.postJson(AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions",
-                            REQUEST_BODY, apiKey));
+                            REQUEST_BODY, apiKey, NO_CACHE_HEADER));
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 } finally {
@@ -94,7 +107,7 @@ public class QuotaSteps {
         responses.clear();
         for (int i = 0; i < requestCount; i++) {
             responses.add(client.postJson(AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions",
-                    REQUEST_BODY, apiKey));
+                    REQUEST_BODY, apiKey, NO_CACHE_HEADER));
         }
     }
 

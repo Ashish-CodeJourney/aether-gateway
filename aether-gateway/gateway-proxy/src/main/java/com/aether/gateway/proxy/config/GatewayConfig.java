@@ -1,9 +1,14 @@
 package com.aether.gateway.proxy.config;
 
+import com.aether.gateway.cache.CacheAdapter;
+import com.aether.gateway.cache.EmbeddingGenerator;
+import com.aether.gateway.cache.PgVectorCacheStore;
+import com.aether.gateway.cache.RedisExactMatchStore;
 import com.aether.gateway.core.domain.RetryBackoff;
 import com.aether.gateway.core.domain.TokenEstimator;
 import com.aether.gateway.core.port.ApiKeyLookupPort;
 import com.aether.gateway.core.port.BreakerStatusUseCase;
+import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
 import com.aether.gateway.core.port.ModelCatalogUseCase;
@@ -160,5 +165,32 @@ public class GatewayConfig {
     public TokenEstimator tokenEstimator(
             @Value("${aether.quota.assumed-max-output-tokens:500}") long assumedMaxOutputTokens) {
         return new TokenEstimator(assumedMaxOutputTokens);
+    }
+
+    // Phase 07 (M4): F4 semantic cache. ADR-007: Spring AI usage is
+    // scoped to exactly the embedding model; the vector store and Redis
+    // exact-match layer are hand-built. warmUp() runs at startup
+    // deliberately, so the one-time ONNX model download/load happens
+    // during application boot rather than stalling the first real
+    // request.
+    @Bean
+    public EmbeddingGenerator embeddingGenerator(
+            @Value("${aether.cache.onnx-resource-cache-dir:/tmp/aether-onnx-cache}") String resourceCacheDirectory) {
+        EmbeddingGenerator generator = new EmbeddingGenerator(resourceCacheDirectory);
+        generator.warmUp();
+        return generator;
+    }
+
+    @Bean
+    public CachePort cachePort(
+            StringRedisTemplate redisTemplate,
+            JdbcClient jdbcClient,
+            EmbeddingGenerator embeddingGenerator,
+            @Value("${aether.cache.default-threshold:0.94}") double defaultThreshold) {
+        return new CacheAdapter(
+                new RedisExactMatchStore(redisTemplate),
+                new PgVectorCacheStore(jdbcClient),
+                embeddingGenerator,
+                defaultThreshold);
     }
 }

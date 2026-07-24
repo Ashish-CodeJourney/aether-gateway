@@ -23,3 +23,6 @@ aether:
     config-path: ${ROUTING_CONFIG_PATH:routing.yaml}
   quota:
     assumed-max-output-tokens: ${AETHER_QUOTA_ASSUMED_MAX_OUTPUT_TOKENS:500}
+  cache:
+    onnx-resource-cache-dir: ${AETHER_CACHE_ONNX_RESOURCE_CACHE_DIR:/tmp/aether-onnx-cache}
+    default-threshold: ${AETHER_CACHE_DEFAULT_THRESHOLD:0.94}

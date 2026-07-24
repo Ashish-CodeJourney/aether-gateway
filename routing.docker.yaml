@@ -19,3 +19,7 @@ routes:
         weight: 100
       - provider: mock-fallback
         model: mock
+    cache:
+      enabled: true
+      threshold: 0.94
+      ttl: 6h

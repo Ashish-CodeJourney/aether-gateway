@@ -1,9 +1,11 @@
 package com.aether.gateway.router.routing;
 
 import com.aether.gateway.core.domain.ChainMember;
+import com.aether.gateway.core.domain.RouteCacheConfig;
 import com.aether.gateway.core.domain.RouteConfig;
 import org.yaml.snakeyaml.Yaml;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,9 +44,37 @@ public class RoutingYamlParser {
                             (String) m.get("model"),
                             (Integer) m.get("weight")))
                     .toList();
-            routes.put(alias, new RouteConfig(alias, chain));
+            RouteCacheConfig cacheConfig = parseCacheConfig((Map<String, Object>) routeMap.get("cache"));
+            routes.put(alias, new RouteConfig(alias, chain, cacheConfig));
         }
 
         return new LoadedRoutingConfig(providers, routes);
+    }
+
+    /** F4.7: routing.yaml's optional per-route {@code cache:} block (PRD section 7's example). Absent means disabled. */
+    private RouteCacheConfig parseCacheConfig(Map<String, Object> cacheRaw) {
+        if (cacheRaw == null) {
+            return RouteCacheConfig.DISABLED;
+        }
+        boolean enabled = Boolean.TRUE.equals(cacheRaw.getOrDefault("enabled", Boolean.FALSE));
+        double threshold = ((Number) cacheRaw.getOrDefault("threshold", 0.94)).doubleValue();
+        Duration ttl = parseDuration((String) cacheRaw.getOrDefault("ttl", "6h"));
+        return new RouteCacheConfig(enabled, threshold, ttl);
+    }
+
+    /** Supports routing.yaml's shorthand duration suffixes (s/m/h/d) as well as full ISO-8601 ("PT6H"). */
+    private Duration parseDuration(String value) {
+        if (value.startsWith("P") || value.startsWith("p")) {
+            return Duration.parse(value);
+        }
+        char unit = value.charAt(value.length() - 1);
+        long amount = Long.parseLong(value.substring(0, value.length() - 1));
+        return switch (unit) {
+            case 's' -> Duration.ofSeconds(amount);
+            case 'm' -> Duration.ofMinutes(amount);
+            case 'h' -> Duration.ofHours(amount);
+            case 'd' -> Duration.ofDays(amount);
+            default -> throw new IllegalArgumentException("Unsupported TTL unit in '" + value + "'");
+        };
     }
 }

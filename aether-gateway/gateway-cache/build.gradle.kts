@@ -19,5 +19,7 @@ dependencies {
     integrationTestImplementation(libs.testcontainers.postgresql)
     integrationTestImplementation("org.flywaydb:flyway-core")
     integrationTestImplementation("org.flywaydb:flyway-database-postgresql")
+    // Corpus JSONL parsing for the M4 threshold sweep (ThresholdSweepTest) only.
+    integrationTestImplementation("tools.jackson.core:jackson-databind")
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
