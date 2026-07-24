@@ -21,6 +21,9 @@ dependencies {
     testImplementation(libs.testcontainers)
     testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)
+    // JDBC driver only, to seed api_key rows directly for M3 scenarios;
+    // still no dependency on any gateway module or its JdbcClient usage.
+    testImplementation("org.postgresql:postgresql")
     // No dedicated Testcontainers Redis module exists; AcceptanceEnvironment
     // uses the generic GenericContainer API (part of testcontainers-core
     // above) directly against the redis:8 image instead.

@@ -1,12 +1,20 @@
 package com.aether.gateway.proxy.config;
 
 import com.aether.gateway.core.domain.RetryBackoff;
+import com.aether.gateway.core.domain.TokenEstimator;
+import com.aether.gateway.core.port.ApiKeyLookupPort;
 import com.aether.gateway.core.port.BreakerStatusUseCase;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
 import com.aether.gateway.core.port.ModelCatalogUseCase;
 import com.aether.gateway.core.port.ProviderAdapter;
+import com.aether.gateway.core.port.QuotaPort;
 import com.aether.gateway.providers.mock.MockProviderAdapter;
+import com.aether.gateway.quota.JdbcApiKeyRepository;
+import com.aether.gateway.quota.RedisConcurrencyCap;
+import com.aether.gateway.quota.RedisMonthlyBudget;
+import com.aether.gateway.quota.RedisQuotaAdapter;
+import com.aether.gateway.quota.RedisTokenBucket;
 import com.aether.gateway.router.RouterBreakerStatus;
 import com.aether.gateway.router.RouterModelCatalog;
 import com.aether.gateway.router.resilience.BreakerHintGateway;
@@ -21,6 +29,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.scheduler.Scheduler;
@@ -130,4 +139,26 @@ public class GatewayConfig {
     // already satisfies that type for autowiring. A second @Bean method
     // returning the same instance creates two candidate beans of the
     // same type and breaks single-bean autowiring (RoutesController).
+
+    // Phase 06 (M3): F5 quota enforcement. gateway-router/gateway-proxy
+    // only ever see QuotaPort/ApiKeyLookupPort (ADR-009's hexagonal
+    // boundary); gateway-quota's Redis/JDBC specifics stay behind them.
+    @Bean
+    public ApiKeyLookupPort apiKeyLookupPort(JdbcClient jdbcClient) {
+        return new JdbcApiKeyRepository(jdbcClient);
+    }
+
+    @Bean
+    public QuotaPort quotaPort(StringRedisTemplate redisTemplate) {
+        return new RedisQuotaAdapter(
+                new RedisTokenBucket(redisTemplate),
+                new RedisConcurrencyCap(redisTemplate),
+                new RedisMonthlyBudget(redisTemplate));
+    }
+
+    @Bean
+    public TokenEstimator tokenEstimator(
+            @Value("${aether.quota.assumed-max-output-tokens:500}") long assumedMaxOutputTokens) {
+        return new TokenEstimator(assumedMaxOutputTokens);
+    }
 }

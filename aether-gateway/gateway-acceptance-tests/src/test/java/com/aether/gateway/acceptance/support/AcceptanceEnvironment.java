@@ -10,11 +10,20 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Per TESTING-STRATEGY.md and ADR-009: the system under test runs as
@@ -83,6 +92,20 @@ public final class AcceptanceEnvironment {
         gatewayEnv.put("SPRING_DATA_REDIS_HOST", "localhost");
         gatewayEnv.put("SPRING_DATA_REDIS_PORT", String.valueOf(redis.getMappedPort(6379)));
         gatewayEnv.put("ROUTING_CONFIG_PATH", routingConfig.toAbsolutePath().toString());
+        // Phase 06 (M3): pin the pessimistic per-request token estimate to
+        // match mock-provider's default completion-token count (12,
+        // MockChatController's fallback when no X-Mock-Tokens override is
+        // present) exactly, rather than the larger, demo-oriented 500
+        // production default. This matters beyond just letting scenarios
+        // compute an exact budget: if estimate != actual, post-response
+        // reconciliation (ChatCompletionController) adjusts the monthly
+        // counter by the difference *after* each request completes, and
+        // under the 100-concurrent-requests scenario that adjustment can
+        // race ahead of other requests' still-pending reservation checks,
+        // making "exactly 50 succeed" flaky. Estimate == actual makes
+        // every reconciliation a no-op, so admission is decided purely,
+        // deterministically, by the atomic reservation step.
+        gatewayEnv.put("AETHER_QUOTA_ASSUMED_MAX_OUTPUT_TOKENS", "12");
         gatewayProcess = startJar(System.getProperty("gateway.proxy.jar"), gatewayEnv);
         waitForHealthy(gatewayBaseUrl());
 
@@ -123,6 +146,65 @@ public final class AcceptanceEnvironment {
 
     public static String mockFallbackBaseUrl() {
         return "http://localhost:" + mockFallbackPort;
+    }
+
+    /**
+     * Phase 06 (M3): inserts a test {@code api_key} row directly via JDBC
+     * against the same Postgres the gateway process reads from, so
+     * scenarios can exercise real quota enforcement end-to-end without
+     * the (out-of-scope-for-M3) admin key-creation API. Hashes the raw
+     * key with the same SHA-256 scheme as {@code ApiKeyHasher} in
+     * gateway-quota; duplicated here rather than depending on that
+     * module, per this module's black-box-only design.
+     */
+    public static void seedApiKey(String rawKey, Integer rpsLimit, Integer concurrencyLimit, Long monthlyTokenBudget) {
+        String hash = sha256Hex(rawKey);
+        String jdbcUrl = "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether";
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, "postgres", "postgres");
+             PreparedStatement statement = connection.prepareStatement("""
+                     INSERT INTO api_key (id, name, key_hash, key_prefix, rps_limit, concurrency_limit, monthly_token_budget, enabled)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
+                     ON CONFLICT (key_hash) DO UPDATE SET
+                         rps_limit = EXCLUDED.rps_limit,
+                         concurrency_limit = EXCLUDED.concurrency_limit,
+                         monthly_token_budget = EXCLUDED.monthly_token_budget
+                     """)) {
+            statement.setObject(1, UUID.randomUUID());
+            statement.setString(2, "acceptance-test key");
+            statement.setString(3, hash);
+            statement.setString(4, rawKey.length() > 8 ? rawKey.substring(0, 8) : rawKey);
+            setNullableInt(statement, 5, rpsLimit);
+            setNullableInt(statement, 6, concurrencyLimit);
+            setNullableLong(statement, 7, monthlyTokenBudget);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to seed api_key row", e);
+        }
+    }
+
+    private static void setNullableInt(PreparedStatement statement, int index, Integer value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, java.sql.Types.INTEGER);
+        } else {
+            statement.setInt(index, value);
+        }
+    }
+
+    private static void setNullableLong(PreparedStatement statement, int index, Long value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, java.sql.Types.BIGINT);
+        } else {
+            statement.setLong(index, value);
+        }
+    }
+
+    private static String sha256Hex(String rawKey) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(rawKey.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     private static Path writeRoutingConfig() throws IOException {

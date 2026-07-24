@@ -20,6 +20,16 @@ public class GatewayClient {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    public HttpResponse<String> postJson(String url, String jsonBody, String bearerApiKey) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + bearerApiKey)
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     public HttpResponse<String> get(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(10))

@@ -21,3 +21,5 @@ spring:
 aether:
   routing:
     config-path: ${ROUTING_CONFIG_PATH:routing.yaml}
+  quota:
+    assumed-max-output-tokens: ${AETHER_QUOTA_ASSUMED_MAX_OUTPUT_TOKENS:500}
