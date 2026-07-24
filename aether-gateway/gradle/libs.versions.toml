@@ -1,6 +1,7 @@
 [versions]
 java = "25"
 springBoot = "4.1.0"
+springAi = "2.0.0"
 springDependencyManagement = "1.1.7"
 archunit = "1.4.2"
 cucumber = "7.34.5"
@@ -22,6 +23,8 @@ testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-jun
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 resilience4j-circuitbreaker = { module = "io.github.resilience4j:resilience4j-circuitbreaker", version.ref = "resilience4j" }
 resilience4j-bulkhead = { module = "io.github.resilience4j:resilience4j-bulkhead", version.ref = "resilience4j" }
+spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "springAi" }
+spring-ai-transformers = { module = "org.springframework.ai:spring-ai-transformers" }
 
 [plugins]
 springBoot = { id = "org.springframework.boot", version.ref = "springBoot" }

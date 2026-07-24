@@ -23,6 +23,7 @@ subprojects {
         imports {
             mavenBom("org.springframework.boot:spring-boot-dependencies:4.1.0")
             mavenBom("org.testcontainers:testcontainers-bom:2.0.5")
+            mavenBom("org.springframework.ai:spring-ai-bom:2.0.0")
         }
     }
 
