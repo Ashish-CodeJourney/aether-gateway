@@ -1,0 +1,4 @@
+{"id": "fx-001", "bucket": "near-duplicate", "pair_id": "pair-901", "role": "seed", "prompt": "What's the capital of France?", "expected_outcome": null, "notes": "seed"}
+{"id": "fx-002", "bucket": "near-duplicate", "pair_id": "pair-901", "role": "variant", "prompt": "Can you tell me the capital city of France?", "expected_outcome": "hit", "notes": "same intent"}
+{"id": "fx-003", "bucket": "unrelated", "pair_id": null, "role": null, "prompt": "Explain the offside rule in football.", "expected_outcome": "miss", "notes": ""}
+

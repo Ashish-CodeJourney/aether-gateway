@@ -3,6 +3,7 @@
 # diagrams, tech-stack docs, README, and BENCHMARKS.md are public.
 docs/PRD.md
 docs/plan/
+plans/
 
 # IDE
 .idea/
