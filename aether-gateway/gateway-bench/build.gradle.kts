@@ -10,5 +10,9 @@ dependencies {
 
     // Experiment runners only (real embedding model against the real corpus).
     integrationTestImplementation(project(":gateway-cache"))
+    // Experiment 3 (embedding model comparison) constructs a second,
+    // non-default TransformersEmbeddingModel directly - EmbeddingGenerator
+    // (gateway-cache) only ever wires up the product default (MiniLM-L6).
+    integrationTestImplementation(libs.spring.ai.transformers)
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

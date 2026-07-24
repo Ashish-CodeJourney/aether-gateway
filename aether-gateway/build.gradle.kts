@@ -29,6 +29,10 @@ subprojects {
 
     tasks.withType<Test> {
         useJUnitPlatform()
+        // Phase 09 (M6) experiment 3 loads a second, larger ONNX embedding
+        // model (all-mpnet-base-v2, 768d) alongside the default MiniLM-L6 -
+        // the JVM test worker's default heap is too small for both.
+        maxHeapSize = "2g"
     }
 
     // ADR-009 / TESTING-STRATEGY.md: integration tests (Testcontainers,

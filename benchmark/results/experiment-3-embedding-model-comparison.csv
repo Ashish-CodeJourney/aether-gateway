@@ -1,0 +1,3 @@
+model,dimensions,hit_rate,false_hit_rate,mean_latency_ms,bytes_per_vector
+all-MiniLM-L6-v2,384,0.1447,0.2800,4.4387,1536
+all-mpnet-base-v2,768,0.1447,0.3600,24.4959,3072
