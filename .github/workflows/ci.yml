@@ -1,14 +1,19 @@
 name: CI
 
-# Sequence per PRD section 17.4 / docs/plan/TESTING-STRATEGY.md section 5:
-# build + unit tests -> integration tests (Testcontainers) -> acceptance
-# tests (Cucumber, black-box) -> build and scan the images -> smoke-test
-# the Compose stack -> push images. "Deploy on tag" (the final PRD 17.4
-# stage) is intentionally not implemented yet: it needs a live host,
-# which Phase 01 task 6 (Oracle Cloud / Hetzner signup) has not completed
-# and Phase 12 (M9) is where deployment is actually scoped. Adding a job
-# with nothing real to deploy to would just be a placeholder pretending
-# to work; that stage lands with M9 instead.
+# Stages per PRD section 17.4 / docs/plan/TESTING-STRATEGY.md section 5:
+# unit tests, integration tests (Testcontainers), and acceptance tests
+# (Cucumber, black-box) run as three independent, parallel jobs (they
+# don't depend on each other's Gradle state - each job does its own
+# checkout/compile) rather than three sequential steps in one job, since
+# running them one after another in a single job was the single biggest
+# contributor to total CI wall-clock time. Everything downstream (image
+# build/scan, Compose smoke test, push) waits on all three. "Deploy on
+# tag" (the final PRD 17.4 stage) is intentionally not implemented yet:
+# it needs a live host, which Phase 01 task 6 (Oracle Cloud / Hetzner
+# signup) has not completed and Phase 12 (M9) is where deployment is
+# actually scoped. Adding a job with nothing real to deploy to would
+# just be a placeholder pretending to work; that stage lands with M9
+# instead.
 
 on:
   push:
@@ -22,8 +27,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Unit, integration, and acceptance tests
+  unit-tests:
+    name: Unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,8 +49,60 @@ jobs:
       - name: Unit tests (incl. ArchUnit boundary checks)
         run: ./gradlew test
 
-      - name: "Integration tests (Testcontainers: Postgres, Redis)"
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          retention-days: 7
+          path: |
+            aether-gateway/**/build/reports/tests/test/**
+            aether-gateway/**/build/test-results/test/**
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aether-gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: "Integration tests (Testcontainers: Postgres+pgvector, Redis; real ONNX embedding model)"
         run: ./gradlew integrationTest
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          retention-days: 7
+          path: |
+            aether-gateway/**/build/reports/tests/integrationTest/**
+            aether-gateway/**/build/test-results/integrationTest/**
+
+  acceptance-tests:
+    name: Acceptance tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aether-gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v4
 
       # Runs the actual built boot jars as separate OS processes against
       # Testcontainers-managed infra (ADR-009), never against gateway
@@ -57,15 +114,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: acceptance-test-reports
           retention-days: 7
           path: |
-            aether-gateway/**/build/reports/tests/**
-            aether-gateway/**/build/test-results/**
+            aether-gateway/gateway-acceptance-tests/build/reports/tests/**
+            aether-gateway/gateway-acceptance-tests/build/test-results/**
 
   docker-build-and-scan:
     name: Build and scan Docker images
-    needs: test
+    needs: [unit-tests, integration-tests, acceptance-tests]
     runs-on: ubuntu-latest
     strategy:
       matrix:
