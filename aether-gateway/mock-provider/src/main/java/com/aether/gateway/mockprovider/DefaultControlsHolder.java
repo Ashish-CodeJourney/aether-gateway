@@ -39,11 +39,11 @@ public class DefaultControlsHolder {
         String failMode = perRequest.failMode() != null ? perRequest.failMode() : fallback.failMode();
         Double failRate = perRequest.failMode() != null ? perRequest.failRate() : fallback.failRate();
         return new MockControls(
-                perRequest.latencyMs(),
+                perRequest.latencyMs() != null ? perRequest.latencyMs() : fallback.latencyMs(),
                 failMode,
                 failRate,
-                perRequest.streamDelayMs(),
-                perRequest.truncateAt(),
-                perRequest.tokens());
+                perRequest.streamDelayMs() != null ? perRequest.streamDelayMs() : fallback.streamDelayMs(),
+                perRequest.truncateAt() != null ? perRequest.truncateAt() : fallback.truncateAt(),
+                perRequest.tokens() != null ? perRequest.tokens() : fallback.tokens());
     }
 }

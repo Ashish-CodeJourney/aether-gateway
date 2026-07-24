@@ -45,6 +45,28 @@ class DefaultControlsHolderTest {
     }
 
     @Test
+    void fallsBackToTheConfiguredDefaultStreamDelayWhenTheRequestCarriesNoStreamDelayHeader() {
+        var holder = new DefaultControlsHolder();
+        holder.set(new MockControls(null, null, null, 300, null, null));
+        var perRequestWithNoStreamDelay = MockControls.none();
+
+        MockControls effective = holder.resolve(perRequestWithNoStreamDelay);
+
+        assertThat(effective.streamDelayMs()).isEqualTo(300);
+    }
+
+    @Test
+    void perRequestStreamDelayOverridesTheConfiguredDefaultWhenPresent() {
+        var holder = new DefaultControlsHolder();
+        holder.set(new MockControls(null, null, null, 300, null, null));
+        var perRequestWithStreamDelay = new MockControls(null, null, null, 50, null, null);
+
+        MockControls effective = holder.resolve(perRequestWithStreamDelay);
+
+        assertThat(effective.streamDelayMs()).isEqualTo(50);
+    }
+
+    @Test
     void fallsBackToTheConfiguredDefaultWhenTheRequestCarriesNoFailHeader() {
         var holder = new DefaultControlsHolder();
         var configuredDefault = new MockControls(null, "503", 1.0, null, null, null);
