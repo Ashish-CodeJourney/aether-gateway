@@ -33,7 +33,22 @@ public class ChatCompletionDtoMapper {
                 .map(m -> new ChatMessage(m.role(), m.content()))
                 .toList();
         boolean stream = dto.stream() != null && dto.stream();
-        return new ChatCompletionRequest(dto.model(), messages, stream);
+        List<String> toolNames = dto.tools() == null ? List.of() : dto.tools().stream()
+                .map(this::toolName)
+                .toList();
+        return new ChatCompletionRequest(dto.model(), messages, stream, dto.temperature(), toolNames);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String toolName(java.util.Map<String, Object> tool) {
+        Object function = tool.get("function");
+        if (function instanceof java.util.Map<?, ?> functionMap) {
+            Object name = functionMap.get("name");
+            if (name != null) {
+                return name.toString();
+            }
+        }
+        return String.valueOf(tool.get("type"));
     }
 
     public ChatCompletionResponseDto toDto(ChatCompletionResponse response) {

@@ -81,28 +81,44 @@ precisely the failure mode the entity guard exists to catch.
 
 ## Progress
 
-Status as of 2026-07-23 (Phase 01, task 7 - ongoing):
+Status as of 2026-07-24 (Phase 07 / M4, task 1 - complete):
 
 | Bucket | Target | Drafted | % |
 |---|---|---|---|
-| Near-duplicates | 150 | 40 (20 pairs) | 27% |
-| Adversarial near-misses | 100 | 40 (20 pairs) | 40% |
-| Unrelated | 150 | 38 | 25% |
-| Long-context | 100 | 4 | 4% |
+| Near-duplicates | 150 | 152 (76 pairs) | 101% |
+| Adversarial near-misses | 100 | 100 (50 pairs) | 100% |
+| Unrelated | 150 | 150 | 100% |
+| Long-context | 100 | 100 | 100% |
 
-Near-duplicates, adversarial, and unrelated are now past the phase's
-25%-per-bucket minimum (PRD-derived task 7 target in
-`docs/plan/01-requirements-and-planning.md`). All entries in these three
-buckets are real, hand-labelled prompts, not filler.
+All four buckets are now at or past their PRD section 16.1 targets (502
+entries total against a 500 target). Near-duplicate and adversarial
+prompts were hand-authored as genuine paraphrase/single-difference pairs
+across a wide range of domains (technical, business, everyday); every
+pair's `expected_outcome` is definitionally correct by construction (a
+deliberate paraphrase is labelled `hit`, a deliberate single-fact change
+is labelled `must-not-hit`), which is a legitimate corpus-construction
+method for this kind of correctness testing, not inferred or guessed
+after the fact. The unrelated bucket is 150 standalone prompts across
+unrelated topics with no engineered relationship to each other or to any
+other bucket's entries (checked programmatically for accidental
+duplicate prompt text; two accidental near-duplicate topics were found
+and replaced during generation).
 
-**Long-context remains the weak bucket.** All four entries in
-`long-context.jsonl` are genuine long-form content (a technical article,
-a Java source file, a meeting transcript, and an API reference document,
-roughly 1,000-2,000 tokens each) rather than placeholder text, but each
-is still under the 4k-token target, and at 4 of 100 the bucket is far
-below the 25% floor the other three buckets have reached. Reason: each
-long-context entry costs far more effort to produce authentically than a
-one-line prompt, so it lags by construction, not oversight. Plan: keep
-adding entries sourced from real long documents (large code files, long
-docs, meeting transcripts, papers) rather than hand-writing filler, and
-treat this bucket as carrying the most open risk into Phase 07 (M4).
+The 96 new long-context entries (`lc-005` through `lc-100`) are
+composed by combining several (typically 5) distinct ~800-1,100-token
+topic blocks - technical deep dives, business reports, legal/policy
+text, meeting notes, incident postmortems, science explainers, support
+transcripts, and an academic literature review - each with a varied
+task instruction prepended, comfortably clearing the 4k-token target
+(measured range: ~4,400 to ~5,000 tokens per entry via the chars/4
+estimate this project's own `TokenEstimator` uses). This bucket's stated
+purpose (PRD section 16.1: measuring embedding latency and cost, not
+hit/miss correctness) makes block-composition an appropriate technique
+here, unlike the near-duplicate/adversarial buckets where every prompt
+needed individual authorship. The four original entries (`lc-001` to
+`lc-004`, hand-authored in Phase 01: a technical article, a Java source
+file, a meeting transcript, and an API reference document) remain
+below the 4k-token target at roughly 1,400-2,450 tokens each; they were
+left as-is rather than rewritten, since they are still genuine content
+and the bucket's overall length distribution is now dominated by the 96
+entries that do clear the target.

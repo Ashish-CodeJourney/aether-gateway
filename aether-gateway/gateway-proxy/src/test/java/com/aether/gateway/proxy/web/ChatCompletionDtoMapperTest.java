@@ -9,6 +9,7 @@ import com.aether.gateway.core.domain.Usage;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,7 +22,9 @@ class ChatCompletionDtoMapperTest {
         var dto = new ChatCompletionRequestDto(
                 "mock",
                 List.of(new ChatMessageDto("user", "hello")),
-                false);
+                false,
+                null,
+                null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
 
@@ -32,11 +35,41 @@ class ChatCompletionDtoMapperTest {
 
     @Test
     void defaultsStreamToFalseWhenAbsentFromTheRequest() {
-        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), null);
+        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), null, null, null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
 
         assertThat(domain.stream()).isFalse();
+    }
+
+    @Test
+    void mapsTemperatureThrough() {
+        var dto = new ChatCompletionRequestDto(
+                "mock", List.of(new ChatMessageDto("user", "hi")), false, 0.7, null);
+
+        ChatCompletionRequest domain = mapper.toDomain(dto);
+
+        assertThat(domain.temperature()).isEqualTo(0.7);
+    }
+
+    @Test
+    void extractsToolNamesFromTheFunctionShape() {
+        var toolWithFunctionName = Map.of("type", "function", "function", Map.of("name", "get_weather"));
+        var dto = new ChatCompletionRequestDto(
+                "mock", List.of(new ChatMessageDto("user", "hi")), false, null, List.of(toolWithFunctionName));
+
+        ChatCompletionRequest domain = mapper.toDomain(dto);
+
+        assertThat(domain.tools()).containsExactly("get_weather");
+    }
+
+    @Test
+    void defaultsToolsToEmptyWhenAbsent() {
+        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), false, null, null);
+
+        ChatCompletionRequest domain = mapper.toDomain(dto);
+
+        assertThat(domain.tools()).isEmpty();
     }
 
     @Test
