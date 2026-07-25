@@ -1,0 +1,27 @@
+{
+  "gateway-core": {
+    "covered": 137,
+    "total": 181,
+    "percent": 75.7
+  },
+  "gateway-router": {
+    "covered": 163,
+    "total": 213,
+    "percent": 76.5
+  },
+  "gateway-quota": {
+    "covered": 82,
+    "total": 111,
+    "percent": 73.9
+  },
+  "gateway-cache": {
+    "covered": 100,
+    "total": 123,
+    "percent": 81.3
+  },
+  "aggregate": {
+    "covered": 482,
+    "total": 628,
+    "percent": 76.8
+  }
+}

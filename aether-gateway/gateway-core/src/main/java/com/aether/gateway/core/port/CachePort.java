@@ -28,4 +28,7 @@ public interface CachePort {
 
     /** F4.7: manual invalidation by key prefix within a namespace. Returns the number of entries removed. */
     long invalidateByPrefix(String namespace, String keyPrefix);
+
+    /** F8.3: {@code GET /admin/cache/stats} - the number of live (non-expired) entries in a namespace. */
+    long countEntries(String namespace);
 }

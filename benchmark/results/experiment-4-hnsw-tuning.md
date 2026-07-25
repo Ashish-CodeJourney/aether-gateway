@@ -23,19 +23,19 @@ embeddings - see the table below for the tradeoff.
 
 | m | ef_search | recall@10 | mean latency (ms) |
 |---|---|---|---|
-| 8 | 10 | 0.9974 | 13.2176 |
-| 8 | 40 | 0.9974 | 12.8191 |
-| 8 | 100 | 0.9974 | 13.1653 |
-| 8 | 200 | 0.9974 | 12.0774 |
-| 16 | 10 | 0.9987 | 13.9956 |
-| 16 | 40 | 0.9987 | 13.2348 |
-| 16 | 100 | 0.9987 | 13.2083 |
-| 16 | 200 | 0.9987 | 12.8941 |
-| 32 | 10 | 0.9987 | 13.8604 |
-| 32 | 40 | 0.9987 | 13.7836 |
-| 32 | 100 | 0.9987 | 14.0035 |
-| 32 | 200 | 0.9987 | 13.6032 |
-| brute-force | n/a | 1.0000 | 19.6116 |
+| 8 | 10 | 0.9987 | 19.9332 |
+| 8 | 40 | 0.9987 | 18.1107 |
+| 8 | 100 | 0.9987 | 15.5036 |
+| 8 | 200 | 0.9987 | 16.0917 |
+| 16 | 10 | 0.9921 | 17.6858 |
+| 16 | 40 | 0.9921 | 16.4134 |
+| 16 | 100 | 0.9921 | 18.8226 |
+| 16 | 200 | 0.9921 | 16.9143 |
+| 32 | 10 | 0.9987 | 18.2397 |
+| 32 | 40 | 0.9987 | 19.2121 |
+| 32 | 100 | 0.9987 | 18.2260 |
+| 32 | 200 | 0.9987 | 20.4891 |
+| brute-force | n/a | 1.0000 | 24.1891 |
 
 
 The production migration (`db/migrations/V3__cache_entry.sql`) uses
@@ -43,5 +43,5 @@ The production migration (`db/migrations/V3__cache_entry.sql`) uses
 override (pgvector's own default, currently 40).
 ## Justification for the production default (m = 16)
 
-Moving from m = 16 to m = 32 buys +0.00 pp recall@10 (99.87% -> 99.87%) for -0.14 ms of extra mean query latency (14.00 ms -> 13.86 ms). At this measured scale that is a real but small gain for a real but small cost; m = 16 (pgvector's own suggested default, matching what `db/migrations/V3__cache_entry.sql` already uses) is a reasonable operating point rather than an unexamined default, and `ef_search` did not measurably change recall in this sweep at any tested m, so the production code's reliance on pgvector's own `ef_search` default (currently 40) is left as-is.
+Moving from m = 16 to m = 32 buys +0.66 pp recall@10 (99.21% -> 99.87%) for +0.55 ms of extra mean query latency (17.69 ms -> 18.24 ms). At this measured scale that is a real but small gain for a real but small cost; m = 16 (pgvector's own suggested default, matching what `db/migrations/V3__cache_entry.sql` already uses) is a reasonable operating point rather than an unexamined default, and `ef_search` did not measurably change recall in this sweep at any tested m, so the production code's reliance on pgvector's own `ef_search` default (currently 40) is left as-is.
 

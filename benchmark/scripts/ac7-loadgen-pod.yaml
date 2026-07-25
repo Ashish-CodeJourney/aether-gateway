@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ac7-loadgen
+  namespace: aether-gateway
+spec:
+  restartPolicy: Never
+  containers:
+    - name: loadgen
+      image: curlimages/curl:8.10.1
+      command: ["sh", "/scripts/ac7-in-cluster.sh"]
+      env:
+        - name: STREAM_COUNT
+          value: "500"
+      volumeMounts:
+        - name: script
+          mountPath: /scripts
+  volumes:
+    - name: script
+      configMap:
+        name: ac7-script
+        defaultMode: 0755

@@ -1,11 +1,29 @@
 server:
   port: ${GATEWAY_PORT:8080}
+  # Phase 11 (M8): F1.4's own cancellation guarantee (client disconnect
+  # -> upstream cancel within 100ms, Phase 04) is what makes graceful
+  # shutdown safe for in-flight SSE streams at all - "graceful" here
+  # means "stop accepting new work, let the in-flight streams that are
+  # already producing bytes finish naturally," not any special-cased
+  # stream-draining logic. See k8s/deployment.yaml's preStop/
+  # terminationGracePeriodSeconds for how this composes with an actual
+  # rolling update: preStop sleeps long enough for the Service to stop
+  # routing new traffic to this pod *before* Netty's graceful shutdown
+  # window (this property) even starts counting down.
+  shutdown: graceful
 
 spring:
   application:
     name: aether-gateway
   jackson:
     property-naming-strategy: SNAKE_CASE
+  codec:
+    # F9.4: an explicit, deliberately-chosen limit rather than silently
+    # relying on WebFlux's own 256KB default - 1MB comfortably covers
+    # MAX_MESSAGES (100, ChatCompletionRequest) worth of realistic chat
+    # content while still bounding how much of a single request this
+    # process will buffer in memory.
+    max-in-memory-size: 1MB
   datasource:
     url: ${GATEWAY_DB_URL:jdbc:postgresql://localhost:5432/aether}
     username: ${GATEWAY_DB_USER:postgres}
@@ -17,6 +35,15 @@ spring:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
+  lifecycle:
+    # No real production p99 stream duration has been measured (M6's
+    # experiments load-tested the transport, not a realistic long-lived
+    # completion - mock-provider's canned response has no artificial
+    # delay by default); 30s is a documented, conservative assumption
+    # matching typical real LLM streaming completion times (many run
+    # 5-30s), not a fabricated benchmark number. k8s/deployment.yaml's
+    # terminationGracePeriodSeconds is set comfortably above this.
+    timeout-per-shutdown-phase: 30s
 
 management:
   endpoints:
@@ -26,6 +53,18 @@ management:
   endpoint:
     health:
       show-details: never
+      probes:
+        enabled: true
+  health:
+    # Phase 11 (M8): readiness must flip to DOWN before the pod actually
+    # stops accepting connections, so the Service's endpoint controller
+    # removes this pod from rotation *before* graceful shutdown begins -
+    # otherwise new requests keep arriving at a pod that is already
+    # draining. Liveness intentionally does not depend on the same
+    # signal: a pod that is gracefully draining is still alive and must
+    # not be killed early by a failing liveness probe.
+    readiness-state:
+      enabled: true
   tracing:
     sampling:
       probability: 1.0
@@ -40,3 +79,22 @@ aether:
     default-threshold: ${AETHER_CACHE_DEFAULT_THRESHOLD:0.94}
   cost-model:
     config-path: ${COST_MODEL_CONFIG_PATH:cost-model.yaml}
+  security:
+    # F9.5: per-IP token bucket for the anonymous (no Authorization
+    # header, or an unrecognised one) request path only - real API keys
+    # already have their own per-key RPS limit (F5.1) and never touch
+    # this. 5 req/s is a conservative default for a genuinely anonymous
+    # public client; gateway-acceptance-tests overrides this to a very
+    # high value, since its own suite legitimately sends many
+    # unauthenticated requests from one IP (the test host) in quick
+    # succession - a production concern, not something the suite itself
+    # is testing.
+    anonymous-ip-rps-limit: ${AETHER_SECURITY_ANONYMOUS_IP_RPS_LIMIT:5}
+  admin:
+    # F8.5: blank means every /admin/** request is rejected (fail
+    # closed) - there is no implicit dev bypass.
+    api-key: ${AETHER_ADMIN_API_KEY:}
+    # PRD 9.4: the operator console's origin, granted CORS access to
+    # /admin/** only. Vite's dev server default; override for a built/
+    # deployed console.
+    console-origin: ${AETHER_ADMIN_CONSOLE_ORIGIN:http://localhost:5173}

@@ -1,0 +1,3 @@
+scenario,total_requests,total_spend_usd
+no_cache,502,0.2392065
+with_cache,502,0.2388750

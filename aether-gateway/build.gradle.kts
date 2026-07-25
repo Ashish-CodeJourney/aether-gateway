@@ -12,6 +12,7 @@ allprojects {
 subprojects {
     apply(plugin = "java-library")
     apply(plugin = "io.spring.dependency-management")
+    apply(plugin = "jacoco")
 
     configure<JavaPluginExtension> {
         toolchain {
@@ -61,5 +62,19 @@ subprojects {
 
     tasks.named("check") {
         dependsOn(tasks.named("integrationTest"))
+    }
+
+    // AC9 (PRD 4.1): line coverage on core modules >= 75%. Merges unit
+    // and integration test execution data, since a meaningful slice of
+    // coverage (e.g. gateway-cache's real Postgres/pgvector paths) only
+    // ever executes in the integrationTest source set.
+    tasks.register<JacocoReport>("jacocoMergedReport") {
+        dependsOn(tasks.named("test"), tasks.named("integrationTest"))
+        executionData(fileTree(layout.buildDirectory.dir("jacoco")) { include("*.exec") })
+        sourceSets(sourceSets["main"])
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+        }
     }
 }

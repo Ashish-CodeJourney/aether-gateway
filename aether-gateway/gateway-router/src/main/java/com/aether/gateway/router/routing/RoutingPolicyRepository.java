@@ -32,6 +32,7 @@ public class RoutingPolicyRepository implements RoutingSource, RoutingReloadUseC
     private final Path configPath;
     private final Function<ProviderConfig, ProviderAdapter> adapterFactory;
     private final RoutingYamlParser parser = new RoutingYamlParser();
+    private final ProviderBaseUrlValidator baseUrlValidator = new ProviderBaseUrlValidator();
     private final AtomicReference<LoadedRoutingConfig> config = new AtomicReference<>();
     private final AtomicReference<Map<String, ProviderAdapter>> adapters = new AtomicReference<>(Map.of());
 
@@ -45,6 +46,24 @@ public class RoutingPolicyRepository implements RoutingSource, RoutingReloadUseC
         try {
             String yaml = Files.readString(configPath);
             LoadedRoutingConfig loaded = parser.parse(yaml);
+
+            // F9.3: validated before anything below is committed - a
+            // rejected provider means this whole reload is rejected and
+            // the previous (already-validated) config keeps serving, so
+            // "no request is ever dispatched to that address" holds even
+            // for a reload that mixes one bad provider in with good ones.
+            // Scoped to real, operator-configured provider types only
+            // ("type" other than the "mock" default) - mock-primary/
+            // mock-fallback deliberately point at localhost for every
+            // dev/test/docker-compose/kind setup this project has, and
+            // that is not the SSRF risk F9.3 exists for (an operator
+            // pointing a *real* provider at their own internal network).
+            for (ProviderConfig providerConfig : loaded.providers().values()) {
+                if (!"mock".equals(providerConfig.type())) {
+                    baseUrlValidator.validate(providerConfig.name(), providerConfig.baseUrl());
+                }
+            }
+
             config.set(loaded);
 
             Map<String, ProviderAdapter> newAdapters = new HashMap<>();

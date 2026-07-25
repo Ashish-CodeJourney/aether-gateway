@@ -1,0 +1,56 @@
+# kind's default CNI (kindnet) does not enforce NetworkPolicy - this
+# manifest is correct and would be enforced by any CNI that does
+# (Calico, Cilium), but enforcement itself was not proven live in this
+# phase's session (installing Calico into kind on top of everything
+# else was out of scope given the phase's actual priority: the
+# graceful-drain proof test). Disclosed, not silently assumed working.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway
+  namespace: aether-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The gateway's /v1/* API is the public surface; allow from
+    # anywhere. A real deployment would scope this to an ingress
+    # controller's pods instead of the whole cluster.
+    - {}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mock-primary
+      ports:
+        - port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mock-fallback
+      ports:
+        - port: 8081
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: aether-gateway
+data:
+  routing.yaml: |
+    # Same shape as routing.yaml/routing.docker.yaml, using this
+    # cluster's Service DNS names.
+    providers:
+      mock-primary:
+        baseUrl: http://mock-primary:8081
+      mock-fallback:
+        baseUrl: http://mock-fallback:8081
+
+    routes:
+      - alias: mock
+        chain:
+          - provider: mock-primary
+            model: mock
+            weight: 100
+          - provider: mock-fallback
+            model: mock
+        cache:
+          enabled: true
+          threshold: 0.94
+          ttl: 6h
+  cost-model.yaml: |
+    models:
+      - provider: mock-primary
+        model: mock
+        inputPricePerMillion: 0.50
+        outputPricePerMillion: 1.50
+      - provider: mock-fallback
+        model: mock
+        inputPricePerMillion: 0.50
+        outputPricePerMillion: 1.50

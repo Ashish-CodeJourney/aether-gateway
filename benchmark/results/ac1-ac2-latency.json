@@ -1,0 +1,19 @@
+{
+  "AC1": {
+    "upstream_p95_ms": 1.54,
+    "gateway_p95_ms": 7.78,
+    "overhead_p95_ms": 6.24,
+    "target_ms": 15,
+    "meets_target": true,
+    "samples": 100
+  },
+  "AC2": {
+    "hit_p95_ms": 8.9,
+    "target_ms": 50,
+    "meets_target": true,
+    "samples": 100,
+    "cache_headers_observed": [
+      "EXACT_HIT"
+    ]
+  }
+}

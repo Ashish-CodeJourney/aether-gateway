@@ -1,0 +1,186 @@
+# Phase 11 (M8): the graceful-SSE-drain wiring is the phase's single
+# highest-value piece (AC7). Sequence on a rolling update / scale-down:
+#   1. Pod marked Terminating; readiness immediately reports DOWN
+#      (server.shutdown=graceful + management.health.readiness-state,
+#      gateway-proxy/application.yml) so the Service's endpoint
+#      controller stops routing *new* requests to this pod.
+#   2. preStop hook sleeps 10s - long enough for that endpoint removal
+#      to actually propagate through kube-proxy/iptables/any client-side
+#      connection pool before SIGTERM is sent. Without this, SIGTERM can
+#      arrive before in-flight requests believe the pod is still
+#      routable, which is a classic source of the "rolling update breaks
+#      streams" bug this whole phase exists to prevent.
+#   3. SIGTERM triggers Spring's graceful shutdown: stop accepting new
+#      connections, let in-flight streams finish naturally (F1.4's real
+#      cancellation guarantee, from Phase 04, is what makes "finish
+#      naturally" safe at all), up to timeout-per-shutdown-phase (30s,
+#      application.yml).
+#   4. terminationGracePeriodSeconds (50s) is preStop-sleep +
+#      timeout-per-shutdown-phase + a 10s buffer - if a stream is still
+#      running past that, Kubernetes SIGKILLs the pod; this is the
+#      ceiling the proof test (500 concurrent streams, zero broken)
+#      needs to stay well under.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: aether-gateway
+spec:
+  replicas: 3
+  # F3.9/ADR-004: multiple replicas means multiple independent local
+  # circuit breakers, each learning about a failing provider from its
+  # own traffic only - the Redis advisory hint (already built in Phase
+  # 05) is what keeps them from being wildly inconsistent with each
+  # other, not a shared/synchronized breaker state. No new design here;
+  # replicas: 3 is what actually exercises that existing design under
+  # real multi-replica conditions instead of just Phase 05's
+  # single-process proof.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      terminationGracePeriodSeconds: 50
+      containers:
+        - name: gateway
+          image: aether-gateway-gateway:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GATEWAY_PORT
+              value: "8080"
+            - name: GATEWAY_DB_URL
+              value: jdbc:postgresql://postgres:5432/aether
+            - name: GATEWAY_DB_USER
+              value: postgres
+            - name: GATEWAY_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: GATEWAY_DB_PASSWORD
+            - name: SPRING_DATA_REDIS_HOST
+              value: redis
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+            - name: ROUTING_CONFIG_PATH
+              value: /config/routing.yaml
+            - name: COST_MODEL_CONFIG_PATH
+              value: /config/cost-model.yaml
+            - name: AETHER_CACHE_ONNX_RESOURCE_CACHE_DIR
+              value: /onnx-cache
+            # Found live: spring-ai-transformers' own resource cache
+            # (above) only covers the tokenizer/model *files*. The
+            # underlying DJL PyTorch engine downloads a separate native
+            # library on every startup (ai.djl.pytorch.jni.LibUtils),
+            # and DJL_CACHE_DIR isn't set anywhere else, so it falls
+            # back to ${user.home} -> not writable (the "aether" user
+            # has no home directory, Dockerfile has no -m on useradd)
+            # -> ${java.io.tmpdir}, i.e. the container's own ephemeral
+            # filesystem. That meant *every* pod restart re-downloaded
+            # this native library from scratch regardless of the
+            # onnx-cache volume above, which is what kept the crash
+            # loop going even after pre-caching the tokenizer/model.
+            # Pointing it at the same persistent volume fixes it the
+            # same way, for the same reason.
+            - name: DJL_CACHE_DIR
+              value: /onnx-cache/djl-cache
+            - name: AETHER_ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-secrets
+                  key: AETHER_ADMIN_API_KEY
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: onnx-cache
+              mountPath: /onnx-cache
+          # Found live, during this phase's own proof-test setup: a 2Gi
+          # limit OOMKilled the container (exit code 137) reliably.
+          # docker-compose.yml never set an explicit memory limit, so
+          # this never surfaced there - the JVM's -XX:MaxRAMPercentage=75
+          # (baked into the image) sizes its heap off the *container's*
+          # memory limit, and the ONNX/PyTorch native memory the
+          # embedding model (Phase 07/M4) needs on top of that heap
+          # pushed the total past 2Gi during model load. Same class of
+          # bug as Phase 08 (M5)'s Dockerfile/Alpine findings: only
+          # caught by actually running under the real target
+          # orchestration, never by `java -jar` or docker-compose
+          # (which has no equivalent cgroup memory ceiling here).
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1.5Gi
+            limits:
+              memory: 3Gi
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+          # First boot needs to download the ~90MB ONNX embedding model
+          # (Phase 07/M4) into the emptyDir onnx-cache volume, which can
+          # comfortably exceed a normal liveness window - without a
+          # startupProbe, the liveness probe below would kill the
+          # container mid-download on every cold start, restart it, and
+          # repeat forever. readiness/liveness are suspended until this
+          # succeeds (real Kubernetes behaviour, not a workaround).
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 40
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-config
+        - name: onnx-cache
+          # hostPath, not emptyDir: this is a single-node kind cluster
+          # (PRD section 9.5), so every replica lands on the same node
+          # and can share one cached ~90MB ONNX model download instead
+          # of each independently re-downloading it from GitHub on
+          # every cold start - found live, during this phase's own
+          # proof-test setup, when 3-4 replicas downloading
+          # simultaneously against this sandbox's occasionally flaky
+          # network turned a normally-quick cold start into repeated
+          # startupProbe timeouts and restarts. A real multi-node
+          # cluster would need a ReadWriteMany-capable shared volume
+          # (or, better, bake the model into the image at build time)
+          # for the same effect - disclosed, not silently assumed to
+          # generalize past this single-node proof-test cluster.
+          hostPath:
+            path: /var/aether-onnx-cache
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: aether-gateway
+spec:
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

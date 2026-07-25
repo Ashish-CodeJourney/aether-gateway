@@ -14,5 +14,6 @@ public record ChatCompletionRequestDto(
         List<ChatMessageDto> messages,
         Boolean stream,
         Double temperature,
-        List<Map<String, Object>> tools) {
+        List<Map<String, Object>> tools,
+        Map<String, String> variables) {
 }

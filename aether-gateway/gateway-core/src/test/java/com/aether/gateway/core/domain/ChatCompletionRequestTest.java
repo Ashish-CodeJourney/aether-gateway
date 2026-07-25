@@ -24,6 +24,29 @@ class ChatCompletionRequestTest {
     }
 
     @Test
+    void rejectsMoreThanTheMaximumAllowedMessageCount() {
+        List<ChatMessage> tooMany = java.util.stream.IntStream.range(0, ChatCompletionRequest.MAX_MESSAGES + 1)
+                .mapToObj(i -> userMessage("message " + i))
+                .toList();
+
+        assertThatThrownBy(() -> new ChatCompletionRequest("mock", tooMany, false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("messages")
+                .hasMessageContaining(String.valueOf(ChatCompletionRequest.MAX_MESSAGES));
+    }
+
+    @Test
+    void acceptsExactlyTheMaximumAllowedMessageCount() {
+        List<ChatMessage> exactlyMax = java.util.stream.IntStream.range(0, ChatCompletionRequest.MAX_MESSAGES)
+                .mapToObj(i -> userMessage("message " + i))
+                .toList();
+
+        var request = new ChatCompletionRequest("mock", exactlyMax, false);
+
+        assertThat(request.messages()).hasSize(ChatCompletionRequest.MAX_MESSAGES);
+    }
+
+    @Test
     void acceptsAValidNonStreamingRequest() {
         var request = new ChatCompletionRequest("mock", List.of(userMessage("hello")), false);
 

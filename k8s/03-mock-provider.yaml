@@ -1,0 +1,89 @@
+# PRD section 14: real providers cannot be made to fail on command, so
+# this cluster's proof test (500 concurrent streams through a rolling
+# update, AC7) runs against the same mock-provider used by every other
+# phase's resilience proof, not a real LLM provider.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-primary
+  namespace: aether-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-primary
+  template:
+    metadata:
+      labels:
+        app: mock-primary
+    spec:
+      containers:
+        - name: mock-provider
+          image: aether-gateway-mock-primary:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MOCK_PROVIDER_PORT
+              value: "8081"
+          ports:
+            - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-primary
+  namespace: aether-gateway
+spec:
+  selector:
+    app: mock-primary
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-fallback
+  namespace: aether-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-fallback
+  template:
+    metadata:
+      labels:
+        app: mock-fallback
+    spec:
+      containers:
+        - name: mock-provider
+          image: aether-gateway-mock-fallback:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MOCK_PROVIDER_PORT
+              value: "8081"
+          ports:
+            - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-fallback
+  namespace: aether-gateway
+spec:
+  selector:
+    app: mock-fallback
+  ports:
+    - port: 8081
+      targetPort: 8081

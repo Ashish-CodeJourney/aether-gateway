@@ -72,6 +72,10 @@ services:
       # embedding model download (Phase 07/M4) across container
       # restarts, instead of re-fetching it from GitHub every time.
       AETHER_CACHE_ONNX_RESOURCE_CACHE_DIR: /onnx-cache
+      # Phase 10 (M7): F8.5 admin auth is fail-closed with no key
+      # configured. This is a local-dev/demo-only default, exactly like
+      # the Postgres password above - never a production secret.
+      AETHER_ADMIN_API_KEY: dev-admin-key-do-not-use-in-production
     volumes:
       - ./routing.docker.yaml:/config/routing.yaml:ro
       - ./aether-gateway/cost-model.yaml:/config/cost-model.yaml:ro

@@ -30,7 +30,10 @@ public class RoutingYamlParser {
         Map<String, Object> providersRaw = (Map<String, Object>) root.getOrDefault("providers", Map.of());
         for (var entry : providersRaw.entrySet()) {
             Map<String, Object> providerMap = (Map<String, Object>) entry.getValue();
-            providers.put(entry.getKey(), new ProviderConfig(entry.getKey(), (String) providerMap.get("baseUrl")));
+            String type = (String) providerMap.getOrDefault("type", "mock");
+            String apiKeyEnvVar = (String) providerMap.get("apiKeyEnvVar");
+            providers.put(entry.getKey(), new ProviderConfig(
+                    entry.getKey(), (String) providerMap.get("baseUrl"), type, apiKeyEnvVar));
         }
 
         Map<String, RouteConfig> routes = new LinkedHashMap<>();

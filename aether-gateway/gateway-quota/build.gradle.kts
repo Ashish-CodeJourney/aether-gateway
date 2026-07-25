@@ -15,5 +15,7 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     integrationTestImplementation(libs.testcontainers.postgresql)
+    integrationTestImplementation("org.flywaydb:flyway-core")
+    integrationTestImplementation("org.flywaydb:flyway-database-postgresql")
     integrationTestRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

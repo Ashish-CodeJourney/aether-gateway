@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 
-/** F3.8: minimal breaker-state observability endpoint; full provider health API (F8.2) arrives in Phase 10. */
+/** F3.8/F8.2: breaker-state observability, the primary provider-health signal this project exposes. */
 @RestController
 public class ProvidersController {
 
@@ -28,6 +28,16 @@ public class ProvidersController {
                 .map(maybeStatus -> maybeStatus
                         .map(this::toResponse)
                         .orElseGet(() -> ResponseEntity.notFound().build()));
+    }
+
+    /** F8.2: {@code GET /admin/providers/health} - every known (provider, model) pair's breaker state at once. */
+    @GetMapping("/admin/providers/health")
+    public Mono<ResponseEntity<Object>> health() {
+        return Mono.fromCallable(breakerStatusUseCase::allStatuses)
+                .subscribeOn(virtualThreadScheduler)
+                .map(statuses -> ResponseEntity.ok((Object) statuses.stream()
+                        .map(s -> new BreakerStatusDto(s.provider(), s.model(), s.state().name()))
+                        .toList()));
     }
 
     private ResponseEntity<Object> toResponse(ProviderBreakerStatus status) {

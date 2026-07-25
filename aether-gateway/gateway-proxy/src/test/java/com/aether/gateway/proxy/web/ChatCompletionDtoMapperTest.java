@@ -24,6 +24,7 @@ class ChatCompletionDtoMapperTest {
                 List.of(new ChatMessageDto("user", "hello")),
                 false,
                 null,
+                null,
                 null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
@@ -35,7 +36,7 @@ class ChatCompletionDtoMapperTest {
 
     @Test
     void defaultsStreamToFalseWhenAbsentFromTheRequest() {
-        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), null, null, null);
+        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), null, null, null, null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
 
@@ -45,7 +46,7 @@ class ChatCompletionDtoMapperTest {
     @Test
     void mapsTemperatureThrough() {
         var dto = new ChatCompletionRequestDto(
-                "mock", List.of(new ChatMessageDto("user", "hi")), false, 0.7, null);
+                "mock", List.of(new ChatMessageDto("user", "hi")), false, 0.7, null, null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
 
@@ -56,7 +57,7 @@ class ChatCompletionDtoMapperTest {
     void extractsToolNamesFromTheFunctionShape() {
         var toolWithFunctionName = Map.of("type", "function", "function", Map.of("name", "get_weather"));
         var dto = new ChatCompletionRequestDto(
-                "mock", List.of(new ChatMessageDto("user", "hi")), false, null, List.of(toolWithFunctionName));
+                "mock", List.of(new ChatMessageDto("user", "hi")), false, null, List.of(toolWithFunctionName), null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
 
@@ -65,7 +66,7 @@ class ChatCompletionDtoMapperTest {
 
     @Test
     void defaultsToolsToEmptyWhenAbsent() {
-        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), false, null, null);
+        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), false, null, null, null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
 

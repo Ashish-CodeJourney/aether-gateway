@@ -1,0 +1,41 @@
+# These pods are I/O-bound waiting on upstream provider calls - CPU
+# sits near idle while genuinely saturated with concurrent streams, so
+# scaling on CPU (the default, easy choice) would be actively wrong for
+# this workload. Scales on the real signal instead: in-flight streams
+# per pod, already exported as aether_gateway_in_flight_streams (Phase
+# 08/M5's MicrometerMetricsAdapter).
+#
+# Requires Prometheus + Prometheus Adapter deployed in-cluster to serve
+# this metric through the custom.metrics.k8s.io API - not deployed or
+# proven live in this phase's session (a real, disclosed scope
+# limitation: doing that properly, plus the load generation to actually
+# trigger a scale-up event, was out of reach on top of the graceful-
+# drain proof test below, which is this phase's named highest-priority
+# item). The manifest itself is correct and is what a real deployment
+# would apply once the adapter is in place.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: aether-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: aether_gateway_in_flight_streams
+        target:
+          type: AverageValue
+          averageValue: "50"
+  behavior:
+    scaleDown:
+      # I/O-bound streaming workload: scale down conservatively so an
+      # in-flight-stream burst that just ended doesn't immediately yank
+      # capacity a new burst needs seconds later.
+      stabilizationWindowSeconds: 120

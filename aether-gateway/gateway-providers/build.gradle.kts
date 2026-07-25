@@ -6,5 +6,6 @@ dependencies {
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.mockwebserver)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

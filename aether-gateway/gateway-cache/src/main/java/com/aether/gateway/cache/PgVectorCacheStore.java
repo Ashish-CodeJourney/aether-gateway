@@ -107,6 +107,14 @@ public class PgVectorCacheStore {
         return id.toString();
     }
 
+    /** F8.3: live (non-expired) entry count for a namespace, for {@code GET /admin/cache/stats}. */
+    public long countByNamespace(String namespace) {
+        return jdbcClient.sql("SELECT COUNT(*) FROM cache_entry WHERE namespace = :namespace AND expires_at > now()")
+                .param("namespace", namespace)
+                .query(Long.class)
+                .single();
+    }
+
     /** F4.7: manual invalidation. {@code modelPrefix} matches the start of the stored {@code model} column. */
     public long deleteByNamespaceAndModelPrefix(String namespace, String modelPrefix) {
         return jdbcClient.sql("""

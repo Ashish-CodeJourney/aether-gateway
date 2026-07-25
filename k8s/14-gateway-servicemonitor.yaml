@@ -1,0 +1,19 @@
+# Requires the Prometheus Operator's CRDs (not installed in this
+# phase's kind cluster - out of scope on top of the graceful-drain
+# proof test, disclosed rather than silently assumed working). A real
+# deployment running the Prometheus Operator would scrape
+# /actuator/prometheus via this ServiceMonitor instead of the plain
+# static-scrape-config docker-compose.yml's Prometheus uses.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gateway
+  namespace: aether-gateway
+spec:
+  selector:
+    matchLabels:
+      app: gateway
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s

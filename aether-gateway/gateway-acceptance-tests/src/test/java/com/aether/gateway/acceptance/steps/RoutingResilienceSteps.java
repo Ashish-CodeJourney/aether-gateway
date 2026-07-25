@@ -55,7 +55,9 @@ public class RoutingResilienceSteps {
 
     @When("the routing policy is reloaded")
     public void theRoutingPolicyIsReloaded() throws Exception {
-        HttpResponse<String> response = client.postJson(AcceptanceEnvironment.gatewayBaseUrl() + "/admin/routes/reload", "");
+        HttpResponse<String> response = client.postJson(
+                AcceptanceEnvironment.gatewayBaseUrl() + "/admin/routes/reload", "", null,
+                java.util.Map.of("X-Aether-Admin-Key", AcceptanceEnvironment.adminApiKey()));
         assertThat(response.statusCode()).isEqualTo(200);
     }
 

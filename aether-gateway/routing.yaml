@@ -8,6 +8,33 @@ providers:
     baseUrl: http://localhost:8082
   mock-fallback:
     baseUrl: http://localhost:8083
+  # Phase 12 (M9): real providers, each a thin config pointing at one of
+  # the ProviderAdapter implementations in gateway-providers (added with
+  # zero changes to gateway-core or gateway-router - the hexagonal
+  # boundary's payoff). `type` selects the adapter; `apiKeyEnvVar` names
+  # an *environment variable* to read the real credential from, never
+  # the credential itself (F9.2 - this file is safe to commit even with
+  # these entries active). Uncomment and set the named env var to use:
+  #
+  # ollama-local:
+  #   baseUrl: http://localhost:11434
+  #   type: ollama
+  #   # No apiKeyEnvVar: local Ollama has no built-in auth.
+  #
+  # groq-main:
+  #   baseUrl: https://api.groq.com/openai/v1
+  #   type: groq
+  #   apiKeyEnvVar: GROQ_API_KEY
+  #
+  # gemini-main:
+  #   baseUrl: https://generativelanguage.googleapis.com
+  #   type: gemini
+  #   apiKeyEnvVar: GEMINI_API_KEY
+  #
+  # openai-compatible-main:
+  #   baseUrl: https://your-provider.example.com/v1
+  #   type: openai-compatible
+  #   apiKeyEnvVar: CUSTOM_PROVIDER_API_KEY
 
 routes:
   - alias: mock

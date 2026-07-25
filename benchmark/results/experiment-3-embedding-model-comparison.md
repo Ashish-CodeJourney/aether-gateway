@@ -12,7 +12,7 @@ experiments.
 |---|---|---|---|
 | Hit rate at 0.94 | 14.5% | 14.5% | +0.0 pp |
 | False-hit rate at 0.94 | 28.0% | 36.0% | +8.0 pp |
-| Mean embed() latency | 4.61 ms | 28.24 ms | +23.63 ms |
+| Mean embed() latency | 7.23 ms | 41.48 ms | +34.25 ms |
 | Bytes per cached vector (float32) | 1536 | 3072 | +1536 |
 
 ## Choice
@@ -20,7 +20,7 @@ experiments.
 The product keeps **MiniLM-L6** (ADR-007). At the shared reference
 threshold, mpnet-base-v2 does not clear a materially better
 accuracy trade-off large enough to justify its measured cost: 2.00x
-the per-vector storage and 6.13x the embed() latency, both paid on
+the per-vector storage and 5.73x the embed() latency, both paid on
 every single request (cache lookup embeds the incoming prompt
 synchronously, F4.3). This is a measured tradeoff, not a "it was
 the default" claim - the raw numbers above are what would have to

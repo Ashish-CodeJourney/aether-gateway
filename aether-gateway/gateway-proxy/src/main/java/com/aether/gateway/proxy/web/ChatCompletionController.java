@@ -3,8 +3,14 @@ package com.aether.gateway.proxy.web;
 import com.aether.gateway.core.domain.ApiKeyContext;
 import com.aether.gateway.core.domain.CacheDecision;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
+import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.CostCalculator;
 import com.aether.gateway.core.domain.ModelPricing;
+import com.aether.gateway.core.domain.PromptNotFoundException;
+import com.aether.gateway.core.domain.PromptReference;
+import com.aether.gateway.core.domain.PromptTemplateRenderer;
+import com.aether.gateway.core.domain.PromptVariableValidationException;
+import com.aether.gateway.core.domain.PromptVersion;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.QuotaDecision;
 import com.aether.gateway.core.domain.RequestLogEntry;
@@ -17,7 +23,9 @@ import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
 import com.aether.gateway.core.port.CostModelPort;
+import com.aether.gateway.core.port.IpRateLimitPort;
 import com.aether.gateway.core.port.MetricsPort;
+import com.aether.gateway.core.port.PromptRegistryPort;
 import com.aether.gateway.core.port.QuotaPort;
 import com.aether.gateway.core.port.RequestLogPort;
 import com.aether.gateway.router.routing.RoutingSource;
@@ -25,6 +33,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -40,6 +49,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -87,12 +97,14 @@ public class ChatCompletionController {
     private final ChatStreamUseCase chatStreamUseCase;
     private final ApiKeyLookupPort apiKeyLookupPort;
     private final QuotaPort quotaPort;
+    private final IpRateLimitPort ipRateLimitPort;
     private final TokenEstimator tokenEstimator;
     private final CachePort cachePort;
     private final RoutingSource routingSource;
     private final MetricsPort metricsPort;
     private final RequestLogPort requestLogPort;
     private final CostModelPort costModelPort;
+    private final PromptRegistryPort promptRegistryPort;
     private final ChatCompletionDtoMapper mapper;
     private final Scheduler virtualThreadScheduler;
 
@@ -101,24 +113,28 @@ public class ChatCompletionController {
             ChatStreamUseCase chatStreamUseCase,
             ApiKeyLookupPort apiKeyLookupPort,
             QuotaPort quotaPort,
+            IpRateLimitPort ipRateLimitPort,
             TokenEstimator tokenEstimator,
             CachePort cachePort,
             RoutingSource routingSource,
             MetricsPort metricsPort,
             RequestLogPort requestLogPort,
             CostModelPort costModelPort,
+            PromptRegistryPort promptRegistryPort,
             ChatCompletionDtoMapper mapper,
             Scheduler virtualThreadScheduler) {
         this.chatCompletionUseCase = chatCompletionUseCase;
         this.chatStreamUseCase = chatStreamUseCase;
         this.apiKeyLookupPort = apiKeyLookupPort;
         this.quotaPort = quotaPort;
+        this.ipRateLimitPort = ipRateLimitPort;
         this.tokenEstimator = tokenEstimator;
         this.cachePort = cachePort;
         this.routingSource = routingSource;
         this.metricsPort = metricsPort;
         this.requestLogPort = requestLogPort;
         this.costModelPort = costModelPort;
+        this.promptRegistryPort = promptRegistryPort;
         this.mapper = mapper;
         this.virtualThreadScheduler = virtualThreadScheduler;
     }
@@ -137,16 +153,88 @@ public class ChatCompletionController {
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestHeader(value = "X-Aether-No-Cache", required = false) String noCacheHeader,
             @RequestHeader(value = "X-Aether-Cache-Threshold", required = false) Double thresholdOverride,
-            @RequestBody ChatCompletionRequestDto requestDto) {
-        ChatCompletionRequest domainRequest = mapper.toDomain(requestDto);
+            @RequestHeader(value = "X-Aether-Prompt", required = false) String promptReferenceHeader,
+            @RequestBody ChatCompletionRequestDto requestDto,
+            ServerHttpRequest httpRequest) {
+        String clientIp = clientIp(httpRequest);
         boolean noCachePresent = noCacheHeader != null;
         long requestStartNanos = System.nanoTime();
-        return Mono.fromCallable(() -> checkQuota(authorization, domainRequest))
+        // F7.2/F7.4: captured here (not threaded through every downstream
+        // method signature) and read once at the very end to attach
+        // X-Aether-Prompt-Version - the header is the exit criterion's
+        // observable proof that a rollback took effect on the very next
+        // request, no gateway restart. A fresh AtomicReference per call,
+        // so no cross-request state leaks between concurrent requests.
+        java.util.concurrent.atomic.AtomicReference<PromptVersion> resolvedPromptVersion = new java.util.concurrent.atomic.AtomicReference<>();
+        return Mono.fromCallable(() -> resolveMessages(promptReferenceHeader, requestDto, resolvedPromptVersion))
                 .subscribeOn(virtualThreadScheduler)
-                .flatMap(quotaOutcome -> Mono
-                        .fromCallable(() -> checkCache(quotaOutcome, domainRequest, noCachePresent, thresholdOverride))
-                        .subscribeOn(virtualThreadScheduler)
-                        .flatMap(cacheLookup -> dispatch(quotaOutcome, domainRequest, cacheLookup, requestStartNanos)));
+                .flatMap(effectiveDto -> {
+                    ChatCompletionRequest domainRequest = mapper.toDomain(effectiveDto);
+                    return Mono.fromCallable(() -> checkQuota(authorization, clientIp, domainRequest))
+                            .subscribeOn(virtualThreadScheduler)
+                            .flatMap(quotaOutcome -> Mono
+                                    .fromCallable(() -> checkCache(quotaOutcome, domainRequest, noCachePresent, thresholdOverride))
+                                    .subscribeOn(virtualThreadScheduler)
+                                    .flatMap(cacheLookup -> dispatch(quotaOutcome, domainRequest, cacheLookup, requestStartNanos)));
+                })
+                .map(response -> attachPromptVersionHeader(response, resolvedPromptVersion.get()))
+                .onErrorResume(PromptNotFoundException.class,
+                        e -> Mono.just(promptErrorResponse(HttpStatus.NOT_FOUND, "prompt_not_found", e.getMessage())))
+                .onErrorResume(PromptVariableValidationException.class,
+                        e -> Mono.just(promptErrorResponse(HttpStatus.BAD_REQUEST, "prompt_variable_validation_failed", e.getMessage())))
+                // F9.4 and pre-existing ChatCompletionRequest validation
+                // (blank model, empty messages): previously fell through
+                // unmapped to a generic 500 - this is where the domain's
+                // IllegalArgumentException actually needed to surface as
+                // a client error all along.
+                .onErrorResume(IllegalArgumentException.class,
+                        e -> Mono.just(promptErrorResponse(HttpStatus.BAD_REQUEST, "invalid_request", e.getMessage())));
+    }
+
+    private ResponseEntity<Object> attachPromptVersionHeader(ResponseEntity<Object> response, PromptVersion version) {
+        if (version == null) {
+            return response;
+        }
+        return ResponseEntity.status(response.getStatusCode())
+                .headers(response.getHeaders())
+                .header("X-Aether-Prompt-Version", String.valueOf(version.version()))
+                .body(response.getBody());
+    }
+
+    /**
+     * F7.2: when {@code X-Aether-Prompt} is present, resolves and
+     * renders the referenced prompt version (F7.6's strict variable
+     * validation applies here) and returns a DTO with {@code messages}
+     * replaced by the rendered result; the request's own {@code
+     * messages} field, if any, is ignored in that case. Absent the
+     * header, the DTO passes through unchanged - fully backward
+     * compatible with raw-message requests.
+     */
+    private ChatCompletionRequestDto resolveMessages(
+            String promptReferenceHeader, ChatCompletionRequestDto requestDto, java.util.concurrent.atomic.AtomicReference<PromptVersion> resolvedPromptVersion) {
+        if (promptReferenceHeader == null) {
+            return requestDto;
+        }
+        PromptReference reference = PromptReference.parse(promptReferenceHeader);
+        PromptVersion version = reference.version()
+                .map(v -> promptRegistryPort.findByNameAndVersion(reference.promptName(), v))
+                .orElseGet(() -> promptRegistryPort.findByNameAndAlias(reference.promptName(), reference.alias().orElseThrow()))
+                .orElseThrow(() -> new PromptNotFoundException(promptReferenceHeader));
+        resolvedPromptVersion.set(version);
+
+        Map<String, String> variables = requestDto.variables() != null ? requestDto.variables() : Map.of();
+        List<ChatMessage> rendered = PromptTemplateRenderer.render(version.template(), version.variables(), variables);
+        List<ChatMessageDto> renderedMessages = rendered.stream()
+                .map(m -> new ChatMessageDto(m.role(), m.content()))
+                .toList();
+        return new ChatCompletionRequestDto(
+                requestDto.model(), renderedMessages, requestDto.stream(), requestDto.temperature(), requestDto.tools(), requestDto.variables());
+    }
+
+    private ResponseEntity<Object> promptErrorResponse(HttpStatus status, String errorCode, String message) {
+        var body = new ErrorEnvelopeDto(
+                "https://aether.dev/problems/" + errorCode, errorCode, status.value(), message, "/v1/chat/completions");
+        return ResponseEntity.status(status).body((Object) body);
     }
 
     private sealed interface QuotaOutcome {
@@ -158,19 +246,36 @@ public class ChatCompletionController {
 
         record Rejected(QuotaDecision.Rejected rejected) implements QuotaOutcome {
         }
+
+        /** F9.5: the anonymous path only - a real API key is already covered by {@link Rejected}'s per-key quota. */
+        record IpRateLimited() implements QuotaOutcome {
+        }
     }
 
     private record CacheLookup(String namespace, CacheDecision decision, RouteCacheConfig routeCache) {
     }
 
-    private QuotaOutcome checkQuota(String authorization, ChatCompletionRequest domainRequest) {
+    /**
+     * F9.5: extracted only from the connection's own remote address, not
+     * an {@code X-Forwarded-For}-style header - this service has no
+     * documented trusted-reverse-proxy configuration, and honouring a
+     * client-controlled header here would make the limit trivially
+     * bypassable by whoever it's meant to constrain.
+     */
+    private String clientIp(ServerHttpRequest request) {
+        var remoteAddress = request.getRemoteAddress();
+        return remoteAddress != null && remoteAddress.getAddress() != null
+                ? remoteAddress.getAddress().getHostAddress() : "unknown";
+    }
+
+    private QuotaOutcome checkQuota(String authorization, String clientIp, ChatCompletionRequest domainRequest) {
         if (authorization == null || authorization.isBlank()) {
-            return new QuotaOutcome.Unmetered();
+            return ipRateLimitPort.tryConsume(clientIp) ? new QuotaOutcome.Unmetered() : new QuotaOutcome.IpRateLimited();
         }
         String rawKey = authorization.startsWith("Bearer ") ? authorization.substring(7) : authorization;
         ApiKeyContext key = apiKeyLookupPort.findByRawKey(rawKey).orElse(null);
         if (key == null) {
-            return new QuotaOutcome.Unmetered();
+            return ipRateLimitPort.tryConsume(clientIp) ? new QuotaOutcome.Unmetered() : new QuotaOutcome.IpRateLimited();
         }
 
         long estimatedTokens = tokenEstimator.estimatePessimisticTotal(domainRequest);
@@ -188,6 +293,9 @@ public class ChatCompletionController {
         if (quotaOutcome instanceof QuotaOutcome.Rejected) {
             return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("quota_rejected"), RouteCacheConfig.DISABLED);
         }
+        if (quotaOutcome instanceof QuotaOutcome.IpRateLimited) {
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("ip_rate_limited"), RouteCacheConfig.DISABLED);
+        }
         String namespace = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.key().keyId() : ANONYMOUS_NAMESPACE;
         RouteCacheConfig routeCache = routingSource.routeFor(domainRequest.model())
                 .map(RouteConfig::cache)
@@ -203,6 +311,9 @@ public class ChatCompletionController {
             QuotaOutcome quotaOutcome, ChatCompletionRequest domainRequest, CacheLookup cacheLookup, long requestStartNanos) {
         if (quotaOutcome instanceof QuotaOutcome.Rejected rejected) {
             return Mono.just(quotaRejectedResponse(rejected.rejected(), domainRequest, requestStartNanos));
+        }
+        if (quotaOutcome instanceof QuotaOutcome.IpRateLimited) {
+            return Mono.just(ipRateLimitedResponse(domainRequest, requestStartNanos));
         }
         ApiKeyContext key = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.key() : null;
         QuotaDecision.Allowed allowed = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.allowed() : null;
@@ -233,6 +344,20 @@ public class ChatCompletionController {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(QUOTA_REMAINING_HEADER, String.valueOf(rejected.remainingMonthlyTokens()))
                 .body((Object) body);
+    }
+
+    /** F9.5: the anonymous per-IP limit was exceeded - no API key involved at all, so none of {@link #quotaRejectedResponse}'s per-key fields apply. */
+    private ResponseEntity<Object> ipRateLimitedResponse(ChatCompletionRequest domainRequest, long requestStartNanos) {
+        var body = new ErrorEnvelopeDto(
+                "https://aether.dev/problems/ip_rate_limited",
+                "ip_rate_limited",
+                HttpStatus.TOO_MANY_REQUESTS.value(),
+                "Too many unauthenticated requests from this address",
+                "/v1/chat/completions");
+        long totalMs = elapsedMillis(requestStartNanos);
+        recordObservability(domainRequest, null, null, "BYPASS", false, null,
+                0, 0, totalMs, totalMs, 0, List.of(), "IP_RATE_LIMITED", "ip_rate_limited");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body((Object) body);
     }
 
     // ---- Cache hits: F4.8 replay for streaming requests, direct body otherwise ----

@@ -79,6 +79,11 @@ class ResilientRouterTest {
             public java.util.Optional<ProviderAdapter> adapterFor(String providerName) {
                 return java.util.Optional.ofNullable(adapters.get(providerName));
             }
+
+            @Override
+            public Map<String, RouteConfig> allRoutes() {
+                return Map.of(route.alias(), route);
+            }
         };
         return new ResilientRouter(
                 source,
@@ -299,6 +304,11 @@ class ResilientRouterTest {
             @Override
             public java.util.Optional<ProviderAdapter> adapterFor(String providerName) {
                 return java.util.Optional.ofNullable(Map.of("mock-primary", (ProviderAdapter) primary, "mock-fallback", fallback).get(providerName));
+            }
+
+            @Override
+            public Map<String, RouteConfig> allRoutes() {
+                return Map.of(route.alias(), route);
             }
         };
         var router = new ResilientRouter(

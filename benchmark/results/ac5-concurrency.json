@@ -1,0 +1,10 @@
+{
+  "target_concurrent_streams": 2000,
+  "constraint": "2 vCPU / 4 GB (docker --cpus=2 --memory=4g, container restarted under the limit before testing)",
+  "trials": [
+    {"concurrency": 1200, "duration": "20s", "http_req_failed_rate": 0.0, "p95_ms": 26708.46, "p99_ms": 27697.03, "note": "0% hard failures, but p95/p99 in the tens of seconds - severe request queueing, not a healthy sustained rate"},
+    {"concurrency": 2000, "duration": "20s", "http_req_failed_rate": 0.3708, "p95_ms": 29998.42, "p99_ms": 30000.37, "note": "37.1% of requests timed out at the client's 30s timeout"}
+  ],
+  "meets_target": false,
+  "caveat": "Measured on a shared, non-dedicated development sandbox already running multiple other processes from this session's earlier experiments (mock-provider, Postgres, Redis, a leftover Gradle daemon, the k6 client itself all competing for the same 8 physical cores as the 2-vCPU-limited gateway container), not an isolated benchmark host. The severe queueing already visible at 1200 concurrency (well before the 2000 target) suggests this is a genuine capacity limit at this resource tier, not purely a test-harness artifact, but a fully clean re-measurement on dedicated hardware is a reasonable follow-up before treating this as a hard product limitation."
+}

@@ -1,0 +1,23 @@
+{
+  "criterion": "AC7 (PRD section 18, verbatim): 500 streams survive a rolling deploy",
+  "methodology": "In-cluster pod (curlimages/curl) opens 500 concurrent SSE streams against http://gateway:8080 (the real Service, not kubectl port-forward - see docs/design/kubernetes-deployment.md for why port-forward gives a false failure here). mock-primary configured with stream_delay_ms=15000 so each stream runs ~105s. `kubectl rollout restart deployment/gateway` triggered ~2s after all 500 streams confirmed launched. Each stream checked for a data:[DONE] terminator vs. a broken connection.",
+  "runs": [
+    {
+      "run": 1,
+      "stream_count": 500,
+      "ok": 500,
+      "broken_count": 0,
+      "rollout_started": "15:27:48",
+      "rollout_duration_seconds": 53
+    },
+    {
+      "run": 2,
+      "stream_count": 500,
+      "ok": 500,
+      "broken_count": 0,
+      "rollout_started": "15:30:25",
+      "rollout_duration_seconds": 37
+    }
+  ],
+  "result": "AC7 met: 0/500 broken streams across both runs, each run confirmed to genuinely overlap the rollout via ReplicaSet hash change and fresh pod ages."
+}

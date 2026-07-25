@@ -130,6 +130,15 @@ public class CacheAdapter implements CachePort {
         }
     }
 
+    @Override
+    public long countEntries(String namespace) {
+        try {
+            return pgStore.countByNamespace(namespace);
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
     /**
      * Deliberately plain content only, no "role: " prefix: prefixing
      * broke {@link EntityNumericGuard}'s sentence-initial-stopword

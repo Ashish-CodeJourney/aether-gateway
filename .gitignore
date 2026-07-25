@@ -42,3 +42,8 @@ Thumbs.db
 
 # Docker volumes / local data
 docker/data/
+
+# Phase 09 (M6): make bench downloads k6 here rather than vendoring a
+# load-generator binary in a Java source repo.
+.tools/
+__pycache__/

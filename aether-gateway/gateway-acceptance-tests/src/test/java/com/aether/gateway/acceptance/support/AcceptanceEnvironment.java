@@ -82,6 +82,7 @@ public final class AcceptanceEnvironment {
         waitForHealthy(mockFallbackBaseUrl());
 
         Path routingConfig = writeRoutingConfig();
+        routingConfigPath = routingConfig;
 
         gatewayPort = findFreePort();
         Map<String, String> gatewayEnv = new HashMap<>();
@@ -122,6 +123,21 @@ public final class AcceptanceEnvironment {
         // spawned gateway process before it ever started serving.
         gatewayEnv.put("COST_MODEL_CONFIG_PATH",
                 Path.of("../cost-model.yaml").toAbsolutePath().normalize().toString());
+        // Phase 10 (M7): F8.5 admin auth is fail-closed with no key
+        // configured, so every scenario calling an /admin/** endpoint
+        // needs this - a fixed test-only value, never a production secret.
+        gatewayEnv.put("AETHER_ADMIN_API_KEY", ADMIN_API_KEY);
+        // Phase 12 (M9): F9.5's per-IP anonymous rate limit exists for a
+        // real anonymous client, not for this test harness - every
+        // scenario in this suite that omits Authorization (the
+        // established ANONYMOUS_NAMESPACE convention since M3) shares
+        // one IP bucket (127.0.0.1, the whole suite running as one
+        // process), and the production default is real enough to
+        // legitimately 429 unrelated scenarios partway through a run.
+        // Confirmed live: this broke ~20 otherwise-unrelated scenarios
+        // (semantic cache, cost visibility, prompt rollback) with
+        // "expected 200 but was 429" before this override was added.
+        gatewayEnv.put("AETHER_SECURITY_ANONYMOUS_IP_RPS_LIMIT", "10000");
         gatewayProcess = startJar(System.getProperty("gateway.proxy.jar"), gatewayEnv);
         waitForHealthy(gatewayBaseUrl());
 
@@ -149,6 +165,20 @@ public final class AcceptanceEnvironment {
 
     public static String gatewayBaseUrl() {
         return "http://localhost:" + gatewayPort;
+    }
+
+    /** Test-only fixed admin key; see the F8.5 comment where it's passed to the spawned gateway process. */
+    private static final String ADMIN_API_KEY = "test-admin-key-do-not-use-in-production";
+
+    public static String adminApiKey() {
+        return ADMIN_API_KEY;
+    }
+
+    private static Path routingConfigPath;
+
+    /** Phase 12 (M9): the real file backing {@code ROUTING_CONFIG_PATH} for the spawned gateway - scenarios rewrite it to exercise hot reload (F2.7) and reload rejection (F9.3). */
+    public static Path routingConfigPath() {
+        return routingConfigPath;
     }
 
     /** The provider M0/M1 scenarios exercise; same instance as {@link #mockPrimaryBaseUrl()}. */

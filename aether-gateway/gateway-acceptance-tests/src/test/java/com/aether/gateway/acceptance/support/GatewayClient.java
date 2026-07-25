@@ -46,6 +46,21 @@ public class GatewayClient {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    public HttpResponse<String> putJson(String url, String jsonBody) throws Exception {
+        return putJson(url, jsonBody, null);
+    }
+
+    public HttpResponse<String> putJson(String url, String jsonBody, Map<String, String> extraHeaders) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json");
+        if (extraHeaders != null) {
+            extraHeaders.forEach(builder::header);
+        }
+        HttpRequest request = builder.PUT(HttpRequest.BodyPublishers.ofString(jsonBody)).build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     public HttpResponse<String> get(String url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(10))

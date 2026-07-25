@@ -28,6 +28,40 @@ class RoutingYamlParserTest {
     }
 
     @Test
+    void defaultsProviderTypeToMockAndApiKeyEnvVarToNullWhenNotSpecified() {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:8082
+                routes: []
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        var provider = config.providers().get("mock-primary");
+        assertThat(provider.type()).isEqualTo("mock");
+        assertThat(provider.apiKeyEnvVar()).isNull();
+    }
+
+    @Test
+    void parsesProviderTypeAndApiKeyEnvVarForRealProviders() {
+        String yaml = """
+                providers:
+                  groq-main:
+                    baseUrl: https://api.groq.com/openai/v1
+                    type: groq
+                    apiKeyEnvVar: GROQ_API_KEY
+                routes: []
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        var provider = config.providers().get("groq-main");
+        assertThat(provider.type()).isEqualTo("groq");
+        assertThat(provider.apiKeyEnvVar()).isEqualTo("GROQ_API_KEY");
+    }
+
+    @Test
     void parsesARouteWithAWeightedChainAndAnUnweightedFallback() {
         String yaml = """
                 providers:
