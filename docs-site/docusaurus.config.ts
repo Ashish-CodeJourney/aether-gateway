@@ -7,7 +7,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'Aether Gateway',
   tagline: 'A self-hosted LLM gateway - streaming proxy, multi-provider failover, and vector-based semantic caching',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/favicon.svg',
 
   future: {
     v4: true,
@@ -105,6 +105,16 @@ const config: Config = {
       },
       items: [
         {
+          to: '/getting-started',
+          position: 'left',
+          label: 'Getting Started',
+        },
+        {
+          to: '/usage',
+          position: 'left',
+          label: 'Usage',
+        },
+        {
           type: 'docSidebar',
           sidebarId: 'docsSidebar',
           position: 'left',
@@ -126,8 +136,10 @@ const config: Config = {
       style: 'dark',
       links: [
         {
-          title: 'Project',
+          title: 'Get started',
           items: [
+            {label: 'Getting Started', to: '/getting-started'},
+            {label: 'Usage Guide', to: '/usage'},
             {label: 'README', href: 'https://github.com/Ashish-CodeJourney/Sluice#readme'},
             {label: 'Benchmarks', href: 'https://github.com/Ashish-CodeJourney/Sluice/blob/trunk/BENCHMARKS.md'},
           ],

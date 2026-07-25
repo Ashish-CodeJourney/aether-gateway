@@ -1,6 +1,6 @@
 {
   "label": "Architecture Decisions",
-  "position": 2,
+  "position": 4,
   "link": {
     "type": "generated-index",
     "description": "ADRs recording the significant, hard-to-reverse technical decisions made while building Aether Gateway, and why."
