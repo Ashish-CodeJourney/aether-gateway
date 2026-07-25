@@ -10,7 +10,6 @@ Full technical documentation for Aether Gateway - a self-hosted LLM gateway hand
 
 ## Where to start
 
-- **[Product Requirements Document](/PRD)** - the full requirements this project was built against, including what was deliberately not built and why (section 3.2).
 - **[Architecture Decisions](/category/architecture-decisions)** - the significant, hard-to-reverse technical decisions (WebFlux vs. virtual threads, local vs. shared circuit breaker state, fail-open cache vs. fail-closed quota, and more) and the reasoning behind each.
 - **[Design Docs](/category/design-docs)** - narrative documentation of how specific subsystems actually work: semantic cache correctness, the cost model, Kubernetes deployment, module boundaries, and more.
 

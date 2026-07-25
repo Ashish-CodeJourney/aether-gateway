@@ -6,7 +6,7 @@
 
 **A self-hosted LLM gateway — streaming proxy, multi-provider failover, and vector-based semantic caching in Java 25 / Spring Boot 4.1 — measured to cut cached-request latency to 8.9ms p95 and fail over to a healthy provider in 67.92ms p99, both against a reproducible load-test harness, not estimates.**
 
-📚 **[Full documentation](https://ashish-codejourney.github.io/Sluice/)** — PRD, architecture decision records, design docs, and the phase-by-phase build plan, all rendered and searchable.
+📚 **[Full documentation](https://ashish-codejourney.github.io/Sluice/)** — architecture decision records and design docs, rendered and searchable.
 
 Point your existing OpenAI-compatible SDK at Aether instead of at a provider directly. It handles routing, failover, semantic caching, quota enforcement, cost accounting, and observability transparently.
 
@@ -160,7 +160,7 @@ cd docs-site
 npm start   # docs site, live-reloading, at http://localhost:3000
 ```
 
-Where a new provider adapter or route type belongs: [Module boundaries](https://ashish-codejourney.github.io/Sluice/design/module-boundaries) and [ADR-001](https://ashish-codejourney.github.io/Sluice/adr/hexagonal-module-layout). Full requirements: [PRD](https://ashish-codejourney.github.io/Sluice/PRD).
+Where a new provider adapter or route type belongs: [Module boundaries](https://ashish-codejourney.github.io/Sluice/design/module-boundaries) and [ADR-001](https://ashish-codejourney.github.io/Sluice/adr/hexagonal-module-layout).
 
 ## Status — what this is
 

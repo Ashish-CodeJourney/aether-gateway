@@ -70,12 +70,16 @@ const config: Config = {
           // docs/plan/ (the phase-by-phase build plan, including
           // STATUS.md) is deliberately gitignored as internal planning
           // material, not part of the public portfolio repo (see
-          // ../.gitignore) - excluded here too, explicitly, rather than
-          // relying on it simply being absent from a fresh checkout,
-          // so this site's content is identical whether built locally
-          // (where the files happen to still be on disk, just
-          // untracked) or in CI (where they never exist at all).
-          exclude: ['plan/**'],
+          // ../.gitignore) - same treatment for PRD.md, also gitignored
+          // there ("Only actual product code, architecture diagrams,
+          // tech-stack docs, README, and BENCHMARKS.md are public").
+          // Excluded here explicitly, rather than relying on the files
+          // simply being absent from a fresh checkout, so this site's
+          // content is identical whether built locally (where the
+          // files happen to still be on disk, just untracked) or in CI
+          // (where they never exist at all) - verified by actually
+          // moving both aside and rebuilding before trusting this.
+          exclude: ['plan/**', 'PRD.md'],
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/Ashish-CodeJourney/Sluice/edit/trunk/docs/',
@@ -126,7 +130,6 @@ const config: Config = {
           items: [
             {label: 'README', href: 'https://github.com/Ashish-CodeJourney/Sluice#readme'},
             {label: 'Benchmarks', href: 'https://github.com/Ashish-CodeJourney/Sluice/blob/trunk/BENCHMARKS.md'},
-            {label: 'PRD', to: '/PRD'},
           ],
         },
         {
