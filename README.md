@@ -1,8 +1,14 @@
 # Aether Gateway
 
+[![CI](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/ci.yml)
+[![Docs](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/docs.yml/badge.svg)](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/docs.yml)
+[![Docs site](https://img.shields.io/badge/docs-ashish--codejourney.github.io%2FSluice-blue)](https://ashish-codejourney.github.io/Sluice/)
+
 **A self-hosted LLM gateway — streaming proxy, multi-provider failover, and vector-based semantic caching in Java 25 / Spring Boot 4.1 — measured to cut cached-request latency to 8.9ms p95 and fail over to a healthy provider in 67.92ms p99, both against a reproducible load-test harness, not estimates.**
 
-Point your existing OpenAI-compatible SDK at Aether instead of at a provider directly. It handles routing, failover, semantic caching, quota enforcement, cost accounting, and observability transparently — see [`docs/PRD.md`](docs/PRD.md) for the full requirements this was built against.
+📚 **[Full documentation](https://ashish-codejourney.github.io/Sluice/)** — PRD, architecture decision records, design docs, and the phase-by-phase build plan, all rendered and searchable.
+
+Point your existing OpenAI-compatible SDK at Aether instead of at a provider directly. It handles routing, failover, semantic caching, quota enforcement, cost accounting, and observability transparently.
 
 ## Demo: failover and a cache hit, live
 
@@ -81,7 +87,7 @@ flowchart TB
     Accounting --> Micrometer["Micrometer / OTel"]
 ```
 
-Full diagram and narrative: [`docs/design/architecture-diagram.md`](docs/design/architecture-diagram.md). Module boundaries (hexagonal architecture — `gateway-core` depends on nothing but the JDK): [`docs/design/module-boundaries.md`](docs/design/module-boundaries.md).
+Full diagram, module layout, and the hexagonal-boundary rules (`gateway-core` depends on nothing but the JDK): **[Architecture diagram](https://ashish-codejourney.github.io/Sluice/design/architecture-diagram)** · **[Module boundaries](https://ashish-codejourney.github.io/Sluice/design/module-boundaries)**.
 
 ## Quickstart
 
@@ -111,23 +117,27 @@ Full tables, methodology, and raw data: **[`BENCHMARKS.md`](BENCHMARKS.md)**, re
 | Failover latency, p99 (100 trials) | 67.92ms | 500ms |
 | Line coverage (4 core modules) | 76.8% | — |
 
-The hit-rate/false-hit-rate gap is disclosed, not hidden: `docs/design/cache-correctness.md` explains why (negation and spelled-out-number gaps in the entity guard's defined scope), and the AC scorecard in `BENCHMARKS.md` documents every acceptance criterion measured, met or not.
+The hit-rate/false-hit-rate gap is disclosed, not hidden: [Semantic cache correctness](https://ashish-codejourney.github.io/Sluice/design/cache-correctness) explains why (negation and spelled-out-number gaps in the entity guard's defined scope), and the AC scorecard in `BENCHMARKS.md` documents every acceptance criterion measured, met or not.
 
 ## Design decisions and tradeoffs
 
-- **WebFlux for the streaming proxy path, virtual threads everywhere else** — cancellation propagation (closing a browser tab must actually stop paying for tokens) needs Reactor's operator chain; nothing else on the request path benefits from non-blocking I/O enough to justify its complexity. [ADR-002](docs/adr/002-webflux-streaming-mvc-virtual-threads-elsewhere.md).
-- **Circuit breaker state: local per replica, with a Redis advisory hint, not shared** — a genuinely shared breaker needs a distributed consensus problem this project doesn't need to solve; a hint that nudges replicas toward the same view without requiring one is a real, deliberate compromise, not a shortcut. [ADR-004](docs/adr/004-circuit-breaker-state-local-with-redis-advisory-hint.md).
-- **Fail-open cache, fail-closed quota** — a cache outage should degrade to "always call the real provider," never block traffic; a quota outage must never silently let unmetered spend through. Same infrastructure (Redis), opposite failure posture, on purpose. [ADR-005](docs/adr/005-fail-open-cache-fail-closed-quota.md).
-- **Semantic cache threshold (0.94) and the entity/numeric guard** — similarity alone can't distinguish "what is 2+2" from "what is 2+3"; the guard is a deliberate, no-network heuristic layered on top of the threshold, not a replacement for it. [`docs/design/cache-correctness.md`](docs/design/cache-correctness.md).
-- **Reservation-and-reconciliation for token quotas** — output token count isn't known until a response completes, so quota is reserved pessimistically up front and reconciled to the real count afterward, rather than either blocking on the real number or risking overspend. [ADR-006](docs/adr/006-reservation-and-reconciliation-for-token-quotas.md).
-- **Provider credentials via environment variable *names*, never values, in routing.yaml** (F9.2) — `apiKeyEnvVar: GROQ_API_KEY` in config, resolved from the real environment only at the one place adapters are wired up, so routing.yaml is safe to commit even with real providers configured.
-- **SSRF protection on real, operator-configured provider base URLs** (F9.3) — a gateway that dials operator-configured URLs is exactly the threat model this exists for. The PRD names Spring Boot 4.1's `InetAddressFilter` for this; that class does not exist in Spring Framework 7.0.8 / Boot 4.1 (checked directly against the dependency jars before building anything), so this is built on `java.net.InetAddress`'s own private-range predicates instead — `PrivateNetworkAddresses` (pure) + `ProviderBaseUrlValidator` (the DNS-resolution half), rejecting a routing-policy reload outright if any real provider's base URL resolves to a private/reserved address. Proven at the unit, integration, *and* acceptance level (`@m9 @F9.3`).
-- **Graceful SSE drain under a Kubernetes rolling update** — readiness flips before liveness, a `preStop` sleep gives the Service time to stop routing new traffic before SIGTERM, and in-flight streams finish naturally rather than being cut. Proven live: 500/500 concurrent streams survived a real rolling update, run twice, zero broken both times. [`docs/design/kubernetes-deployment.md`](docs/design/kubernetes-deployment.md).
-- **Autoscaling on in-flight stream count, not CPU** — these pods are I/O-bound waiting on upstream providers; CPU sits near idle while genuinely saturated. Wired to `aether_gateway_in_flight_streams` via the HPA's custom-metric config (disclosed: the Prometheus Adapter needed to actually serve that metric wasn't deployed in this session's cluster, so the scale-out event itself wasn't exercised live).
+Full reasoning for each lives in the linked ADR/design doc — this is the one-line version:
+
+| Decision | Why |
+|---|---|
+| [WebFlux for streaming, virtual threads elsewhere](https://ashish-codejourney.github.io/Sluice/adr/webflux-streaming-mvc-virtual-threads-elsewhere) | Cancellation propagation (closing a tab must stop paying for tokens) needs Reactor's operator chain; nothing else on the request path needs non-blocking I/O badly enough to justify it. |
+| [Circuit breaker state: local per replica + Redis hint, not shared](https://ashish-codejourney.github.io/Sluice/adr/circuit-breaker-state-local-with-redis-advisory-hint) | A genuinely shared breaker is a distributed-consensus problem this project doesn't need to solve; a hint that nudges replicas without requiring consensus is a deliberate compromise. |
+| [Fail-open cache, fail-closed quota](https://ashish-codejourney.github.io/Sluice/adr/fail-open-cache-fail-closed-quota) | A cache outage should degrade to "always call the real provider," never block traffic; a quota outage must never silently let unmetered spend through. Same infra, opposite posture, on purpose. |
+| [Semantic threshold (0.94) + entity/numeric guard](https://ashish-codejourney.github.io/Sluice/design/cache-correctness) | Similarity alone can't tell "what is 2+2" from "what is 2+3"; the guard is a no-network heuristic layered on top, not a replacement for the threshold. |
+| [Reservation-and-reconciliation for token quotas](https://ashish-codejourney.github.io/Sluice/adr/reservation-and-reconciliation-for-token-quotas) | Output tokens aren't known until a response completes, so quota is reserved pessimistically up front and reconciled to the real count after. |
+| Provider credentials via env var *names*, never values (F9.2) | `apiKeyEnvVar: GROQ_API_KEY` in `routing.yaml`, resolved from the real environment only where adapters are wired up — the config file is safe to commit even with real providers active. |
+| SSRF protection on real provider base URLs (F9.3) | The PRD names Spring Boot 4.1's `InetAddressFilter`; that class doesn't exist in Spring Framework 7.0.8/Boot 4.1 (checked against the actual jars), so this is built on `java.net.InetAddress`'s private-range predicates instead. Proven at unit, integration, *and* acceptance level. |
+| [Graceful SSE drain under a K8s rolling update](https://ashish-codejourney.github.io/Sluice/design/kubernetes-deployment) | Readiness flips before liveness, `preStop` gives the Service time to stop routing before SIGTERM, in-flight streams finish naturally. Proven live: 500/500 concurrent streams survived a real rolling update, twice, zero broken. |
+| Autoscaling on in-flight stream count, not CPU | These pods are I/O-bound waiting on providers; CPU sits idle while genuinely saturated. Disclosed gap: the Prometheus Adapter needed to serve that custom metric wasn't deployed in this session's cluster, so the scale-out itself wasn't exercised live. |
 
 ## What was deliberately not built, and why
 
-Per the PRD's own non-goals (section 3.2) — being able to name what you chose *not* to build is itself the point, not an oversight:
+Per the PRD's own non-goals — being able to name what you chose *not* to build is itself the point, not an oversight:
 
 - Training, fine-tuning, or hosting models — this is infrastructure *around* model calls, not a model-serving project.
 - A chat UI for end users — the operator console (`console/`) is an internal tool for API keys, prompts, cache stats, and the request log, not a product surface.
@@ -135,20 +145,25 @@ Per the PRD's own non-goals (section 3.2) — being able to name what you chose 
 - Agent frameworks, tool-calling orchestration, or RAG pipelines.
 - Fine-grained RBAC beyond API-key scopes.
 - Horizontal DB sharding or global multi-region.
-- Helm, a service mesh, Kubernetes operators/CRDs, or ArgoCD — named directly in the PRD as "unjustified complexity you would have to defend" for a project at this scale; plain manifests plus `kubectl` cover everything actually needed.
+- Helm, a service mesh, Kubernetes operators/CRDs, or ArgoCD — named directly in the PRD as "unjustified complexity you would have to defend" at this scale; plain manifests plus `kubectl` cover everything actually needed.
 
 ## Local development
 
 ```bash
 cd aether-gateway
-./gradlew test integrationTest          # unit + Testcontainers-backed integration tests
+./gradlew test integrationTest            # unit + Testcontainers-backed integration tests
 ./gradlew :gateway-acceptance-tests:test  # full Cucumber acceptance suite (@m0-@m9)
 ```
 
-Module layout, hexagonal boundaries, and where a new provider adapter or route type belongs: [`docs/design/module-boundaries.md`](docs/design/module-boundaries.md) and [ADR-001](docs/adr/001-hexagonal-module-layout.md). Full requirements and phase-by-phase build plan: [`docs/PRD.md`](docs/PRD.md) and [`docs/plan/`](docs/plan/) (see [`docs/plan/STATUS.md`](docs/plan/STATUS.md) for exactly what's done, what's disclosed-incomplete, and why, phase by phase).
+```bash
+cd docs-site
+npm start   # docs site, live-reloading, at http://localhost:3000
+```
+
+Where a new provider adapter or route type belongs: [Module boundaries](https://ashish-codejourney.github.io/Sluice/design/module-boundaries) and [ADR-001](https://ashish-codejourney.github.io/Sluice/adr/hexagonal-module-layout). Full requirements: [PRD](https://ashish-codejourney.github.io/Sluice/PRD).
 
 ## Status — what this is
 
 Built through Phase 12 (M9) of the plan: real provider adapters (Ollama, Groq, Gemini, and a generic OpenAI-compatible adapter — all conforming to the identical `ProviderAdapter` port the mock provider does, with zero changes to `gateway-core` or `gateway-router`), the security hardening in PRD section 7 (F9.1–F9.5), and a Kubernetes deployment with a live-proven zero-downtime rolling update.
 
-**Not deployed to a live public URL.** That specific piece of M9's exit criterion needs real provider API keys and cloud infrastructure access this build environment doesn't have; per [`docs/plan/STATUS.md`](docs/plan/STATUS.md)'s Phase 12 entry, this was a deliberate scope decision, not an oversight — `docker compose up` brings up the complete, real, fully-functional stack locally, which is what every command and result on this page was actually run against.
+**Not deployed to a live public URL.** That specific piece of M9's exit criterion needs real provider API keys and cloud infrastructure access this build environment doesn't have — a deliberate scope decision, not an oversight. `docker compose up` brings up the complete, real, fully-functional stack locally, which is what every command and result on this page was actually run against.

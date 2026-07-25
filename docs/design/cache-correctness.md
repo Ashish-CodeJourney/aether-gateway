@@ -121,7 +121,7 @@ threshold among those keeping the cache meaningfully useful (hit rate
 measuring a 14.5% hit rate and an 8.0% false-hit rate with the guard
 active on the corpus as currently sized (76 near-duplicate pairs, 50
 adversarial pairs). This does not yet clear AC3 (hit rate >= 35%) or
-AC4 (false-hit rate <= 5%) simultaneously - expected and accepted per
+AC4 (false-hit rate `<= 5%`) simultaneously - expected and accepted per
 this phase's plan, which only requires the numbers to be measured and
 the choice justified, with the full 0.80-0.99-step sweep and further
 tuning left to Phase 09.

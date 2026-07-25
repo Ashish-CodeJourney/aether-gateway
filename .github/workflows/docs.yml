@@ -1,0 +1,63 @@
+name: Deploy docs to GitHub Pages
+
+# Builds docs-site/ (Docusaurus, serving the repository's real docs/
+# folder directly - see docs-site/docusaurus.config.ts's `path`
+# comment) and publishes it to GitHub Pages on every push to trunk.
+#
+# Requires a one-time repo setting change this workflow cannot make
+# itself: Settings -> Pages -> Source -> "GitHub Actions" (not "Deploy
+# from a branch"). Until that's set, this workflow will build
+# successfully but the deploy step will fail with a permissions error.
+
+on:
+  push:
+    branches: [trunk, main]
+    paths:
+      - "docs/**"
+      - "docs-site/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/build
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
