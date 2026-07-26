@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Ashish-CodeJourney/aether-gateway/security/advisories/new
+    about: Please report security vulnerabilities privately - see SECURITY.md. Do not open a public issue for these.
+  - name: Usage question
+    url: https://ashish-codejourney.github.io/aether-gateway/docs/usage
+    about: Check the Usage Guide before opening an issue - it covers the full request/response contract, admin API, and prompt registry.

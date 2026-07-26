@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest something this gateway doesn't do yet
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the gateway doesn't support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: If you have one in mind. Not required - "I don't know how, but here's what I need" is a fine answer too.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you're currently using, or other approaches you ruled out and why.
+    validations:
+      required: false

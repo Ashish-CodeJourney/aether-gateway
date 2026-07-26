@@ -1,0 +1,39 @@
+name: Bug report
+description: Something isn't working the way the docs say it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what actually happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        The smallest steps that reproduce it - a `curl` command against a
+        fresh `docker compose up` is usually enough. Include the actual
+        response (status code, headers, body) if relevant.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit / version
+      description: Which commit or tag were you on?
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, and anything else relevant (e.g. real vs. mock providers configured).
+    validations:
+      required: false

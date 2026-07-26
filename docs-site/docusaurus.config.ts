@@ -153,6 +153,14 @@ const config: Config = {
             {label: 'Design docs', to: '/docs/category/design-docs'},
           ],
         },
+        {
+          title: 'Project',
+          items: [
+            {label: 'Contributing', href: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/CONTRIBUTING.md'},
+            {label: 'Security policy', href: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/SECURITY.md'},
+            {label: 'MIT License', href: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/LICENSE'},
+          ],
+        },
       ],
       copyright: `Aether Gateway - a portfolio/resume project built to production standards. Docs built with Docusaurus.`,
     },

@@ -3,6 +3,7 @@
 [![CI](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml)
 [![Docs](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/docs.yml/badge.svg)](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/docs.yml)
 [![Docs site](https://img.shields.io/badge/docs-ashish--codejourney.github.io%2Faether-gateway-blue)](https://ashish-codejourney.github.io/aether-gateway/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **A self-hosted LLM gateway — streaming proxy, multi-provider failover, and vector-based semantic caching in Java 25 / Spring Boot 4.1 — measured to cut cached-request latency to 8.9ms p95 and fail over to a healthy provider in 67.92ms p99, both against a reproducible load-test harness, not estimates.**
 
@@ -161,6 +162,14 @@ npm start   # docs site, live-reloading, at http://localhost:3000
 ```
 
 Where a new provider adapter or route type belongs: [Module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries) and [ADR-001](https://ashish-codejourney.github.io/aether-gateway/docs/adr/hexagonal-module-layout).
+
+## Contributing
+
+Contributions are welcome - see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow, testing expectations (tests are written first, against real infrastructure via Testcontainers, not mocks), and how this codebase's hexagonal boundaries are enforced by ArchUnit rather than just convention. Please report security vulnerabilities privately per [`SECURITY.md`](SECURITY.md) rather than as a public issue. This project follows a [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+[MIT](LICENSE) © Ashish Vaghela.
 
 ## Status — what this is
 
