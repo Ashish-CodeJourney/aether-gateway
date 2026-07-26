@@ -42,7 +42,12 @@ RUN java -Djarmode=tools -jar gateway-proxy/build/libs/gateway-proxy.jar extract
 # correctness over image size. mock-provider has no embedding
 # dependency and stays on Alpine.
 FROM eclipse-temurin:25-jre
-RUN apt-get update && apt-get install -y --no-install-recommends wget \
+# Trivy (CI) catches real, fixed-upstream HIGH/CRITICAL CVEs in the base
+# image's own OS packages that the temurin image tag hasn't picked up
+# yet - upgrading at build time pulls patched versions in without
+# waiting for a new base image tag (same fix as mock-provider's
+# Dockerfile, apt's equivalent of apk upgrade).
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends wget \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -r aether && useradd -r -g aether aether
 WORKDIR /app

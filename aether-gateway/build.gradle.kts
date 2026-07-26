@@ -26,6 +26,16 @@ subprojects {
             mavenBom("org.testcontainers:testcontainers-bom:2.0.5")
             mavenBom("org.springframework.ai:spring-ai-bom:2.0.0")
         }
+        // Spring Boot 4.1.0's own BOM pins Netty 4.2.15.Final, which has
+        // 3 real HIGH-severity CVEs Trivy catches in CI (an infinite-loop
+        // DoS in Bzip2Decoder, CVE-2026-59901, plus two more in the HTTP
+        // codecs) - all fixed in 4.2.16.Final. Overriding here rather
+        // than waiting for Spring Boot's own BOM to catch up.
+        dependencies {
+            dependency("io.netty:netty-codec-compression:4.2.16.Final")
+            dependency("io.netty:netty-codec-http:4.2.16.Final")
+            dependency("io.netty:netty-codec-http3:4.2.16.Final")
+        }
     }
 
     tasks.withType<Test> {

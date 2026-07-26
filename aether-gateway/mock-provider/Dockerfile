@@ -17,6 +17,12 @@ WORKDIR /workspace/aether-gateway
 RUN java -Djarmode=tools -jar mock-provider/build/libs/mock-provider.jar extract --destination /extracted
 
 FROM eclipse-temurin:25-jre-alpine
+# Trivy (CI) catches real, fixed-upstream HIGH CVEs in the base image's
+# own Alpine packages (libexpat, p11-kit) that the temurin image tag
+# hasn't picked up yet - apk upgrade at build time pulls the patched
+# versions in without waiting for a new base image tag. Must run before
+# USER aether below: apk needs root.
+RUN apk update && apk upgrade --no-cache
 RUN addgroup -S aether && adduser -S aether -G aether
 WORKDIR /app
 COPY --from=extracted /extracted/lib/ ./lib/
