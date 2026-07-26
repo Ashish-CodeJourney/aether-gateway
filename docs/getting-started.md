@@ -44,7 +44,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   -d '{"model":"mock","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-No API key needed for this - requests without an `Authorization` header are treated as anonymous (unmetered, but rate-limited per source IP - see [Usage](/usage#authentication)). Point a real OpenAI-compatible SDK at the gateway by setting its `baseUrl` to `http://localhost:8080/v1`; nothing else about the client changes.
+No API key needed for this - requests without an `Authorization` header are treated as anonymous (unmetered, but rate-limited per source IP - see [Usage](/docs/usage#authentication)). Point a real OpenAI-compatible SDK at the gateway by setting its `baseUrl` to `http://localhost:8080/v1`; nothing else about the client changes.
 
 ## Configuring a real provider
 
@@ -77,8 +77,8 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-It talks to the gateway's admin API using the same key configured in `docker-compose.yml` (`AETHER_ADMIN_API_KEY`, defaulting to `dev-admin-key-do-not-use-in-production` - change this before running anywhere reachable by anyone else). See [`console/README.md`](https://github.com/Ashish-CodeJourney/Sluice/blob/trunk/console/README.md) in the repository for details.
+It talks to the gateway's admin API using the same key configured in `docker-compose.yml` (`AETHER_ADMIN_API_KEY`, defaulting to `dev-admin-key-do-not-use-in-production` - change this before running anywhere reachable by anyone else). See [`console/README.md`](https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/console/README.md) in the repository for details.
 
 ## Next
 
-**[Usage Guide](/usage)** - the full request/response contract, response headers, and the admin API.
+**[Usage Guide](/docs/usage)** - the full request/response contract, response headers, and the admin API.

@@ -19,7 +19,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-Set `"stream": true` for a Server-Sent Events response, identical in shape to OpenAI's streaming format (`data: {...}` chunks, terminated by `data: [DONE]`). Cancelling the client connection (closing the tab, aborting the fetch) propagates upstream and stops paying for tokens - this is measured, not assumed (see the streaming design notes linked from [Architecture Decisions](/category/architecture-decisions)).
+Set `"stream": true` for a Server-Sent Events response, identical in shape to OpenAI's streaming format (`data: {...}` chunks, terminated by `data: [DONE]`). Cancelling the client connection (closing the tab, aborting the fetch) propagates upstream and stops paying for tokens - this is measured, not assumed (see the streaming design notes linked from [Architecture Decisions](/docs/category/architecture-decisions)).
 
 `GET /v1/models` lists the models configured across every route in `routing.yaml`.
 
@@ -80,4 +80,4 @@ Grafana (`http://localhost:3000` under Docker Compose) ships with a pre-provisio
 
 ## Deploying
 
-Docker Compose (above) is a complete, legitimate deployment target for a single host. For Kubernetes specifically - graceful rolling updates that don't break in-flight streams, autoscaling on the right signal, and the manifests themselves - see [Kubernetes deployment](/design/kubernetes-deployment).
+Docker Compose (above) is a complete, legitimate deployment target for a single host. For Kubernetes specifically - graceful rolling updates that don't break in-flight streams, autoscaling on the right signal, and the manifests themselves - see [Kubernetes deployment](/docs/design/kubernetes-deployment).

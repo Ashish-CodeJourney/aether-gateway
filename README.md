@@ -1,12 +1,12 @@
 # Aether Gateway
 
-[![CI](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/ci.yml)
-[![Docs](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/docs.yml/badge.svg)](https://github.com/Ashish-CodeJourney/Sluice/actions/workflows/docs.yml)
-[![Docs site](https://img.shields.io/badge/docs-ashish--codejourney.github.io%2FSluice-blue)](https://ashish-codejourney.github.io/Sluice/)
+[![CI](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml)
+[![Docs](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/docs.yml/badge.svg)](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/docs.yml)
+[![Docs site](https://img.shields.io/badge/docs-ashish--codejourney.github.io%2Faether-gateway-blue)](https://ashish-codejourney.github.io/aether-gateway/)
 
 **A self-hosted LLM gateway — streaming proxy, multi-provider failover, and vector-based semantic caching in Java 25 / Spring Boot 4.1 — measured to cut cached-request latency to 8.9ms p95 and fail over to a healthy provider in 67.92ms p99, both against a reproducible load-test harness, not estimates.**
 
-📚 **[Full documentation](https://ashish-codejourney.github.io/Sluice/)** — architecture decision records and design docs, rendered and searchable.
+📚 **[Full documentation](https://ashish-codejourney.github.io/aether-gateway/)** — setup guide, usage guide, architecture decision records, and design docs, all rendered and searchable.
 
 Point your existing OpenAI-compatible SDK at Aether instead of at a provider directly. It handles routing, failover, semantic caching, quota enforcement, cost accounting, and observability transparently.
 
@@ -87,7 +87,7 @@ flowchart TB
     Accounting --> Micrometer["Micrometer / OTel"]
 ```
 
-Full diagram, module layout, and the hexagonal-boundary rules (`gateway-core` depends on nothing but the JDK): **[Architecture diagram](https://ashish-codejourney.github.io/Sluice/design/architecture-diagram)** · **[Module boundaries](https://ashish-codejourney.github.io/Sluice/design/module-boundaries)**.
+Full diagram, module layout, and the hexagonal-boundary rules (`gateway-core` depends on nothing but the JDK): **[Architecture diagram](https://ashish-codejourney.github.io/aether-gateway/docs/design/architecture-diagram)** · **[Module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries)**.
 
 ## Quickstart
 
@@ -117,7 +117,7 @@ Full tables, methodology, and raw data: **[`BENCHMARKS.md`](BENCHMARKS.md)**, re
 | Failover latency, p99 (100 trials) | 67.92ms | 500ms |
 | Line coverage (4 core modules) | 76.8% | — |
 
-The hit-rate/false-hit-rate gap is disclosed, not hidden: [Semantic cache correctness](https://ashish-codejourney.github.io/Sluice/design/cache-correctness) explains why (negation and spelled-out-number gaps in the entity guard's defined scope), and the AC scorecard in `BENCHMARKS.md` documents every acceptance criterion measured, met or not.
+The hit-rate/false-hit-rate gap is disclosed, not hidden: [Semantic cache correctness](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) explains why (negation and spelled-out-number gaps in the entity guard's defined scope), and the AC scorecard in `BENCHMARKS.md` documents every acceptance criterion measured, met or not.
 
 ## Design decisions and tradeoffs
 
@@ -125,14 +125,14 @@ Full reasoning for each lives in the linked ADR/design doc — this is the one-l
 
 | Decision | Why |
 |---|---|
-| [WebFlux for streaming, virtual threads elsewhere](https://ashish-codejourney.github.io/Sluice/adr/webflux-streaming-mvc-virtual-threads-elsewhere) | Cancellation propagation (closing a tab must stop paying for tokens) needs Reactor's operator chain; nothing else on the request path needs non-blocking I/O badly enough to justify it. |
-| [Circuit breaker state: local per replica + Redis hint, not shared](https://ashish-codejourney.github.io/Sluice/adr/circuit-breaker-state-local-with-redis-advisory-hint) | A genuinely shared breaker is a distributed-consensus problem this project doesn't need to solve; a hint that nudges replicas without requiring consensus is a deliberate compromise. |
-| [Fail-open cache, fail-closed quota](https://ashish-codejourney.github.io/Sluice/adr/fail-open-cache-fail-closed-quota) | A cache outage should degrade to "always call the real provider," never block traffic; a quota outage must never silently let unmetered spend through. Same infra, opposite posture, on purpose. |
-| [Semantic threshold (0.94) + entity/numeric guard](https://ashish-codejourney.github.io/Sluice/design/cache-correctness) | Similarity alone can't tell "what is 2+2" from "what is 2+3"; the guard is a no-network heuristic layered on top, not a replacement for the threshold. |
-| [Reservation-and-reconciliation for token quotas](https://ashish-codejourney.github.io/Sluice/adr/reservation-and-reconciliation-for-token-quotas) | Output tokens aren't known until a response completes, so quota is reserved pessimistically up front and reconciled to the real count after. |
+| [WebFlux for streaming, virtual threads elsewhere](https://ashish-codejourney.github.io/aether-gateway/docs/adr/webflux-streaming-mvc-virtual-threads-elsewhere) | Cancellation propagation (closing a tab must stop paying for tokens) needs Reactor's operator chain; nothing else on the request path needs non-blocking I/O badly enough to justify it. |
+| [Circuit breaker state: local per replica + Redis hint, not shared](https://ashish-codejourney.github.io/aether-gateway/docs/adr/circuit-breaker-state-local-with-redis-advisory-hint) | A genuinely shared breaker is a distributed-consensus problem this project doesn't need to solve; a hint that nudges replicas without requiring consensus is a deliberate compromise. |
+| [Fail-open cache, fail-closed quota](https://ashish-codejourney.github.io/aether-gateway/docs/adr/fail-open-cache-fail-closed-quota) | A cache outage should degrade to "always call the real provider," never block traffic; a quota outage must never silently let unmetered spend through. Same infra, opposite posture, on purpose. |
+| [Semantic threshold (0.94) + entity/numeric guard](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) | Similarity alone can't tell "what is 2+2" from "what is 2+3"; the guard is a no-network heuristic layered on top, not a replacement for the threshold. |
+| [Reservation-and-reconciliation for token quotas](https://ashish-codejourney.github.io/aether-gateway/docs/adr/reservation-and-reconciliation-for-token-quotas) | Output tokens aren't known until a response completes, so quota is reserved pessimistically up front and reconciled to the real count after. |
 | Provider credentials via env var *names*, never values (F9.2) | `apiKeyEnvVar: GROQ_API_KEY` in `routing.yaml`, resolved from the real environment only where adapters are wired up — the config file is safe to commit even with real providers active. |
 | SSRF protection on real provider base URLs (F9.3) | The PRD names Spring Boot 4.1's `InetAddressFilter`; that class doesn't exist in Spring Framework 7.0.8/Boot 4.1 (checked against the actual jars), so this is built on `java.net.InetAddress`'s private-range predicates instead. Proven at unit, integration, *and* acceptance level. |
-| [Graceful SSE drain under a K8s rolling update](https://ashish-codejourney.github.io/Sluice/design/kubernetes-deployment) | Readiness flips before liveness, `preStop` gives the Service time to stop routing before SIGTERM, in-flight streams finish naturally. Proven live: 500/500 concurrent streams survived a real rolling update, twice, zero broken. |
+| [Graceful SSE drain under a K8s rolling update](https://ashish-codejourney.github.io/aether-gateway/docs/design/kubernetes-deployment) | Readiness flips before liveness, `preStop` gives the Service time to stop routing before SIGTERM, in-flight streams finish naturally. Proven live: 500/500 concurrent streams survived a real rolling update, twice, zero broken. |
 | Autoscaling on in-flight stream count, not CPU | These pods are I/O-bound waiting on providers; CPU sits idle while genuinely saturated. Disclosed gap: the Prometheus Adapter needed to serve that custom metric wasn't deployed in this session's cluster, so the scale-out itself wasn't exercised live. |
 
 ## What was deliberately not built, and why
@@ -160,7 +160,7 @@ cd docs-site
 npm start   # docs site, live-reloading, at http://localhost:3000
 ```
 
-Where a new provider adapter or route type belongs: [Module boundaries](https://ashish-codejourney.github.io/Sluice/design/module-boundaries) and [ADR-001](https://ashish-codejourney.github.io/Sluice/adr/hexagonal-module-layout).
+Where a new provider adapter or route type belongs: [Module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries) and [ADR-001](https://ashish-codejourney.github.io/aether-gateway/docs/adr/hexagonal-module-layout).
 
 ## Status — what this is
 

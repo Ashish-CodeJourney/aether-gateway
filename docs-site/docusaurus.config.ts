@@ -15,10 +15,10 @@ const config: Config = {
 
   // GitHub Pages: project site at https://<org>.github.io/<repo>/
   url: 'https://ashish-codejourney.github.io',
-  baseUrl: '/Sluice/',
+  baseUrl: '/aether-gateway/',
 
   organizationName: 'Ashish-CodeJourney',
-  projectName: 'Sluice',
+  projectName: 'aether-gateway',
   deploymentBranch: 'gh-pages',
   trailingSlash: false,
 
@@ -58,13 +58,15 @@ const config: Config = {
     [
       'classic',
       {
-        // Docs-only site: no blog, docs served at the site root. The
-        // content itself is NOT duplicated here - `path` points at the
-        // repository's real docs/ folder (one level up from this repo
-        // root's `docs-site/`, i.e. `../docs` from here), which is also
-        // what dozens of source comments across the codebase already
-        // cross-reference by that same relative path. Moving or copying
-        // it would break every one of those references for no benefit.
+        // No blog. Docs live under /docs/... (not the site root - a
+        // real, custom homepage lives at the root instead, see
+        // src/pages/index.tsx) - the content itself is NOT duplicated
+        // here, `path` points at the repository's real docs/ folder
+        // (one level up from this repo root's `docs-site/`, i.e.
+        // `../docs` from here), which is also what dozens of source
+        // comments across the codebase already cross-reference by that
+        // same relative path. Moving or copying it would break every
+        // one of those references for no benefit.
         docs: {
           path: '../docs',
           // docs/plan/ (the phase-by-phase build plan, including
@@ -80,9 +82,9 @@ const config: Config = {
           // (where they never exist at all) - verified by actually
           // moving both aside and rebuilding before trusting this.
           exclude: ['plan/**', 'PRD.md'],
-          routeBasePath: '/',
+          routeBasePath: '/docs',
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/Ashish-CodeJourney/Sluice/edit/trunk/docs/',
+          editUrl: 'https://github.com/Ashish-CodeJourney/aether-gateway/edit/trunk/docs/',
         },
         blog: false,
         theme: {
@@ -105,12 +107,12 @@ const config: Config = {
       },
       items: [
         {
-          to: '/getting-started',
+          to: '/docs/getting-started',
           position: 'left',
           label: 'Getting Started',
         },
         {
-          to: '/usage',
+          to: '/docs/usage',
           position: 'left',
           label: 'Usage',
         },
@@ -121,12 +123,12 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          href: 'https://github.com/Ashish-CodeJourney/Sluice',
+          href: 'https://github.com/Ashish-CodeJourney/aether-gateway',
           label: 'GitHub',
           position: 'right',
         },
         {
-          href: 'https://github.com/Ashish-CodeJourney/Sluice/blob/trunk/BENCHMARKS.md',
+          href: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/BENCHMARKS.md',
           label: 'Benchmarks',
           position: 'right',
         },
@@ -138,17 +140,17 @@ const config: Config = {
         {
           title: 'Get started',
           items: [
-            {label: 'Getting Started', to: '/getting-started'},
-            {label: 'Usage Guide', to: '/usage'},
-            {label: 'README', href: 'https://github.com/Ashish-CodeJourney/Sluice#readme'},
-            {label: 'Benchmarks', href: 'https://github.com/Ashish-CodeJourney/Sluice/blob/trunk/BENCHMARKS.md'},
+            {label: 'Getting Started', to: '/docs/getting-started'},
+            {label: 'Usage Guide', to: '/docs/usage'},
+            {label: 'README', href: 'https://github.com/Ashish-CodeJourney/aether-gateway#readme'},
+            {label: 'Benchmarks', href: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/BENCHMARKS.md'},
           ],
         },
         {
           title: 'Design',
           items: [
-            {label: 'Architecture Decision Records', to: '/category/architecture-decisions'},
-            {label: 'Design docs', to: '/category/design-docs'},
+            {label: 'Architecture Decision Records', to: '/docs/category/architecture-decisions'},
+            {label: 'Design docs', to: '/docs/category/design-docs'},
           ],
         },
       ],
