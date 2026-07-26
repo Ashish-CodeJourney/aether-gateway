@@ -139,7 +139,7 @@ jobs:
           .
 
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aether-${{ matrix.service }}:${{ github.sha }}
           format: table
