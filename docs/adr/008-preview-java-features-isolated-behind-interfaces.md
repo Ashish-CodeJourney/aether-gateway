@@ -1,4 +1,9 @@
-# ADR-008: Preview Java features isolated behind interfaces
+---
+title: "ADR-008: Preview Java features isolated behind interfaces"
+slug: docs/adr/preview-java-features-isolated-behind-interfaces
+sidebar:
+  order: 8
+---
 
 ## Context
 

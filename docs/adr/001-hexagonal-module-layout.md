@@ -1,4 +1,9 @@
-# ADR-001: Hexagonal module layout
+---
+title: "ADR-001: Hexagonal module layout"
+slug: docs/adr/hexagonal-module-layout
+sidebar:
+  order: 1
+---
 
 ## Context
 

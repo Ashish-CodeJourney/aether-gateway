@@ -1,4 +1,9 @@
-# ADR-004: Circuit breaker state is local per JVM, with a Redis advisory hint
+---
+title: "ADR-004: Circuit breaker state is local per JVM, with a Redis advisory hint"
+slug: docs/adr/circuit-breaker-state-local-with-redis-advisory-hint
+sidebar:
+  order: 4
+---
 
 ## Context
 

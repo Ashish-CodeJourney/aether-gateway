@@ -1,4 +1,6 @@
-# Module boundaries
+---
+title: "Module boundaries"
+---
 
 Gradle multi-module layout and dependency direction, per ADR-001. This is
 what Phase 03's ArchUnit rules encode mechanically.

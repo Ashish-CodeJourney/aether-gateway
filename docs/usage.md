@@ -1,9 +1,8 @@
 ---
 title: Usage Guide
-sidebar_position: 3
+sidebar:
+  order: 3
 ---
-
-# Usage Guide
 
 ## Making a request
 

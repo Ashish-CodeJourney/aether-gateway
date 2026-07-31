@@ -1,4 +1,9 @@
-# ADR-007: Spring AI is used only for embeddings, not for the proxy path
+---
+title: "ADR-007: Spring AI is used only for embeddings, not for the proxy path"
+slug: docs/adr/spring-ai-scope-embeddings-only
+sidebar:
+  order: 7
+---
 
 ## Context
 

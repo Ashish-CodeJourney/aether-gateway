@@ -1,4 +1,6 @@
-# Semantic cache correctness
+---
+title: "Semantic cache correctness"
+---
 
 How Phase 07 (M4)'s semantic cache stays a cost optimisation rather than
 a correctness liability, per the PRD's F4 correctness note. Written

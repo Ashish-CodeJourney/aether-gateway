@@ -1,10 +1,8 @@
 ---
-slug: /
 title: Introduction
-sidebar_position: 1
+sidebar:
+  order: 1
 ---
-
-# Aether Gateway
 
 **Aether Gateway is a self-hosted control plane that sits between your applications and LLM providers.** Point an existing OpenAI-compatible SDK at it instead of at a provider directly, and it transparently handles:
 

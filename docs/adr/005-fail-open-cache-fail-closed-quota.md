@@ -1,4 +1,9 @@
-# ADR-005: Fail-open cache, fail-closed quota
+---
+title: "ADR-005: Fail-open cache, fail-closed quota"
+slug: docs/adr/fail-open-cache-fail-closed-quota
+sidebar:
+  order: 5
+---
 
 ## Context
 

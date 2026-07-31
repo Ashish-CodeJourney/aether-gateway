@@ -1,4 +1,9 @@
-# ADR-003: Resilience4j for breakers and bulkheads, Spring annotations where they suffice
+---
+title: "ADR-003: Resilience4j for breakers and bulkheads, Spring annotations where they suffice"
+slug: docs/adr/resilience4j-for-breakers-and-bulkheads
+sidebar:
+  order: 3
+---
 
 ## Context
 

@@ -1,4 +1,9 @@
-# ADR-006: Reservation and reconciliation for token quotas
+---
+title: "ADR-006: Reservation and reconciliation for token quotas"
+slug: docs/adr/reservation-and-reconciliation-for-token-quotas
+sidebar:
+  order: 6
+---
 
 ## Context
 

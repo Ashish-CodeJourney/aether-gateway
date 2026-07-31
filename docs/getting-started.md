@@ -1,9 +1,8 @@
 ---
 title: Getting Started
-sidebar_position: 2
+sidebar:
+  order: 2
 ---
-
-# Getting Started
 
 ## Prerequisites
 

@@ -1,4 +1,6 @@
-# Redis key schema
+---
+title: "Redis key schema"
+---
 
 Reference for every Redis key the gateway reads or writes. Shared
 contract across `gateway-quota` (M3), `gateway-cache` (M4), and

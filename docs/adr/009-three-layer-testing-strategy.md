@@ -1,4 +1,9 @@
-# ADR-009: Three-layer testing strategy, hexagonal architecture as a hard constraint
+---
+title: "ADR-009: Three-layer testing strategy, hexagonal architecture as a hard constraint"
+slug: docs/adr/three-layer-testing-strategy
+sidebar:
+  order: 9
+---
 
 ## Context
 

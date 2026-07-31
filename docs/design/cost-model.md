@@ -1,4 +1,6 @@
-# Cost model
+---
+title: "Cost model"
+---
 
 How Phase 08 (M5) computes `cost_usd` and `cache_savings_usd` per
 request, and how the per-(provider, model) price table itself is

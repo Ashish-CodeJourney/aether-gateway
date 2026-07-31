@@ -1,4 +1,6 @@
-# Routing policy (routing.yaml)
+---
+title: "Routing policy (routing.yaml)"
+---
 
 Reference for the YAML schema `RoutingYamlParser` (gateway-router) reads,
 per PRD section 7 (F2). Loaded once at startup and on every

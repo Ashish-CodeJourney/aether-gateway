@@ -1,4 +1,9 @@
-# ADR-002: WebFlux for streaming, MVC plus virtual threads elsewhere
+---
+title: "ADR-002: WebFlux for streaming, MVC plus virtual threads elsewhere"
+slug: docs/adr/webflux-streaming-mvc-virtual-threads-elsewhere
+sidebar:
+  order: 2
+---
 
 ## Context
 

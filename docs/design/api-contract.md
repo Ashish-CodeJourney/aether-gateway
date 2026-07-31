@@ -1,4 +1,6 @@
-# API contract
+---
+title: "API contract"
+---
 
 Covers every endpoint, header, and error envelope shape from PRD section
 13. This is the contract Phase 03 (M0) through Phase 10 (M7) implement

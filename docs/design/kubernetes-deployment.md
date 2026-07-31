@@ -1,4 +1,6 @@
-# Kubernetes deployment (M8)
+---
+title: "Kubernetes deployment (M8)"
+---
 
 How the gateway survives a rolling update without breaking in-flight SSE
 streams, per PRD section 17.2's three named things ("do them properly or

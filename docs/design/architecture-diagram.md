@@ -1,4 +1,6 @@
-# Architecture diagram
+---
+title: "Architecture diagram"
+---
 
 Rendered form of PRD section 6's ASCII diagram, for use in the README
 (PRD section 20, item 3).
