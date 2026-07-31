@@ -76,6 +76,12 @@ services:
       # configured. This is a local-dev/demo-only default, exactly like
       # the Postgres password above - never a production secret.
       AETHER_ADMIN_API_KEY: dev-admin-key-do-not-use-in-production
+      # Real provider credential, read by GeminiAdapter (gateway-providers)
+      # from this env var name only - see routing.docker.yaml's
+      # gemini-main entry. Never set a default here; compose passes
+      # through whatever is in the host shell or a root .env file
+      # (gitignored), unset if absent.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     volumes:
       - ./routing.docker.yaml:/config/routing.yaml:ro
       - ./aether-gateway/cost-model.yaml:/config/cost-model.yaml:ro

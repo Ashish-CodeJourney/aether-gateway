@@ -10,6 +10,10 @@ providers:
     baseUrl: http://mock-primary:8081
   mock-fallback:
     baseUrl: http://mock-fallback:8081
+  gemini-main:
+    baseUrl: https://generativelanguage.googleapis.com
+    type: gemini
+    apiKeyEnvVar: GEMINI_API_KEY
 
 routes:
   - alias: mock
@@ -19,6 +23,14 @@ routes:
         weight: 100
       - provider: mock-fallback
         model: mock
+    cache:
+      enabled: true
+      threshold: 0.94
+      ttl: 6h
+  - alias: gemini
+    chain:
+      - provider: gemini-main
+        model: gemini-2.0-flash
     cache:
       enabled: true
       threshold: 0.94
