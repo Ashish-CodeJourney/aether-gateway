@@ -1,0 +1,37 @@
+// @ts-check
+import {defineConfig} from 'astro/config';
+import starlight from '@astrojs/starlight';
+
+// GitHub Pages: project site at https://<org>.github.io/<repo>/
+export default defineConfig({
+  site: 'https://ashish-codejourney.github.io',
+  base: '/aether-gateway/',
+  trailingSlash: 'never',
+
+  integrations: [
+    starlight({
+      title: 'Aether Gateway',
+      description:
+        'A self-hosted LLM gateway - streaming proxy, multi-provider failover, and vector-based semantic caching',
+      favicon: '/favicon.svg',
+      logo: {
+        src: './public/img/logo.svg',
+        replacesTitle: false,
+      },
+      social: [
+        {icon: 'github', label: 'GitHub', href: 'https://github.com/Ashish-CodeJourney/aether-gateway'},
+      ],
+      editLink: {
+        baseUrl: 'https://github.com/Ashish-CodeJourney/aether-gateway/edit/trunk/docs/',
+      },
+      customCss: ['./src/styles/custom.css'],
+      sidebar: [
+        {label: 'Introduction', link: '/docs/'},
+        {label: 'Getting Started', link: '/docs/getting-started/'},
+        {label: 'Usage Guide', link: '/docs/usage/'},
+        {label: 'Architecture Decisions', items: [{autogenerate: {directory: 'docs/adr'}}]},
+        {label: 'Design Docs', items: [{autogenerate: {directory: 'docs/design'}}]},
+      ],
+    }),
+  ],
+});
