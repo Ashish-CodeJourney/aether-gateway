@@ -1,8 +1,8 @@
 name: Deploy docs to GitHub Pages
 
-# Builds docs-site/ (Docusaurus, serving the repository's real docs/
-# folder directly - see docs-site/docusaurus.config.ts's `path`
-# comment) and publishes it to GitHub Pages on every push to trunk.
+# Builds docs-site/ (Astro + Starlight, serving the repository's real
+# docs/ folder directly via a symlink - see docs-site/src/content.config.ts)
+# and publishes it to GitHub Pages on every push to trunk.
 #
 # Requires a one-time repo setting change this workflow cannot make
 # itself: Settings -> Pages -> Source -> "GitHub Actions" (not "Deploy
@@ -49,7 +49,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs-site/build
+          path: docs-site/dist
 
   deploy:
     name: Deploy
