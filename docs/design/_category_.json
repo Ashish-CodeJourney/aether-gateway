@@ -1,8 +1,0 @@
-{
-  "label": "Design Docs",
-  "position": 5,
-  "link": {
-    "type": "generated-index",
-    "description": "Narrative design documentation - how specific subsystems work and why, written alongside the code that implements them."
-  }
-}

@@ -84,9 +84,9 @@ cd aether-gateway
 
 ## Docs site
 
-`docs-site/` is Docusaurus, pointed directly at the real `docs/` folder (no
+`docs-site/` is Astro + Starlight, pointed directly at the real `docs/` folder (no
 duplicated content) plus a real, non-templated homepage
-(`docs-site/src/pages/index.tsx`). If you change something under `docs/adr/`,
+(`docs-site/src/pages/index.astro`). If you change something under `docs/adr/`,
 `docs/design/`, `docs/getting-started.md`, or `docs/usage.md`, check it builds:
 
 ```bash
