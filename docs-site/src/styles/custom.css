@@ -1,20 +1,26 @@
 /**
- * Aether Gateway docs theme. A deep indigo/violet accent (distinct from
- * Starlight's default purple) with a warm amber accent, matching the
- * hexagon mark in public/img/logo.svg. Dark mode uses lighter tints of
- * the same hue family for contrast against a dark background, per
- * Starlight's own theming guidance, rather than a different hue.
+ * Aether Gateway docs theme. Same brand pairing as the homepage: deep
+ * indigo/violet + warm amber, with a teal "live" accent reserved for
+ * success/cache-hit states. Space Grotesk for headings (a technical,
+ * geometric display face, not Starlight's system-ui default), Inter
+ * for body text, JetBrains Mono for code - fonts loaded via astro.config
+ * mjs's Starlight `head` option since Starlight's customCss loads too
+ * late for a <link> tag.
  */
 
 :root {
+  --sl-font: 'Inter', var(--sl-font-system);
+  --sl-font-mono: 'JetBrains Mono', var(--sl-font-system-mono);
+
   --sl-color-accent-low: #ece7fb;
   --sl-color-accent: #6e56cf;
   --sl-color-accent-high: #482e99;
 
-  --aether-accent: #d97706;
-  --aether-accent-light: #f59e0b;
+  --aether-accent-2: #d97706;
+  --aether-accent-3: #0f9d8c;
 
   --sl-nav-height: 3.75rem;
+  --sl-content-width: 52rem;
 }
 
 :root[data-theme='dark'] {
@@ -22,17 +28,31 @@
   --sl-color-accent: #ab9ff2;
   --sl-color-accent-high: #e9e5fb;
 
-  --aether-accent: #fbbf24;
-  --aether-accent-light: #fcd34d;
+  --aether-accent-2: #fbbf24;
+  --aether-accent-3: #35d6b8;
 
-  --sl-color-bg: #17151f;
-  --sl-color-bg-nav: #1a1726;
-  --sl-color-bg-sidebar: #1a1726;
+  --sl-color-bg: #0e0b16;
+  --sl-color-bg-nav: #120f1c;
+  --sl-color-bg-sidebar: #120f1c;
+}
+
+/* Headings use the display face; body keeps Inter. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.site-title {
+  font-family: 'Space Grotesk', var(--sl-font-system);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 /* Every doc page's title reads as a branded gradient heading. */
 .content h1:first-of-type {
-  background: linear-gradient(135deg, var(--sl-color-accent) 0%, var(--aether-accent) 130%);
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--sl-color-accent) 0%, var(--aether-accent-2) 130%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -43,6 +63,47 @@
 starlight-tree-view a[aria-current='true'] {
   font-weight: 600;
   border-left: 3px solid var(--sl-color-accent);
+}
+starlight-tree-view a {
+  transition: color 0.12s ease;
+}
+
+/* Nav: small live-status dot next to the site title, echoing the
+   homepage hero's kicker - same "this is a running system" signal. */
+.site-title::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 0.6rem;
+  border-radius: 50%;
+  background: var(--aether-accent-3);
+  vertical-align: middle;
+  animation: aether-pulse 2.4s ease-out infinite;
+}
+@keyframes aether-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(15, 157, 140, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(15, 157, 140, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(15, 157, 140, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-title::after {
+    animation: none;
+  }
+}
+
+/* Code blocks: a touch of brand-tinted border instead of flat grey */
+.expressive-code {
+  --ec-brdRad: 10px;
+}
+.expressive-code .frame {
+  border-color: var(--sl-color-hairline) !important;
 }
 
 /* Tables: a touch more breathing room, header tinted with the brand hue */
@@ -61,4 +122,10 @@ table th {
 starlight-aside.note {
   --sl-color-asides-text-accent: var(--sl-color-accent);
   --sl-color-asides-border: var(--sl-color-accent);
+}
+
+/* Right-hand "On this page" links get a quiet accent hover instead of
+   the default flat grey-to-black swap. */
+.right-sidebar a {
+  transition: color 0.12s ease;
 }
