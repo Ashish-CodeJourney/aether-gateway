@@ -19,9 +19,13 @@ The engineering value here isn't in calling models - it's in everything *around*
 
 - **[Getting Started](/docs/getting-started)** - bring up the whole stack locally and make your first request in under a minute.
 - **[Usage Guide](/docs/usage)** - the request/response contract, response headers, the prompt registry, the admin API, and the operator console.
-- **[Architecture Decisions](/docs/category/architecture-decisions)** - the significant, hard-to-reverse technical decisions and the reasoning behind each.
-- **[Design Docs](/docs/category/design-docs)** - narrative documentation of how specific subsystems actually work.
+- **[Architecture Decisions](/docs/adr/hexagonal-module-layout)** - the significant, hard-to-reverse technical decisions and the reasoning behind each.
+- **[Design Docs](/docs/design/api-contract)** - narrative documentation of how specific subsystems actually work.
 
 ## Reproducing the numbers
 
 Every benchmark result cited anywhere in these docs is real, measured, and reproducible via `make bench` against a real running stack - see [`BENCHMARKS.md`](https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/BENCHMARKS.md) in the repository for the full tables and raw data.
+
+## License and contributing
+
+Aether Gateway is released under the [MIT License](https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/LICENSE). Contributions are welcome - see [CONTRIBUTING.md](https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/CONTRIBUTING.md) for the development setup, conventions, and PR process, the [Code of Conduct](https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/CODE_OF_CONDUCT.md) for how the project expects people to treat each other, and the [Security Policy](https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/SECURITY.md) for how to report a vulnerability.

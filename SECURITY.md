@@ -8,7 +8,7 @@ Please don't open a public GitHub issue for a security vulnerability. Instead, u
 - Steps to reproduce it (a `curl` command against a fresh `docker compose up` is usually enough).
 - Any suggested fix, if you have one - not required.
 
-This is a personal/portfolio project without a formal SLA, but security reports get priority over everything else and I'll acknowledge within a few days.
+There's no formal SLA yet, but security reports get priority over everything else and I'll acknowledge within a few days.
 
 ## What's already in scope and handled
 

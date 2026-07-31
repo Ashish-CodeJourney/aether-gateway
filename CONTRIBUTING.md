@@ -1,9 +1,8 @@
 # Contributing to Aether Gateway
 
-Thanks for considering a contribution. This is a portfolio project first and
-an open-source project second, which mostly just means: the existing
-conventions below are deliberate and reasonably strict - please follow them
-rather than working around them.
+Thanks for considering a contribution. The existing conventions below are
+deliberate and reasonably strict - please follow them rather than working
+around them.
 
 ## Before you start
 

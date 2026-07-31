@@ -48,6 +48,24 @@ export default defineConfig({
         {label: 'Usage Guide', link: '/docs/usage/'},
         {label: 'Architecture Decisions', items: [{autogenerate: {directory: 'docs/adr'}}]},
         {label: 'Design Docs', items: [{autogenerate: {directory: 'docs/design'}}]},
+        {
+          label: 'Project',
+          items: [
+            {label: 'License (MIT)', link: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/LICENSE'},
+            {
+              label: 'Contributing',
+              link: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/CONTRIBUTING.md',
+            },
+            {
+              label: 'Code of Conduct',
+              link: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/CODE_OF_CONDUCT.md',
+            },
+            {
+              label: 'Security Policy',
+              link: 'https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/SECURITY.md',
+            },
+          ],
+        },
       ],
     }),
   ],
