@@ -37,6 +37,7 @@ class ResilientRouterTest {
         private final String name;
         private final Supplier<ProviderResponse> responseSupplier;
         private final AtomicInteger invocationCount = new AtomicInteger();
+        private final AtomicReference<String> lastReceivedModel = new AtomicReference<>();
 
         FakeAdapter(String name, ProviderResponse fixedResponse) {
             this(name, () -> fixedResponse);
@@ -55,12 +56,16 @@ class ResilientRouterTest {
         @Override
         public ProviderResponse invoke(ChatCompletionRequest request) {
             invocationCount.incrementAndGet();
+            lastReceivedModel.set(request.model());
             return responseSupplier.get();
         }
 
         @Override
         public Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request) {
-            throw new UnsupportedOperationException();
+            lastReceivedModel.set(request.model());
+            var publisher = new java.util.concurrent.SubmissionPublisher<ProviderResponse.StreamChunk>();
+            publisher.close();
+            return publisher;
         }
     }
 
@@ -267,6 +272,35 @@ class ResilientRouterTest {
         assertThat(breaker.getState())
                 .isIn(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED,
                         io.github.resilience4j.circuitbreaker.CircuitBreaker.State.HALF_OPEN);
+    }
+
+    @Test
+    void sendsTheChainMembersConfiguredModelToTheAdapterNotTheClientsRequestedAlias() {
+        // Regression test: a route's alias (what the client requests as
+        // "model") and a chain member's configured model can legitimately
+        // differ - e.g. alias "gemini" routing to provider model
+        // "gemini-flash-latest". The adapter must receive the chain
+        // member's model, never the raw alias forwarded unchanged.
+        var primary = new FakeAdapter("gemini-main", new ProviderResponse.Completion(fakeSuccess("primary")));
+        var route = new RouteConfig("gemini", List.of(new ChainMember("gemini-main", "gemini-flash-latest", 100)));
+        var router = buildRouter(Map.of("gemini-main", primary), route);
+
+        var request = new ChatCompletionRequest("gemini", List.of(new ChatMessage("user", "hi")), false);
+        router.complete(request);
+
+        assertThat(primary.lastReceivedModel.get()).isEqualTo("gemini-flash-latest");
+    }
+
+    @Test
+    void streamingSendsTheChainMembersConfiguredModelToTheAdapterNotTheClientsRequestedAlias() {
+        var primary = new FakeAdapter("gemini-main", new ProviderResponse.Completion(fakeSuccess("primary")));
+        var route = new RouteConfig("gemini", List.of(new ChainMember("gemini-main", "gemini-flash-latest", 100)));
+        var router = buildRouter(Map.of("gemini-main", primary), route);
+
+        var request = new ChatCompletionRequest("gemini", List.of(new ChatMessage("user", "hi")), true);
+        router.stream(request);
+
+        assertThat(primary.lastReceivedModel.get()).isEqualTo("gemini-flash-latest");
     }
 
     @Test
