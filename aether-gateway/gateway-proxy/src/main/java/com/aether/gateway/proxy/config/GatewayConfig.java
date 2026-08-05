@@ -26,6 +26,7 @@ import com.aether.gateway.observability.CostModelRepository;
 import com.aether.gateway.observability.CostModelYamlParser;
 import com.aether.gateway.observability.JdbcRequestLogQueryRepository;
 import com.aether.gateway.observability.JdbcRequestLogWriter;
+import com.aether.gateway.providers.anthropic.AnthropicAdapter;
 import com.aether.gateway.observability.RequestLogPartitionMaintainer;
 import com.aether.gateway.observability.JdbcUsageQueryRepository;
 import com.aether.gateway.observability.MicrometerMetricsAdapter;
@@ -116,6 +117,12 @@ public class GatewayConfig {
         return new RedisBreakerHintGateway(redisTemplate);
     }
 
+    // Anthropic's Messages API requires max_tokens on every request and
+    // the domain ChatCompletionRequest has nowhere to carry a
+    // caller-supplied one, so the adapter needs a configured default.
+    @Value("${aether.providers.anthropic.default-max-tokens:4096}")
+    private int anthropicDefaultMaxTokens;
+
     @Bean
     public RoutingPolicyRepository routingPolicyRepository(
             @Value("${aether.routing.config-path}") String routingConfigPath) {
@@ -138,7 +145,14 @@ public class GatewayConfig {
                     providerConfig.name(), providerConfig.baseUrl(), apiKey, RestClient.builder(), WebClient.builder());
             case "gemini" -> new GeminiAdapter(
                     providerConfig.name(), providerConfig.baseUrl(), apiKey, RestClient.builder(), WebClient.builder());
-            case "groq", "openai-compatible" -> new OpenAiCompatibleAdapter(
+            case "anthropic" -> new AnthropicAdapter(
+                    providerConfig.name(), providerConfig.baseUrl(), apiKey, anthropicDefaultMaxTokens,
+                    RestClient.builder(), WebClient.builder());
+            // "openai" is spelled out alongside the generic type so a
+            // routing.yaml can name it directly; OpenAI itself speaks
+            // exactly this wire format, as do Groq, LiteLLM, vLLM and
+            // anything else fronting an OpenAI-compatible endpoint.
+            case "groq", "openai", "openai-compatible" -> new OpenAiCompatibleAdapter(
                     providerConfig.name(), providerConfig.baseUrl(), apiKey, RestClient.builder(), WebClient.builder());
             default -> new MockProviderAdapter(
                     providerConfig.name(), providerConfig.baseUrl(), RestClient.builder(), WebClient.builder());

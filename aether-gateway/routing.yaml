@@ -31,6 +31,25 @@ providers:
   #   type: gemini
   #   apiKeyEnvVar: GEMINI_API_KEY
   #
+  # anthropic-main:
+  #   baseUrl: https://api.anthropic.com/v1
+  #   type: anthropic
+  #   apiKeyEnvVar: ANTHROPIC_API_KEY
+  #
+  # openai-main:
+  #   baseUrl: https://api.openai.com/v1
+  #   type: openai
+  #   apiKeyEnvVar: OPENAI_API_KEY
+  #
+  # Anything speaking the OpenAI wire format - LiteLLM, vLLM, TGI, a
+  # vendor's compatible endpoint - uses the generic type. Point baseUrl
+  # at the proxy's own /v1 and it fans out from there.
+  #
+  # litellm-local:
+  #   baseUrl: http://localhost:4000/v1
+  #   type: openai-compatible
+  #   apiKeyEnvVar: LITELLM_API_KEY
+  #
   # openai-compatible-main:
   #   baseUrl: https://your-provider.example.com/v1
   #   type: openai-compatible

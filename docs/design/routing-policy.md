@@ -31,12 +31,20 @@ routes:
 ## Semantics
 
 - **`providers`**: every name referenced by any route's `chain` must have
-  an entry here. Each entry currently maps to a
-  `MockProviderAdapter`(gateway-providers); real provider types (Ollama,
-  Groq, Gemini) are added in Phase 12 with their own adapter classes, at
-  which point this section will likely need a `type:` field to select
-  which adapter constructs the entry (not needed yet, since only the mock
-  adapter exists).
+  an entry here. `type` selects which adapter in `gateway-providers`
+  constructs it, and defaults to the mock adapter when omitted:
+
+  | `type` | Adapter | Notes |
+  |---|---|---|
+  | `ollama` | `OllamaAdapter` | Local serving; no auth by default |
+  | `gemini` | `GeminiAdapter` | camelCase wire format, key as a `?key=` query param |
+  | `anthropic` | `AnthropicAdapter` | Messages API. **Never run against the live API** - see the adapter's javadoc |
+  | `openai`, `groq`, `openai-compatible` | `OpenAiCompatibleAdapter` | Anything speaking the OpenAI wire format, including LiteLLM, vLLM and TGI |
+  | omitted / anything else | `MockProviderAdapter` | Backward-compatible default |
+
+  `apiKeyEnvVar` names the environment variable holding the credential,
+  never the credential itself (F9.2), so this file stays safe to commit
+  with real providers configured.
 - **`routes[].alias`**: the value clients pass as `model` in
   `POST /v1/chat/completions`. At this phase, alias resolution is exact
   match only; predicate-based routing (F2.4: API-key tag, request size,

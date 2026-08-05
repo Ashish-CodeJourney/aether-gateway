@@ -58,7 +58,7 @@ file in `gateway-acceptance-tests/src/test/resources/features/`.
 | ID | Requirement | Where |
 |---|---|---|
 | F2.1 | Every provider is reached through one `ProviderAdapter` port | `gateway-core` port, `gateway-providers` implementations |
-| F2.2 | Adapters normalise each provider's own wire format to the domain model | `OllamaAdapter`, `GeminiAdapter`, `OpenAiCompatibleAdapter` |
+| F2.2 | Adapters normalise each provider's own wire format to the domain model | `OllamaAdapter`, `GeminiAdapter`, `AnthropicAdapter`, `OpenAiCompatibleAdapter` |
 | F2.3 | `routing.yaml` maps a model alias to an ordered provider chain | `RouteConfig`, `routing.yaml` |
 | F2.4 | Predicate-based routing (API-key tag, request size) - **not built**; matching is by model alias only | - |
 | F2.5 | A chain is walked in its configured attempt order | `Router` |
@@ -154,6 +154,8 @@ file in `gateway-acceptance-tests/src/test/resources/features/`.
 
 Requirements referenced somewhere in the codebase that are deliberately
 unbuilt: **F1.8** (embeddings endpoint) and **F2.4** (predicate-based
-routing). Measured criteria that miss their target - AC3, AC4, AC5 - are
+routing). `AnthropicAdapter` is built and passes the shared provider
+contract suite against recorded fixtures, but has never been run against
+the live Anthropic API - it is unproven, not proven. Measured criteria that miss their target - AC3, AC4, AC5 - are
 documented with their real numbers in the scorecard rather than quietly
 dropped.
