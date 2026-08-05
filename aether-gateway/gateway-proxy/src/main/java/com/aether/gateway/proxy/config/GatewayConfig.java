@@ -26,6 +26,7 @@ import com.aether.gateway.observability.CostModelRepository;
 import com.aether.gateway.observability.CostModelYamlParser;
 import com.aether.gateway.observability.JdbcRequestLogQueryRepository;
 import com.aether.gateway.observability.JdbcRequestLogWriter;
+import com.aether.gateway.observability.RequestLogPartitionMaintainer;
 import com.aether.gateway.observability.JdbcUsageQueryRepository;
 import com.aether.gateway.observability.MicrometerMetricsAdapter;
 import com.aether.gateway.providers.gemini.GeminiAdapter;
@@ -267,6 +268,17 @@ public class GatewayConfig {
     @Bean
     public RequestLogPort requestLogPort(JdbcRequestLogWriter jdbcRequestLogWriter) {
         return jdbcRequestLogWriter;
+    }
+
+    // request_log is RANGE-partitioned with no DEFAULT partition, so
+    // writes stop dead the moment the calendar runs past the last
+    // partition. The maintainer keeps a rolling window open ahead of
+    // now; see RequestLogPartitionScheduler for when it runs.
+    @Bean
+    public RequestLogPartitionMaintainer requestLogPartitionMaintainer(
+            JdbcClient jdbcClient,
+            @Value("${aether.request-log.partition-months-ahead}") int partitionMonthsAhead) {
+        return new RequestLogPartitionMaintainer(jdbcClient, partitionMonthsAhead);
     }
 
     @Bean

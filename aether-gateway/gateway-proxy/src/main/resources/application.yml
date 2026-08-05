@@ -79,6 +79,13 @@ aether:
     default-threshold: ${AETHER_CACHE_DEFAULT_THRESHOLD:0.94}
   cost-model:
     config-path: ${COST_MODEL_CONFIG_PATH:cost-model.yaml}
+  request-log:
+    # How many months of request_log partitions to keep open ahead of
+    # the current one. The table has no DEFAULT partition, so running
+    # out is a hard write failure, not a degradation - 6 months means
+    # partition maintenance would have to be broken and unnoticed for
+    # half a year before that could happen.
+    partition-months-ahead: ${AETHER_REQUEST_LOG_PARTITION_MONTHS_AHEAD:6}
   security:
     # F9.5: per-IP token bucket for the anonymous (no Authorization
     # header, or an unrecognised one) request path only - real API keys
