@@ -78,7 +78,7 @@ experiments.
 |---|---|---|---|
 | Hit rate at 0.94 | 14.5% | 14.5% | +0.0 pp |
 | False-hit rate at 0.94 | 28.0% | 36.0% | +8.0 pp |
-| Mean embed() latency | 7.04 ms | 41.61 ms | +34.57 ms |
+| Mean embed() latency | 7.23 ms | 41.48 ms | +34.25 ms |
 | Bytes per cached vector (float32) | 1536 | 3072 | +1536 |
 
 ## Choice
@@ -86,7 +86,7 @@ experiments.
 The product keeps **MiniLM-L6** (ADR-007). At the shared reference
 threshold, mpnet-base-v2 does not clear a materially better
 accuracy trade-off large enough to justify its measured cost: 2.00x
-the per-vector storage and 5.91x the embed() latency, both paid on
+the per-vector storage and 5.73x the embed() latency, both paid on
 every single request (cache lookup embeds the incoming prompt
 synchronously, F4.3). This is a measured tradeoff, not a "it was
 the default" claim - the raw numbers above are what would have to
@@ -127,19 +127,19 @@ embeddings - see the table below for the tradeoff.
 
 | m | ef_search | recall@10 | mean latency (ms) |
 |---|---|---|---|
-| 8 | 10 | 0.9961 | 18.4793 |
-| 8 | 40 | 0.9961 | 19.1441 |
-| 8 | 100 | 0.9961 | 16.5974 |
-| 8 | 200 | 0.9961 | 15.5064 |
-| 16 | 10 | 0.9961 | 17.1972 |
-| 16 | 40 | 0.9961 | 16.9080 |
-| 16 | 100 | 0.9961 | 16.2885 |
-| 16 | 200 | 0.9961 | 16.9081 |
-| 32 | 10 | 0.9974 | 18.8672 |
-| 32 | 40 | 0.9974 | 19.3909 |
-| 32 | 100 | 0.9974 | 19.0255 |
-| 32 | 200 | 0.9974 | 19.7958 |
-| brute-force | n/a | 1.0000 | 23.8610 |
+| 8 | 10 | 0.9987 | 19.9332 |
+| 8 | 40 | 0.9987 | 18.1107 |
+| 8 | 100 | 0.9987 | 15.5036 |
+| 8 | 200 | 0.9987 | 16.0917 |
+| 16 | 10 | 0.9921 | 17.6858 |
+| 16 | 40 | 0.9921 | 16.4134 |
+| 16 | 100 | 0.9921 | 18.8226 |
+| 16 | 200 | 0.9921 | 16.9143 |
+| 32 | 10 | 0.9987 | 18.2397 |
+| 32 | 40 | 0.9987 | 19.2121 |
+| 32 | 100 | 0.9987 | 18.2260 |
+| 32 | 200 | 0.9987 | 20.4891 |
+| brute-force | n/a | 1.0000 | 24.1891 |
 
 
 The production migration (`db/migrations/V3__cache_entry.sql`) uses
@@ -147,7 +147,7 @@ The production migration (`db/migrations/V3__cache_entry.sql`) uses
 override (pgvector's own default, currently 40).
 ## Justification for the production default (m = 16)
 
-Moving from m = 16 to m = 32 buys +0.13 pp recall@10 (99.61% -> 99.74%) for +1.67 ms of extra mean query latency (17.20 ms -> 18.87 ms). At this measured scale that is a real but small gain for a real but small cost; m = 16 (pgvector's own suggested default, matching what `db/migrations/V3__cache_entry.sql` already uses) is a reasonable operating point rather than an unexamined default, and `ef_search` did not measurably change recall in this sweep at any tested m, so the production code's reliance on pgvector's own `ef_search` default (currently 40) is left as-is.
+Moving from m = 16 to m = 32 buys +0.66 pp recall@10 (99.21% -> 99.87%) for +0.55 ms of extra mean query latency (17.69 ms -> 18.24 ms). At this measured scale that is a real but small gain for a real but small cost; m = 16 (pgvector's own suggested default, matching what `db/migrations/V3__cache_entry.sql` already uses) is a reasonable operating point rather than an unexamined default, and `ef_search` did not measurably change recall in this sweep at any tested m, so the production code's reliance on pgvector's own `ef_search` default (currently 40) is left as-is.
 
 
 ---
@@ -359,7 +359,7 @@ mix, not of the cache itself.
 PRD section 4.1. Every criterion below has a real measured value - per
 this phase's own exit criterion, an unmeasured criterion is not
 acceptable, but a measured-and-below-target one (a documented gap) is.
-4 of 9 criteria meet their target; the rest are honestly documented
+5 of 9 criteria meet their target; the rest are honestly documented
 below with the real measured number and, where applicable, why.
 
 | AC | Criterion | Target | Measured | Status |
@@ -370,7 +370,7 @@ below with the real measured number and, where applicable, why.
 | AC4 | Semantic cache false-hit rate | ≤ 5%, hand-labelled, documented | 8.0% guarded false-hit rate at threshold 0.94 (experiment 2, full corpus) | NOT MET (documented gap, same finding as Phase 07/M4) |
 | AC5 | Concurrent streaming connections on 2 vCPU / 4 GB | ≥ 2,000 | 37.1% request failure rate at 2,000 concurrent VUs; p95/p99 already in the tens of seconds at 1,200 concurrent VUs (0% hard failures there, but severe queueing) - see ac5-concurrency.json for the caveat about shared test-host confounds | NOT MET |
 | AC6 | Failover time from provider outage detection | < 500 ms | p50 38.70 ms, p95 66.89 ms, p99 67.92 ms, max 70.10 ms over 100 independent trials (experiment 7) | MET |
-| AC7 | Broken streams during rolling K8s deploy | 0 out of ≥ 500 in-flight | Cannot be measured: requires a running Kubernetes deployment (Phase 11/M8), which is optional and has not been built. Disclosed as an explicit, unmeasured gap rather than silently omitted or claimed via an unrelated scenario. | NOT MEASURED (blocked on Phase 11/M8) |
+| AC7 | Broken streams during rolling K8s deploy | 0 out of ≥ 500 in-flight | 0 broken out of 1000 in-flight SSE streams across 2 rollout(s) - run 1: 500/500 ok, 0 broken, rollout 53s; run 2: 500/500 ok, 0 broken, rollout 37s (in-cluster client against the real Service; see ac7-rolling-update.json and docs/design/kubernetes-deployment.md) | MET |
 | AC8 | Quota accuracy under 100 concurrent requests | 0 over-issue | Exactly 50 Allowed / 50 Rejected against a 50-token budget under 100 concurrent requests, 0 over-issue, 0 under-issue (Phase 06/M3, RedisQuotaAdapterConcurrencyIntegrationTest, Testcontainers-Redis) | MET |
 | AC9 | Line coverage on core modules | ≥ 75% | gateway-core 75.7%, gateway-router 76.5%, gateway-quota 73.9%, gateway-cache 81.3% (aggregate 76.8%, 482/628 lines, JaCoCo, unit + integration test execution data merged) | MET in aggregate; gateway-quota individually below target (73.9%) |
 
@@ -390,5 +390,8 @@ not cleanly sustain 2,000 concurrent streaming connections on a
 `ac5-concurrency.json` for the full caveat about the shared,
 non-dedicated test host this was measured on.
 
-**AC7** cannot be measured without Kubernetes (Phase 11/M8, optional,
-not built) - disclosed rather than hidden.
+**AC7** was measured against a real cluster in a later phase than the rest of this
+scorecard, which is why the drain design in
+`docs/design/kubernetes-deployment.md` carries the full methodology - including the
+first attempt's false failure, where `kubectl port-forward` pinned every stream to one
+backing pod and dropped 490/500 for reasons unrelated to the rollout.

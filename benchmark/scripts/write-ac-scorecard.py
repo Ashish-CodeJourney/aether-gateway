@@ -19,10 +19,44 @@ def load(name):
         return json.load(f)
 
 
+def load_optional(name):
+    """Criteria that depend on infrastructure the run may not have (AC7
+    needs a live Kubernetes cluster) are absent rather than zero when
+    they were never exercised. Returning None keeps 'not measured' and
+    'measured as zero' distinguishable - collapsing the two is how a
+    scorecard starts lying."""
+    try:
+        return load(name)
+    except FileNotFoundError:
+        return None
+
+
+def ac7_row(ac7):
+    if ac7 is None:
+        return ("AC7", "Broken streams during rolling K8s deploy", "0 out of ≥ 500 in-flight",
+                "Not measured in this run: requires a live Kubernetes deployment. Disclosed as an "
+                "explicit, unmeasured gap rather than silently omitted or claimed via an unrelated "
+                "scenario. Re-run against a cluster to populate ac7-rolling-update.json.",
+                "NOT MEASURED (no cluster in this run)")
+    runs = ac7["runs"]
+    broken = sum(r["broken_count"] for r in runs)
+    streams = sum(r["stream_count"] for r in runs)
+    detail = "; ".join(
+        f"run {r['run']}: {r['ok']}/{r['stream_count']} ok, {r['broken_count']} broken, "
+        f"rollout {r['rollout_duration_seconds']}s"
+        for r in runs)
+    return ("AC7", "Broken streams during rolling K8s deploy", "0 out of ≥ 500 in-flight",
+            f"{broken} broken out of {streams} in-flight SSE streams across {len(runs)} rollout(s) - {detail} "
+            f"(in-cluster client against the real Service; see ac7-rolling-update.json and "
+            f"docs/design/kubernetes-deployment.md)",
+            "MET" if broken == 0 and streams >= 500 else "NOT MET")
+
+
 def main():
     ac1_ac2 = load("ac1-ac2-latency.json")
     ac5 = load("ac5-concurrency.json")
     ac9 = load("ac9-coverage.json")
+    ac7 = load_optional("ac7-rolling-update.json")
 
     ac1 = ac1_ac2["AC1"]
     ac2 = ac1_ac2["AC2"]
@@ -48,11 +82,7 @@ def main():
         ("AC6", "Failover time from provider outage detection", "< 500 ms",
          "p50 38.70 ms, p95 66.89 ms, p99 67.92 ms, max 70.10 ms over 100 independent trials (experiment 7)",
          "MET"),
-        ("AC7", "Broken streams during rolling K8s deploy", "0 out of ≥ 500 in-flight",
-         "Cannot be measured: requires a running Kubernetes deployment (Phase 11/M8), which is "
-         "optional and has not been built. Disclosed as an explicit, unmeasured gap rather than "
-         "silently omitted or claimed via an unrelated scenario.",
-         "NOT MEASURED (blocked on Phase 11/M8)"),
+        ac7_row(ac7),
         ("AC8", "Quota accuracy under 100 concurrent requests", "0 over-issue",
          "Exactly 50 Allowed / 50 Rejected against a 50-token budget under 100 concurrent requests, "
          "0 over-issue, 0 under-issue (Phase 06/M3, RedisQuotaAdapterConcurrencyIntegrationTest, "
@@ -71,6 +101,16 @@ def main():
         table.append(f"| {ac_id} | {criterion} | {target} | {measured} | {status} |")
 
     met = sum(1 for r in rows if r[4] == "MET")
+    ac7_note = (
+        "**AC7** was measured against a real cluster in a later phase than the rest of this\n"
+        "scorecard, which is why the drain design in\n"
+        "`docs/design/kubernetes-deployment.md` carries the full methodology - including the\n"
+        "first attempt's false failure, where `kubectl port-forward` pinned every stream to one\n"
+        "backing pod and dropped 490/500 for reasons unrelated to the rollout."
+        if ac7 is not None else
+        "**AC7** needs a live Kubernetes cluster to measure and this run had none -\n"
+        "disclosed rather than hidden."
+    )
     report = f"""## AC1-AC9 scorecard
 
 PRD section 4.1. Every criterion below has a real measured value - per
@@ -97,8 +137,7 @@ not cleanly sustain 2,000 concurrent streaming connections on a
 `ac5-concurrency.json` for the full caveat about the shared,
 non-dedicated test host this was measured on.
 
-**AC7** cannot be measured without Kubernetes (Phase 11/M8, optional,
-not built) - disclosed rather than hidden.
+{ac7_note}
 """
 
     with open(f"{RESULTS_DIR}/ac-scorecard.md", "w") as f:
