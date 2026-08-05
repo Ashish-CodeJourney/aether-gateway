@@ -43,7 +43,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   -d '{"model":"mock","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-No API key needed for this - requests without an `Authorization` header are treated as anonymous (unmetered, but rate-limited per source IP - see [Usage](/docs/usage#authentication)). Point a real OpenAI-compatible SDK at the gateway by setting its `baseUrl` to `http://localhost:8080/v1`; nothing else about the client changes.
+No API key needed for this - the Compose stack sets `AETHER_SECURITY_ALLOW_ANONYMOUS=true` so unauthenticated requests are served (unmetered, but rate-limited per source IP). That is a local-demo setting: anywhere else, a request without a valid key gets `401 unauthenticated` - see [Usage](/docs/usage#authentication). Point a real OpenAI-compatible SDK at the gateway by setting its `baseUrl` to `http://localhost:8080/v1`; nothing else about the client changes.
 
 ## Configuring a real provider
 

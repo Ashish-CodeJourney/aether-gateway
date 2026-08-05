@@ -26,7 +26,11 @@ Set `"stream": true` for a Server-Sent Events response, identical in shape to Op
 
 An `Authorization: Bearer <api-key>` header attaches the request to a real API key - its own rate limit, concurrency cap, and monthly token budget apply, and usage is attributed to it in the request log and cost dashboard.
 
-No `Authorization` header (or one that doesn't resolve to a real key) is treated as **anonymous**: unmetered against any per-key budget, but rate-limited per source IP address (F9.5) so a single anonymous client can't exhaust the gateway. Real API keys are created via the [admin API](#admin-api) and are stored as salted hashes, never plaintext (F9.1).
+Real API keys are created via the [admin API](#admin-api) and are stored as salted hashes, never plaintext (F9.1).
+
+A request with no `Authorization` header - or one that doesn't resolve to a real key - is **rejected with `401 unauthenticated` by default**. Such a request is unmetered, charged to no budget, and served using the operator's own provider credentials, so a gateway reachable beyond localhost would otherwise be an open proxy to whatever those credentials can buy. An unrecognised key is treated identically to no key at all, so the endpoint can't be used to probe which keys exist.
+
+Setting `AETHER_SECURITY_ALLOW_ANONYMOUS=true` opts back in: anonymous requests are then served unmetered against any per-key budget, but rate-limited per source IP address (F9.5) so one anonymous client can't exhaust the gateway. The Docker Compose stack and the acceptance suite both enable it, since neither has real credentials to protect; the Kubernetes manifests deliberately leave it off.
 
 ## Response headers
 

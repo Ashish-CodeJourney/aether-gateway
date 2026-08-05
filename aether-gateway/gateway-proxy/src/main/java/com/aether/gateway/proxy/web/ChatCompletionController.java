@@ -29,6 +29,7 @@ import com.aether.gateway.core.port.PromptRegistryPort;
 import com.aether.gateway.core.port.QuotaPort;
 import com.aether.gateway.core.port.RequestLogPort;
 import com.aether.gateway.router.routing.RoutingSource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -107,6 +108,7 @@ public class ChatCompletionController {
     private final PromptRegistryPort promptRegistryPort;
     private final ChatCompletionDtoMapper mapper;
     private final Scheduler virtualThreadScheduler;
+    private final boolean allowAnonymous;
 
     public ChatCompletionController(
             ChatCompletionUseCase chatCompletionUseCase,
@@ -122,7 +124,8 @@ public class ChatCompletionController {
             CostModelPort costModelPort,
             PromptRegistryPort promptRegistryPort,
             ChatCompletionDtoMapper mapper,
-            Scheduler virtualThreadScheduler) {
+            Scheduler virtualThreadScheduler,
+            @Value("${aether.security.allow-anonymous:false}") boolean allowAnonymous) {
         this.chatCompletionUseCase = chatCompletionUseCase;
         this.chatStreamUseCase = chatStreamUseCase;
         this.apiKeyLookupPort = apiKeyLookupPort;
@@ -137,6 +140,7 @@ public class ChatCompletionController {
         this.promptRegistryPort = promptRegistryPort;
         this.mapper = mapper;
         this.virtualThreadScheduler = virtualThreadScheduler;
+        this.allowAnonymous = allowAnonymous;
     }
 
     /**
@@ -250,6 +254,10 @@ public class ChatCompletionController {
         /** F9.5: the anonymous path only - a real API key is already covered by {@link Rejected}'s per-key quota. */
         record IpRateLimited() implements QuotaOutcome {
         }
+
+        /** No usable API key, and this deployment does not serve anonymous traffic. */
+        record Unauthenticated() implements QuotaOutcome {
+        }
     }
 
     private record CacheLookup(String namespace, CacheDecision decision, RouteCacheConfig routeCache) {
@@ -270,14 +278,35 @@ public class ChatCompletionController {
 
     private QuotaOutcome checkQuota(String authorization, String clientIp, ChatCompletionRequest domainRequest) {
         if (authorization == null || authorization.isBlank()) {
-            return ipRateLimitPort.tryConsume(clientIp) ? new QuotaOutcome.Unmetered() : new QuotaOutcome.IpRateLimited();
+            return anonymousOutcome(clientIp);
         }
         String rawKey = authorization.startsWith("Bearer ") ? authorization.substring(7) : authorization;
         ApiKeyContext key = apiKeyLookupPort.findByRawKey(rawKey).orElse(null);
         if (key == null) {
-            return ipRateLimitPort.tryConsume(clientIp) ? new QuotaOutcome.Unmetered() : new QuotaOutcome.IpRateLimited();
+            return anonymousOutcome(clientIp);
         }
+        return checkQuotaForKey(key, domainRequest);
+    }
 
+    /**
+     * A request with no key, or one this gateway does not recognise, is
+     * unmetered: no quota bounds it, no budget is charged, and its usage
+     * is attributable to nobody. Serving it means proxying to whatever
+     * real provider credentials the operator configured, so it is
+     * refused unless the operator has explicitly opted in.
+     *
+     * <p>An unrecognised key is deliberately treated exactly like no key
+     * at all: leaking "that key exists but is wrong" versus "that key
+     * does not exist" would turn this endpoint into a key oracle.
+     */
+    private QuotaOutcome anonymousOutcome(String clientIp) {
+        if (!allowAnonymous) {
+            return new QuotaOutcome.Unauthenticated();
+        }
+        return ipRateLimitPort.tryConsume(clientIp) ? new QuotaOutcome.Unmetered() : new QuotaOutcome.IpRateLimited();
+    }
+
+    private QuotaOutcome checkQuotaForKey(ApiKeyContext key, ChatCompletionRequest domainRequest) {
         long estimatedTokens = tokenEstimator.estimatePessimisticTotal(domainRequest);
         String requestId = UUID.randomUUID().toString();
         QuotaDecision decision = quotaPort.checkAndReserve(key, requestId, estimatedTokens);
@@ -295,6 +324,9 @@ public class ChatCompletionController {
         }
         if (quotaOutcome instanceof QuotaOutcome.IpRateLimited) {
             return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("ip_rate_limited"), RouteCacheConfig.DISABLED);
+        }
+        if (quotaOutcome instanceof QuotaOutcome.Unauthenticated) {
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("unauthenticated"), RouteCacheConfig.DISABLED);
         }
         String namespace = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.key().keyId() : ANONYMOUS_NAMESPACE;
         RouteCacheConfig routeCache = routingSource.routeFor(domainRequest.model())
@@ -314,6 +346,9 @@ public class ChatCompletionController {
         }
         if (quotaOutcome instanceof QuotaOutcome.IpRateLimited) {
             return Mono.just(ipRateLimitedResponse(domainRequest, requestStartNanos));
+        }
+        if (quotaOutcome instanceof QuotaOutcome.Unauthenticated) {
+            return Mono.just(unauthenticatedResponse(domainRequest, requestStartNanos));
         }
         ApiKeyContext key = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.key() : null;
         QuotaDecision.Allowed allowed = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.allowed() : null;
@@ -358,6 +393,27 @@ public class ChatCompletionController {
         recordObservability(domainRequest, null, null, "BYPASS", false, null,
                 0, 0, totalMs, totalMs, 0, List.of(), "IP_RATE_LIMITED", "ip_rate_limited");
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body((Object) body);
+    }
+
+    /**
+     * No usable API key on a gateway that does not serve anonymous
+     * traffic. Logged like any other refusal so operators can see
+     * unauthenticated attempts building up rather than having them
+     * vanish before the request log.
+     */
+    private ResponseEntity<Object> unauthenticatedResponse(ChatCompletionRequest domainRequest, long requestStartNanos) {
+        var body = new ErrorEnvelopeDto(
+                "https://aether.dev/problems/unauthenticated",
+                "unauthenticated",
+                HttpStatus.UNAUTHORIZED.value(),
+                "A valid API key is required. Send it as 'Authorization: Bearer <key>'.",
+                "/v1/chat/completions");
+        long totalMs = elapsedMillis(requestStartNanos);
+        recordObservability(domainRequest, null, null, "BYPASS", false, null,
+                0, 0, totalMs, totalMs, 0, List.of(), "UNAUTHENTICATED", "unauthenticated");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header("WWW-Authenticate", "Bearer realm=\"aether-gateway\"")
+                .body((Object) body);
     }
 
     // ---- Cache hits: F4.8 replay for streaming requests, direct body otherwise ----

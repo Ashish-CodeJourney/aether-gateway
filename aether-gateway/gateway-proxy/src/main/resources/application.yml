@@ -87,6 +87,14 @@ aether:
     # half a year before that could happen.
     partition-months-ahead: ${AETHER_REQUEST_LOG_PARTITION_MONTHS_AHEAD:6}
   security:
+    # Whether a request with no API key - or one this gateway does not
+    # recognise - is served at all. Off by default: such a request is
+    # unmetered, charged to nobody, and proxied using the operator's own
+    # provider credentials, so a gateway reachable from anywhere would
+    # otherwise be an open proxy to whatever those credentials can buy.
+    # Turn on only for local demos and test rigs (docker-compose.yml and
+    # the acceptance suite both do).
+    allow-anonymous: ${AETHER_SECURITY_ALLOW_ANONYMOUS:false}
     # F9.5: per-IP token bucket for the anonymous (no Authorization
     # header, or an unrecognised one) request path only - real API keys
     # already have their own per-key RPS limit (F5.1) and never touch

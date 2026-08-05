@@ -138,6 +138,13 @@ public final class AcceptanceEnvironment {
         // (semantic cache, cost visibility, prompt rollback) with
         // "expected 200 but was 429" before this override was added.
         gatewayEnv.put("AETHER_SECURITY_ANONYMOUS_IP_RPS_LIMIT", "10000");
+        // Anonymous access is off by default, since an unmetered request
+        // path on a reachable gateway is an open proxy to the operator's
+        // provider credentials. Most scenarios here predate API keys and
+        // deliberately send no Authorization header (the
+        // ANONYMOUS_NAMESPACE convention above), so the suite opts back
+        // in explicitly rather than silently relying on the default.
+        gatewayEnv.put("AETHER_SECURITY_ALLOW_ANONYMOUS", "true");
         gatewayProcess = startJar(System.getProperty("gateway.proxy.jar"), gatewayEnv);
         waitForHealthy(gatewayBaseUrl());
 
