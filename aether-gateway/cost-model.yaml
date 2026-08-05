@@ -15,3 +15,15 @@ models:
     model: mock
     inputPricePerMillion: 0.50
     outputPricePerMillion: 1.50
+  # Real providers. Gemini Flash pricing per Google's published rates;
+  # the self-hosted LiteLLM/Ollama models cost nothing per token (the
+  # hardware is already paid for), which is exactly the comparison this
+  # gateway's cost accounting exists to make visible.
+  - provider: gemini-main
+    model: gemini-flash-latest
+    inputPricePerMillion: 0.075
+    outputPricePerMillion: 0.30
+  - provider: litellm-nelkinda
+    model: mac/gemma4:12b-mlx
+    inputPricePerMillion: 0.0
+    outputPricePerMillion: 0.0

@@ -87,6 +87,9 @@ services:
       # through whatever is in the host shell or a root .env file
       # (gitignored), unset if absent.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Same passthrough for the self-hosted LiteLLM proxy's key, named
+      # by routing.docker.yaml's litellm-nelkinda entry.
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
     volumes:
       - ./routing.docker.yaml:/config/routing.yaml:ro
       - ./aether-gateway/cost-model.yaml:/config/cost-model.yaml:ro

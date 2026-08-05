@@ -14,6 +14,14 @@ providers:
     baseUrl: https://generativelanguage.googleapis.com
     type: gemini
     apiKeyEnvVar: GEMINI_API_KEY
+  # A real self-hosted LiteLLM proxy, which fans out to Ollama on a
+  # Mac. It speaks the plain OpenAI wire format, so it needs no adapter
+  # of its own - the generic one covers it, which is the whole point of
+  # that type existing.
+  litellm-nelkinda:
+    baseUrl: https://ai.nelkinda.com/v1
+    type: openai-compatible
+    apiKeyEnvVar: LITELLM_API_KEY
 
 routes:
   - alias: mock
@@ -29,8 +37,25 @@ routes:
       ttl: 6h
   - alias: gemini
     chain:
+      # gemini-flash-latest, not a pinned gemini-2.0-flash: this key's
+      # free tier returns 429 with "limit: 0" for the 2.0 models.
       - provider: gemini-main
-        model: gemini-2.0-flash
+        model: gemini-flash-latest
+    cache:
+      enabled: true
+      threshold: 0.94
+      ttl: 6h
+  # Two real, independent providers behind one alias: a self-hosted
+  # LiteLLM/Ollama stack first, Gemini as the fallback. Unlike the mock
+  # pair, neither of these can be made to fail on command - which makes
+  # this the route that proves failover against providers nobody here
+  # controls.
+  - alias: local
+    chain:
+      - provider: litellm-nelkinda
+        model: mac/gemma4:12b-mlx
+      - provider: gemini-main
+        model: gemini-flash-latest
     cache:
       enabled: true
       threshold: 0.94
