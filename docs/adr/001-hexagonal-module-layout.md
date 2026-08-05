@@ -72,5 +72,6 @@ entry point.
 - The cost is real: more interfaces, more indirection, more files, and a
   steeper on-ramp than a simpler layered structure. This cost is paid
   deliberately and consistently, not opportunistically.
-- See `docs/plan/HEXAGONAL-ARCHITECTURE-GUIDE.md` for the full mapping
-  and the checklist re-run whenever a module or adapter is added.
+- See [Module boundaries](../design/module-boundaries.md) for the full
+  mapping, and `ModuleDependencyDirectionTest` for the ArchUnit rules that
+  enforce it on every build rather than by convention.

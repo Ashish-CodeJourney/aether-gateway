@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""PRD section 4.1 / docs/plan/09-milestone-m6-benchmarking.md task 11:
-walks AC1-AC9 against real measured values (from this phase's
-experiments, ac1-ac2-latency.json, ac5-concurrency.json,
-ac9-coverage.json, and earlier phases' own measurements recorded in
-STATUS.md), documenting gaps honestly rather than omitting or
-estimating unmeasured criteria.
+"""Walks AC1-AC9 against real measured values - this milestone's own
+experiments (ac1-ac2-latency.json, ac5-concurrency.json,
+ac7-rolling-update.json, ac9-coverage.json) plus earlier milestones'
+measurements - documenting gaps honestly rather than omitting or
+estimating unmeasured criteria. Criteria are indexed in
+docs/design/requirements.md.
 
 Writes benchmark/results/ac-scorecard.md.
 """

@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * PRD section 16.2, experiment 5 / docs/plan/09-milestone-m6-benchmarking.md
+ * Experiment 5 of the M6 benchmarking milestone (docs/design/requirements.md)
  * task 6: a minimal MVC-plus-virtual-threads SSE relay, load-tested
  * against gateway-proxy's real WebFlux streaming path (ADR-002) on the
  * same workload. Not a product artifact - ADR-002's own addendum

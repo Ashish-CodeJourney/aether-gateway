@@ -16,9 +16,9 @@ wrong for a codebase shaped like this one.
 
 ## Decision
 
-Adopt `docs/plan/HEXAGONAL-ARCHITECTURE-GUIDE.md` and
-`docs/plan/TESTING-STRATEGY.md` as binding conventions, not optional
-guidance:
+Adopt the hexagonal-boundary and testing conventions below as binding,
+not optional guidance. They are enforced mechanically - by ArchUnit and
+by CI - rather than left to reviewer discretion:
 
 1. `gateway-core` carries zero framework dependencies, enforced by
    ArchUnit from Phase 03 onward.
@@ -48,7 +48,7 @@ distinct task so CI can report and gate on it separately from unit tests.
 
 ## Consequences
 
-- A phase is not `Done` in `STATUS.md` unless: every new unit of business
+- Work is not done unless: every new unit of business
   logic has a unit test written first (TDD), every new driven adapter has
   a passing contract/integration test, the phase's exit criterion has a
   passing tagged Cucumber scenario, and every previous phase's Cucumber

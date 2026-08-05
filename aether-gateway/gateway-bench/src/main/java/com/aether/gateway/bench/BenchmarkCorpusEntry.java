@@ -1,6 +1,6 @@
 package com.aether.gateway.bench;
 
-/** One labelled row of `benchmark/corpus/*.jsonl` (docs/plan/09-milestone-m6-benchmarking.md). */
+/** One labelled row of `benchmark/corpus/*.jsonl` (docs/design/requirements.md). */
 public record BenchmarkCorpusEntry(
         String id,
         String bucket,

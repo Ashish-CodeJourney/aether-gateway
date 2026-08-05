@@ -5,9 +5,8 @@ title: "Redis key schema"
 Reference for every Redis key the gateway reads or writes. Shared
 contract across `gateway-quota` (M3), `gateway-cache` (M4), and
 `gateway-router` (M2's breaker hint). Copied from PRD section 12.2 and
-kept in sync with the actual implementation; if a key's shape changes
-during implementation, update this file and the milestone's `STATUS.md`
-entry in the same change.
+kept in sync with the actual implementation; if a key's shape changes,
+update this file in the same change.
 
 | Key | Type | Purpose | TTL | Written by | Read by |
 |---|---|---|---|---|---|

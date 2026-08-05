@@ -132,13 +132,13 @@ Full reasoning for each lives in the linked ADR/design doc — this is the one-l
 | [Semantic threshold (0.94) + entity/numeric guard](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) | Similarity alone can't tell "what is 2+2" from "what is 2+3"; the guard is a no-network heuristic layered on top, not a replacement for the threshold. |
 | [Reservation-and-reconciliation for token quotas](https://ashish-codejourney.github.io/aether-gateway/docs/adr/reservation-and-reconciliation-for-token-quotas) | Output tokens aren't known until a response completes, so quota is reserved pessimistically up front and reconciled to the real count after. |
 | Provider credentials via env var *names*, never values (F9.2) | `apiKeyEnvVar: GROQ_API_KEY` in `routing.yaml`, resolved from the real environment only where adapters are wired up — the config file is safe to commit even with real providers active. |
-| SSRF protection on real provider base URLs (F9.3) | The PRD names Spring Boot 4.1's `InetAddressFilter`; that class doesn't exist in Spring Framework 7.0.8/Boot 4.1 (checked against the actual jars), so this is built on `java.net.InetAddress`'s private-range predicates instead. Proven at unit, integration, *and* acceptance level. |
+| SSRF protection on real provider base URLs (F9.3) | The requirement named Spring Boot 4.1's `InetAddressFilter`; that class doesn't exist in Spring Framework 7.0.8/Boot 4.1 (checked against the actual jars), so this is built on `java.net.InetAddress`'s private-range predicates instead. Proven at unit, integration, *and* acceptance level. |
 | [Graceful SSE drain under a K8s rolling update](https://ashish-codejourney.github.io/aether-gateway/docs/design/kubernetes-deployment) | Readiness flips before liveness, `preStop` gives the Service time to stop routing before SIGTERM, in-flight streams finish naturally. Proven live: 500/500 concurrent streams survived a real rolling update, twice, zero broken. |
 | Autoscaling on in-flight stream count, not CPU | These pods are I/O-bound waiting on providers; CPU sits idle while genuinely saturated. Disclosed gap: the Prometheus Adapter needed to serve that custom metric wasn't deployed in this session's cluster, so the scale-out itself wasn't exercised live. |
 
 ## What was deliberately not built, and why
 
-Per the PRD's own non-goals — being able to name what you chose *not* to build is itself the point, not an oversight:
+Named as non-goals from the outset — being able to name what you chose *not* to build is itself the point, not an oversight:
 
 - Training, fine-tuning, or hosting models — this is infrastructure *around* model calls, not a model-serving project.
 - A chat UI for end users — the operator console (`console/`) is an internal tool for API keys, prompts, cache stats, and the request log, not a product surface.
@@ -146,7 +146,7 @@ Per the PRD's own non-goals — being able to name what you chose *not* to build
 - Agent frameworks, tool-calling orchestration, or RAG pipelines.
 - Fine-grained RBAC beyond API-key scopes.
 - Horizontal DB sharding or global multi-region.
-- Helm, a service mesh, Kubernetes operators/CRDs, or ArgoCD — named directly in the PRD as "unjustified complexity you would have to defend" at this scale; plain manifests plus `kubectl` cover everything actually needed.
+- Helm, a service mesh, Kubernetes operators/CRDs, or ArgoCD — ruled out up front as "unjustified complexity you would have to defend" at this scale; plain manifests plus `kubectl` cover everything actually needed.
 
 ## Local development
 
@@ -173,6 +173,6 @@ Contributions are welcome - see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev
 
 ## Status — what this is
 
-Built through Phase 12 (M9) of the plan: real provider adapters (Ollama, Groq, Gemini, and a generic OpenAI-compatible adapter — all conforming to the identical `ProviderAdapter` port the mock provider does, with zero changes to `gateway-core` or `gateway-router`), the security hardening in PRD section 7 (F9.1–F9.5), and a Kubernetes deployment with a live-proven zero-downtime rolling update.
+Built through the last of its nine milestones ([requirements index](https://ashish-codejourney.github.io/aether-gateway/docs/design/requirements/)): real provider adapters (Ollama, Groq, Gemini, and a generic OpenAI-compatible adapter — all conforming to the identical `ProviderAdapter` port the mock provider does, with zero changes to `gateway-core` or `gateway-router`), the security hardening in F9.1–F9.5, and a Kubernetes deployment with a live-proven zero-downtime rolling update.
 
 **Not deployed to a live public URL.** That specific piece of M9's exit criterion needs real provider API keys and cloud infrastructure access this build environment doesn't have — a deliberate scope decision, not an oversight. `docker compose up` brings up the complete, real, fully-functional stack locally, which is what every command and result on this page was actually run against.

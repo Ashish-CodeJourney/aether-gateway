@@ -1,7 +1,7 @@
-# Phase 09 (M6) / PRD section 16.3: `make bench` regenerates every
-# number BENCHMARKS.md claims from a clean checkout, in one command.
-# See docs/plan/09-milestone-m6-benchmarking.md (gitignored, internal
-# planning material) for the full task breakdown this implements.
+# `make bench` regenerates every number BENCHMARKS.md claims from a
+# clean checkout, in one command. The experiments it runs, and the
+# acceptance criteria they feed, are indexed in
+# docs/design/requirements.md.
 
 SHELL := /bin/bash
 GRADLE := ./gradlew

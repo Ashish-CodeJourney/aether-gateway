@@ -16,7 +16,7 @@ import java.util.List;
 /**
  * The only place HTTP-facing DTOs and gateway-core domain types cross,
  * keeping the controller thin per the hexagonal boundary check
- * (docs/plan/HEXAGONAL-ARCHITECTURE-GUIDE.md section 4, item 4).
+ * (see docs/design/module-boundaries.md).
  */
 @Component
 public class ChatCompletionDtoMapper {

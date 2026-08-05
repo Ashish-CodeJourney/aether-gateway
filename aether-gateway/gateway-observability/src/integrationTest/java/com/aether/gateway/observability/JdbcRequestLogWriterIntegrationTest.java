@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * real request_log table (real Postgres, real Flyway migrations, not
  * mocked), including the trickier column types (uuid, text[],
  * timestamptz) that earlier phases found real JDBC binding bugs in
- * (see docs/plan/STATUS.md's M4 decisions log entry).
+ * during M4.
  */
 class JdbcRequestLogWriterIntegrationTest {
 

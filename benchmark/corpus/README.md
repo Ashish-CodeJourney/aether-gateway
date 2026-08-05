@@ -1,7 +1,7 @@
 # Benchmark corpus
 
 Source material for AC3 (semantic cache hit rate >= 35%) and AC4 (false-hit
-rate) in `docs/PRD.md` section 16.1, and for the threshold sweep and entity
+rate) documented in `docs/design/requirements.md`, and for the threshold sweep and entity
 guard ablation experiments in section 16.2. This corpus is built once, here,
 in Phase 01, so it exists before Phase 07 (M4, semantic cache) needs it,
 instead of being built under time pressure at that point.

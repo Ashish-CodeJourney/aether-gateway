@@ -1,4 +1,4 @@
-// PRD section 16.2, experiment 5 / docs/plan/09-milestone-m6-benchmarking.md
+// Experiment 5 of the M6 benchmarking milestone (docs/design/requirements.md)
 // task 6: drives the same streaming chat-completion workload against
 // two targets (WebFlux gateway-proxy vs the MVC+virtual-threads
 // comparison app) so their connection/latency behaviour can be

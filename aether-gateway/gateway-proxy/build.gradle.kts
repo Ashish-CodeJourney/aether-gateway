@@ -42,7 +42,7 @@ springBoot {
 }
 
 // db/migrations/ at the repo root is the single source of truth for the
-// schema (docs/plan/02-architecture-and-design.md task 2); copy it onto
+// schema; copy it onto
 // the classpath under Flyway's expected db/migration convention rather
 // than duplicating the SQL files inside this module.
 tasks.named<ProcessResources>("processResources") {

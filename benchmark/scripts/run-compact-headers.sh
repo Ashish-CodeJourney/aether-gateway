@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PRD section 16.2, experiment 6 / docs/plan/09-milestone-m6-benchmarking.md
+# Experiment 6 of the M6 benchmarking milestone (docs/design/requirements.md)
 # task 7: heap at 1,000 concurrent streams, JEP 519 (-XX:+UseCompactObjectHeaders)
 # toggled on and off, same gateway-proxy JVM, same workload each time.
 # Writes benchmark/results/experiment-6-compact-object-headers.{csv,md}.

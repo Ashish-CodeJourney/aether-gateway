@@ -39,6 +39,6 @@ directly, not through `VectorStore`.
   abstractions out of convenience in `gateway-providers` or
   `gateway-cache`; doing so would quietly reintroduce the normalisation
   problem this ADR exists to avoid.
-- This module boundary is checked by the hexagonal architecture checklist
-  whenever a new adapter is added (`HEXAGONAL-ARCHITECTURE-GUIDE.md`
-  section 4).
+- This module boundary is enforced by the ArchUnit rules in
+  `ModuleDependencyDirectionTest`, which fail the build if a new adapter
+  crosses it - see [Module boundaries](../design/module-boundaries.md).

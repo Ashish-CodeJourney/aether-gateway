@@ -1,6 +1,6 @@
 name: CI
 
-# Stages per PRD section 17.4 / docs/plan/TESTING-STRATEGY.md section 5:
+# Stages mirror the three-layer testing strategy (docs/adr/009-three-layer-testing-strategy.md):
 # unit tests, integration tests (Testcontainers), and acceptance tests
 # (Cucumber, black-box) run as three independent, parallel jobs (they
 # don't depend on each other's Gradle state - each job does its own

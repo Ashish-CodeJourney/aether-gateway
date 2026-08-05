@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * F9.3, the end-to-end proof: the {@code @m9 @F9.3} scenario the plan
- * doc (docs/plan/12-milestone-m9-real-providers-and-release.md, section
+ * requirement (docs/design/requirements.md, F9.3; section
  * 6) specifies. Unit/integration coverage already exists
  * (ProviderBaseUrlValidatorTest, RoutingPolicyRepositoryTest) - this is
  * the missing outer layer, against the real spawned gateway process and

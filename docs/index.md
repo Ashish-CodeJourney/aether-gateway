@@ -21,6 +21,7 @@ The engineering value here isn't in calling models - it's in everything *around*
 - **[Usage Guide](/docs/usage)** - the request/response contract, response headers, the prompt registry, the admin API, and the operator console.
 - **[Architecture Decisions](/docs/adr/hexagonal-module-layout)** - the significant, hard-to-reverse technical decisions and the reasoning behind each.
 - **[Design Docs](/docs/design/api-contract)** - narrative documentation of how specific subsystems actually work.
+- **[Requirements index](/docs/design/requirements)** - what every `F4.5`-style identifier in the source comments and tests actually means, and where it is implemented and proven.
 
 ## Reproducing the numbers
 

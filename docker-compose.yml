@@ -10,7 +10,7 @@ services:
     ports:
       # Host port 5433, not 5432: many dev machines already run a local
       # Postgres on 5432 (this project's own toolchain notes flag
-      # exactly that, docs/plan/STATUS.md's toolchain table), and the
+      # exactly that), and the
       # container's internal port (what "gateway" actually connects to,
       # via the Docker network, service name "postgres") is unaffected
       # either way.

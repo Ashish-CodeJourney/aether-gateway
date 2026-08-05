@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Phase 12 (M9): the shared {@link ProviderAdapter} contract this
- * project's own plan doc (docs/plan/12-milestone-m9-real-providers-and-
+ * M9 milestone's own definition (docs/design/requirements.md,
  * release.md, "Design notes carried in from Phase 02") calls for -
  * "OllamaAdapter, GroqAdapter, GeminiAdapter, and the generic
  * OpenAI-compatible adapter must each pass the exact same
