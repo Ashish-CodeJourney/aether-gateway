@@ -1,3 +1,7 @@
+---
+title: Requirements index
+---
+
 # Requirements index
 
 Comments and tests throughout this codebase cite requirement IDs
