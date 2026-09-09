@@ -27,6 +27,26 @@ export default defineConfig({
       customCss: ['./src/styles/custom.css'],
       head: [
         {
+          tag: 'meta',
+          attrs: {property: 'og:image', content: 'https://ashish-codejourney.github.io/aether-gateway/img/social-card.jpg'},
+        },
+        {
+          tag: 'meta',
+          attrs: {property: 'og:image:width', content: '1200'},
+        },
+        {
+          tag: 'meta',
+          attrs: {property: 'og:image:height', content: '630'},
+        },
+        {
+          tag: 'meta',
+          attrs: {property: 'og:type', content: 'website'},
+        },
+        {
+          tag: 'meta',
+          attrs: {name: 'twitter:card', content: 'summary_large_image'},
+        },
+        {
           tag: 'link',
           attrs: {rel: 'preconnect', href: 'https://fonts.googleapis.com'},
         },
