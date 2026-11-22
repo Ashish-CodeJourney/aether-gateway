@@ -91,9 +91,9 @@ const FEATURES: {title: string; icon: string; body: string}[] = [
     body: 'Circuit breakers, retries and bulkheads move traffic to the next provider in the chain, so a provider outage never becomes your outage.',
   },
   {
-    title: 'Exact + semantic caching',
+    title: 'Response caching',
     icon: 'cache',
-    body: 'Repeat and near-duplicate prompts are answered from Postgres + pgvector, with an entity and number guard so &ldquo;2+2&rdquo; never answers &ldquo;2+3&rdquo;.',
+    body: 'Identical requests are answered from cache for $0. Semantic matching for near-duplicate prompts is opt-in per route, with an entity and number guard.',
   },
   {
     title: 'Quotas per API key',
@@ -111,14 +111,14 @@ const FEATURES: {title: string; icon: string; body: string}[] = [
     body: 'SSE responses relay token by token, and a client disconnect cancels the upstream call, so you stop paying for tokens nobody will read.',
   },
   {
-    title: 'Observability out of the box',
+    title: 'Observability and console',
     icon: 'chart',
-    body: 'Prometheus metrics plus a ready-made Grafana dashboard: latency by provider, cache hit rate, spend vs. spend avoided, breaker state.',
+    body: 'Prometheus metrics and a ready-made Grafana dashboard, plus an operator console for API keys, versioned prompts, cache stats and the request log.',
   },
   {
-    title: 'Operator console',
+    title: 'Tool calling and embeddings',
     icon: 'console',
-    body: 'Issue and revoke API keys, version prompts and roll them back, watch cache stats and search the request log from one UI.',
+    body: 'OpenAI-format <code>tools</code> and <code>tool_calls</code> pass through, streaming included, and <code>/v1/embeddings</code> gets the same failover and cost headers.',
   },
   {
     title: 'Kubernetes-ready',
@@ -143,7 +143,7 @@ const ICONS: Record<string, string> = {
 const FLOW: {title: string; body: string; infra: string}[] = [
   {title: 'Authenticate', body: 'API key resolves to its own limits and budget.', infra: 'Postgres'},
   {title: 'Enforce quota', body: 'Token bucket and budget reserved atomically.', infra: 'Redis'},
-  {title: 'Check cache', body: 'Exact match first, then semantic nearest neighbour.', infra: 'pgvector'},
+  {title: 'Check cache', body: 'Exact match, plus semantic nearest neighbour where a route opts in.', infra: 'pgvector'},
   {title: 'Route & fail over', body: 'Policy picks a provider chain; breakers skip the unhealthy.', infra: 'routing.yaml'},
   {title: 'Stream', body: 'SSE relayed as it arrives; disconnect cancels upstream.', infra: 'WebFlux'},
   {title: 'Account', body: 'Tokens, cost, cache write and metrics, off the hot path.', infra: 'Prometheus'},
