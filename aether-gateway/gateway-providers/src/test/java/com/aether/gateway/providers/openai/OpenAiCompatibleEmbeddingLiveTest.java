@@ -12,31 +12,38 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The embeddings counterpart of {@link OpenAiCompatibleAdapterLiveTest}:
- * the same self-hosted LiteLLM proxy, proving the passthrough embeddings
- * path against a real OpenAI-compatible server rather than recorded
- * fixtures. Needs an embedding model served by that proxy, named in
- * {@code LITELLM_EMBEDDING_MODEL}; skipped unless both variables are set:
+ * The embeddings counterpart of {@link OpenAiCompatibleAdapterLiveTest},
+ * proving the passthrough embeddings path against a real
+ * OpenAI-compatible server rather than recorded fixtures. The endpoint is
+ * supplied entirely through the environment, so no real deployment's
+ * hostname or credential lives in the repository. Skipped unless
+ * {@code AETHER_LIVE_OPENAI_BASE_URL}, {@code AETHER_LIVE_OPENAI_API_KEY}
+ * and {@code AETHER_LIVE_OPENAI_EMBEDDING_MODEL} are all set:
  * <pre>
- * set -a; . ./.env; set +a
- * LITELLM_EMBEDDING_MODEL=nomic-embed-text ./gradlew :gateway-providers:test --tests '*EmbeddingLiveTest'
+ * export AETHER_LIVE_OPENAI_BASE_URL=https://your-proxy.example.com/v1
+ * export AETHER_LIVE_OPENAI_API_KEY=...
+ * export AETHER_LIVE_OPENAI_EMBEDDING_MODEL=nomic-embed-text
+ * ./gradlew :gateway-providers:test --tests '*EmbeddingLiveTest'
  * </pre>
  */
-@EnabledIfEnvironmentVariable(named = "LITELLM_API_KEY", matches = ".+")
-@EnabledIfEnvironmentVariable(named = "LITELLM_EMBEDDING_MODEL", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "AETHER_LIVE_OPENAI_BASE_URL", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "AETHER_LIVE_OPENAI_API_KEY", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "AETHER_LIVE_OPENAI_EMBEDDING_MODEL", matches = ".+")
 class OpenAiCompatibleEmbeddingLiveTest {
 
-    private static final String BASE_URL = "https://ai.nelkinda.com/v1";
+    private static final String PROVIDER_ID = "live-openai-compatible";
+    private static final String BASE_URL = System.getenv("AETHER_LIVE_OPENAI_BASE_URL");
+    private static final String API_KEY = System.getenv("AETHER_LIVE_OPENAI_API_KEY");
+    private static final String MODEL = System.getenv("AETHER_LIVE_OPENAI_EMBEDDING_MODEL");
 
     private OpenAiCompatibleAdapter adapter() {
-        return new OpenAiCompatibleAdapter(
-                "litellm-nelkinda", BASE_URL, System.getenv("LITELLM_API_KEY"), RestClient.builder(), WebClient.builder());
+        return new OpenAiCompatibleAdapter(PROVIDER_ID, BASE_URL, API_KEY, RestClient.builder(), WebClient.builder());
     }
 
     @Test
     void embedsABatchAgainstARealSelfHostedOpenAiCompatibleProxy() {
         var outcome = adapter().embed(new EmbeddingRequest(
-                System.getenv("LITELLM_EMBEDDING_MODEL"), List.of("the cat sat", "on the mat"), null));
+                MODEL, List.of("the cat sat", "on the mat"), null));
 
         assertThat(outcome)
                 .as("a real embedding, not a Failure - check the embedding model is pulled on the backing host")
@@ -49,7 +56,7 @@ class OpenAiCompatibleEmbeddingLiveTest {
 
     @Test
     void reportsAnUnknownModelAsAFailureRatherThanThrowing() {
-        var outcome = adapter().embed(new EmbeddingRequest("mac/definitely-not-a-real-model", List.of("hi"), null));
+        var outcome = adapter().embed(new EmbeddingRequest("definitely-not-a-real-model", List.of("hi"), null));
 
         assertThat(outcome).isInstanceOf(EmbeddingOutcome.Failure.class);
     }
