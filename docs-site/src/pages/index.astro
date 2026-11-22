@@ -3,48 +3,127 @@
 // trailing slash, so every link below explicitly joins with `/`.
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
-const STATS: {value: string; label: string; note?: string}[] = [
-  {value: '8.9ms', label: 'Cache-hit latency, p95', note: 'target: 50ms'},
-  {value: '67.92ms', label: 'Failover latency, p99 (100 trials)', note: 'target: 500ms'},
-  {value: '500/500', label: 'Concurrent streams survived a real rolling update', note: 'run twice, zero broken'},
-  {value: '76.8%', label: 'Line coverage, 4 core modules', note: 'JaCoCo, unit + integration'},
+const REPO = 'https://github.com/Ashish-CodeJourney/aether-gateway';
+const BLOB = `${REPO}/blob/trunk`;
+const SITE = `https://ashish-codejourney.github.io${base}`;
+
+const TITLE = 'Aether Gateway - one OpenAI-compatible endpoint for every LLM provider';
+const DESCRIPTION =
+  'Free, open-source, self-hosted LLM gateway. Point any OpenAI SDK at it and get multi-provider failover, exact and semantic caching, per-key quotas and per-request cost tracking. MIT licensed.';
+
+const LINKS = {
+  start: `${base}/docs/getting-started/`,
+  docs: `${base}/docs/`,
+  usage: `${base}/docs/usage/`,
+  adr: `${base}/docs/adr/hexagonal-module-layout/`,
+  architecture: `${base}/docs/design/architecture-diagram/`,
+  cacheCorrectness: `${base}/docs/design/cache-correctness/`,
+  k8s: `${base}/docs/design/kubernetes-deployment/`,
+  github: REPO,
+  benchmarks: `${BLOB}/BENCHMARKS.md`,
+  license: `${BLOB}/LICENSE`,
+  security: `${BLOB}/SECURITY.md`,
+  contributing: `${BLOB}/CONTRIBUTING.md`,
+  conduct: `${BLOB}/CODE_OF_CONDUCT.md`,
+};
+
+const CODE_TABS: {id: string; label: string; html: string}[] = [
+  {
+    id: 'python',
+    label: 'Python',
+    html: `<span class="t-k">from</span> openai <span class="t-k">import</span> OpenAI
+
+client = <span class="t-f">OpenAI</span>(
+<mark>    base_url=<span class="t-s">"http://localhost:8080/v1"</span>,</mark>
+<mark>    api_key=<span class="t-s">"your-aether-key"</span>,</mark>
+)
+
+reply = client.chat.completions.<span class="t-f">create</span>(
+    model=<span class="t-s">"mock"</span>,
+    messages=[{<span class="t-s">"role"</span>: <span class="t-s">"user"</span>, <span class="t-s">"content"</span>: <span class="t-s">"What is 2+2?"</span>}],
+)`,
+  },
+  {
+    id: 'typescript',
+    label: 'TypeScript',
+    html: `<span class="t-k">import</span> OpenAI <span class="t-k">from</span> <span class="t-s">"openai"</span>;
+
+<span class="t-k">const</span> client = <span class="t-k">new</span> <span class="t-f">OpenAI</span>({
+<mark>  baseURL: <span class="t-s">"http://localhost:8080/v1"</span>,</mark>
+<mark>  apiKey: process.env.AETHER_API_KEY,</mark>
+});
+
+<span class="t-k">const</span> reply = <span class="t-k">await</span> client.chat.completions.<span class="t-f">create</span>({
+  model: <span class="t-s">"mock"</span>,
+  messages: [{ role: <span class="t-s">"user"</span>, content: <span class="t-s">"What is 2+2?"</span> }],
+});`,
+  },
+  {
+    id: 'curl',
+    label: 'curl',
+    html: `<span class="t-f">curl</span> http://localhost:8080/v1/chat/completions \\
+<mark>  -H <span class="t-s">"Authorization: Bearer $AETHER_API_KEY"</span> \\</mark>
+  -H <span class="t-s">"Content-Type: application/json"</span> \\
+  -d <span class="t-s">'{"model":"mock","messages":[
+        {"role":"user","content":"What is 2+2?"}]}'</span>`,
+  },
+];
+
+const PROVIDERS: {name: string; mono: string}[] = [
+  {name: 'Ollama', mono: 'Ol'},
+  {name: 'Groq', mono: 'Gq'},
+  {name: 'Google Gemini', mono: 'Ge'},
+  {name: 'Anthropic', mono: 'An'},
+  {name: 'Any OpenAI-compatible API', mono: '{ }'},
+];
+
+const STATS: {value: string; unit: string; label: string; detail: string}[] = [
+  {value: '8.9', unit: 'ms', label: 'Cache-hit latency', detail: 'p95, end to end'},
+  {value: '67.92', unit: 'ms', label: 'Failover to a healthy provider', detail: 'p99 across 100 injected outages'},
+  {value: '500', unit: '/500', label: 'Streams survived a rolling update', detail: 'Kubernetes, run twice, zero broken'},
+  {value: '7.23', unit: 'ms', label: 'Prompt embedding for semantic cache', detail: 'mean, all-MiniLM-L6-v2'},
 ];
 
 const FEATURES: {title: string; icon: string; body: string}[] = [
   {
-    title: 'Routing and failover',
+    title: 'Automatic failover',
     icon: 'route',
-    body: `Circuit breakers, retries, and bulkheads across multiple providers (Ollama, Groq, Gemini, or any
-      OpenAI-compatible endpoint) &ndash; a failing provider doesn't take your application down with it. See
-      <a href="${base}/docs/adr/circuit-breaker-state-local-with-redis-advisory-hint/">why breaker state is local, not shared</a>.`,
+    body: 'Circuit breakers, retries and bulkheads move traffic to the next provider in the chain, so a provider outage never becomes your outage.',
   },
   {
-    title: 'Semantic caching',
+    title: 'Exact + semantic caching',
     icon: 'cache',
-    body: `Near-duplicate prompts are served from a vector cache (Postgres + pgvector) instead of hitting a provider
-      again, with a guard against false hits. See
-      <a href="${base}/docs/design/cache-correctness/">how the false-hit rate is actually measured</a>.`,
+    body: 'Repeat and near-duplicate prompts are answered from Postgres + pgvector, with an entity and number guard so &ldquo;2+2&rdquo; never answers &ldquo;2+3&rdquo;.',
   },
   {
-    title: 'Quota enforcement',
+    title: 'Quotas per API key',
     icon: 'gauge',
-    body: 'Per-API-key rate limits, concurrency caps, and monthly token budgets, checked and reserved atomically before a request is ever dispatched &ndash; not after the fact.',
+    body: 'Rate limits, concurrency caps and monthly token budgets are reserved atomically in Redis before a request reaches a provider.',
   },
   {
-    title: 'Cost accounting',
+    title: 'Cost on every response',
     icon: 'ledger',
-    body: 'Every request&rsquo;s real (or avoided, on a cache hit) cost, computed from a configurable per-model price sheet and exposed in response headers, the request log, and a Grafana dashboard.',
+    body: '<code>X-Aether-Cost-USD</code>, <code>X-Aether-Provider</code> and <code>X-Aether-Cache</code> tell you what a call cost, who served it and whether it hit cache.',
   },
   {
-    title: 'Versioned prompt registry',
-    icon: 'tag',
-    body: 'Name a prompt, version it, and roll a production alias back to a previous version on the next request &ndash; no gateway restart, no redeploy.',
+    title: 'Streaming that stops when users leave',
+    icon: 'stream',
+    body: 'SSE responses relay token by token, and a client disconnect cancels the upstream call, so you stop paying for tokens nobody will read.',
   },
   {
-    title: 'Kubernetes-proven',
+    title: 'Observability out of the box',
+    icon: 'chart',
+    body: 'Prometheus metrics plus a ready-made Grafana dashboard: latency by provider, cache hit rate, spend vs. spend avoided, breaker state.',
+  },
+  {
+    title: 'Operator console',
+    icon: 'console',
+    body: 'Issue and revoke API keys, version prompts and roll them back, watch cache stats and search the request log from one UI.',
+  },
+  {
+    title: 'Kubernetes-ready',
     icon: 'k8s',
-    body: `Graceful SSE drain under a real rolling update, in-flight-stream-based autoscaling, not CPU. See
-      <a href="${base}/docs/design/kubernetes-deployment/">the graceful-drain chain in detail</a>.`,
+    body: 'Plain manifests with graceful SSE drain, a PodDisruptionBudget and a NetworkPolicy, proven against a real zero-downtime rolling update.',
   },
 ];
 
@@ -53,13 +132,43 @@ const ICONS: Record<string, string> = {
     '<path d="M4 6h6a4 4 0 0 1 4 4 4 4 0 0 0 4 4h2"/><circle cx="4" cy="6" r="1.6"/><circle cx="20" cy="14" r="1.6"/><path d="M4 18h4l3-3"/><circle cx="4" cy="18" r="1.6"/>',
   cache:
     '<ellipse cx="12" cy="5.5" rx="7" ry="2.5"/><path d="M5 5.5v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/><path d="M5 11.5v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/>',
-  gauge:
-    '<path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15 16 9"/><circle cx="12" cy="15" r="1.3"/>',
-  ledger:
-    '<rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/>',
-  tag: '<path d="M11.5 4H6a1.5 1.5 0 0 0-1.5 1.5V11c0 .4.16.78.44 1.06l8 8a1.5 1.5 0 0 0 2.12 0l5-5a1.5 1.5 0 0 0 0-2.12l-8-8A1.5 1.5 0 0 0 11.5 4Z"/><circle cx="8.5" cy="8.5" r="1.3"/>',
+  gauge: '<path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15 16 9"/><circle cx="12" cy="15" r="1.3"/>',
+  ledger: '<rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/>',
+  stream: '<path d="M3 8h10M3 12h14M3 16h7"/><path d="m17 14 4 4m0-4-4 4"/>',
+  chart: '<path d="M4 4v16h16"/><path d="m7 15 4-5 3 3 5-6"/>',
+  console: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9h18M7 13h4M7 16h7"/>',
   k8s: '<path d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8Z"/><path d="M12 3.5v17M4.5 8l7.5 4.5M19.5 8 12 12.5M4.5 16l7.5-4.5M19.5 16 12 12.5"/>',
 };
+
+const FLOW: {title: string; body: string; infra: string}[] = [
+  {title: 'Authenticate', body: 'API key resolves to its own limits and budget.', infra: 'Postgres'},
+  {title: 'Enforce quota', body: 'Token bucket and budget reserved atomically.', infra: 'Redis'},
+  {title: 'Check cache', body: 'Exact match first, then semantic nearest neighbour.', infra: 'pgvector'},
+  {title: 'Route & fail over', body: 'Policy picks a provider chain; breakers skip the unhealthy.', infra: 'routing.yaml'},
+  {title: 'Stream', body: 'SSE relayed as it arrives; disconnect cancels upstream.', infra: 'WebFlux'},
+  {title: 'Account', body: 'Tokens, cost, cache write and metrics, off the hot path.', infra: 'Prometheus'},
+];
+
+const COMPARE_COLUMNS = ['Aether Gateway', 'LiteLLM', 'Portkey Gateway', 'Build your own'];
+const COMPARE_ROWS: {label: string; cells: string[]}[] = [
+  {
+    label: 'Runtime',
+    cells: ['Java 25 · Spring Boot 4.1 (JVM)', 'Python', 'TypeScript', 'Your stack'],
+  },
+  {
+    label: 'License',
+    cells: ['MIT, no paid edition', 'MIT core, enterprise features licensed separately', 'MIT gateway, managed platform available', 'Yours'],
+  },
+  {
+    label: 'Self-hosting',
+    cells: [
+      'One <code>docker compose</code> stack: gateway, Postgres + pgvector, Redis, Prometheus, Grafana',
+      'Supported',
+      'Supported',
+      'You design, build and operate it',
+    ],
+  },
+];
 ---
 
 <!doctype html>
@@ -67,23 +176,29 @@ const ICONS: Record<string, string> = {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Aether Gateway</title>
-    <meta
-      name="description"
-      content="A self-hosted LLM gateway - streaming proxy, multi-provider failover, and vector-based semantic caching, measured against a reproducible load-test harness."
-    />
-    <link rel="icon" href={`${base}/favicon.svg`} />
-    <meta property="og:title" content="Aether Gateway" />
-    <meta property="og:description" content="A self-hosted LLM gateway - streaming proxy, multi-provider failover, and vector-based semantic caching, measured against a reproducible load-test harness." />
+    <title>{TITLE}</title>
+    <meta name="description" content={DESCRIPTION} />
+    <link rel="canonical" href={`${SITE}/`} />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <meta name="theme-color" content="#0c0a14" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fbfaff" media="(prefers-color-scheme: light)" />
+    <meta property="og:title" content={TITLE} />
+    <meta property="og:description" content={DESCRIPTION} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={`https://ashish-codejourney.github.io${base}/`} />
-    <meta property="og:image" content={`https://ashish-codejourney.github.io${base}/img/social-card.jpg`} />
+    <meta property="og:url" content={`${SITE}/`} />
+    <meta property="og:image" content={`${SITE}/img/social-card.jpg`} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Aether Gateway" />
-    <meta name="twitter:description" content="A self-hosted LLM gateway - streaming proxy, multi-provider failover, and vector-based semantic caching, measured against a reproducible load-test harness." />
-    <meta name="twitter:image" content={`https://ashish-codejourney.github.io${base}/img/social-card.jpg`} />
+    <meta name="twitter:title" content={TITLE} />
+    <meta name="twitter:description" content={DESCRIPTION} />
+    <meta name="twitter:image" content={`${SITE}/img/social-card.jpg`} />
+    <script is:inline>
+      try {
+        const theme = localStorage.getItem('starlight-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -92,703 +207,1402 @@ const ICONS: Record<string, string> = {
     />
   </head>
   <body>
-    <header class="hero">
-      <div class="container hero-grid">
-        <div class="hero-copy">
-          <span class="kicker"><span class="dot" aria-hidden="true"></span>Self-hosted LLM gateway</span>
-          <h1 class="hero-title">Aether Gateway</h1>
-          <p class="hero-lede">
-            Point an existing OpenAI-compatible SDK at Aether instead of at a provider directly. It handles routing,
-            failover, semantic caching, quota enforcement, cost accounting, and observability transparently &ndash;
-            measured to cut cache-hit latency to <code>8.9ms p95</code> and fail over to a healthy provider in{' '}
-            <code>67.92ms p99</code>, both against a reproducible load-test harness, not estimates.
-          </p>
-          <div class="cta-row">
-            <a class="button button-primary" href={`${base}/docs/getting-started/`}>Get started &rarr;</a>
-            <a class="button button-outline" href={`${base}/docs/usage/`}>Usage guide</a>
-            <a class="button button-outline" href="https://github.com/Ashish-CodeJourney/aether-gateway">View source</a>
-          </div>
-        </div>
+    <a class="skip-link" href="#main">Skip to content</a>
 
-        <div class="trace-panel" role="img" aria-label="Diagram of a request routed from client through Aether Gateway to a provider, with the response cached">
-          <div class="trace-eyebrow">live request trace</div>
-          <svg class="trace-svg" viewBox="0 0 320 140" fill="none" aria-hidden="true">
-            <path class="trace-line" d="M28 40 H140 Q160 40 160 60 V80 Q160 100 180 100 H292" />
-            <circle class="trace-dot" r="4" />
-            <g class="trace-node">
-              <circle cx="28" cy="40" r="9" />
-              <text x="28" y="63">client</text>
-            </g>
-            <g class="trace-node">
-              <circle cx="160" cy="70" r="9" />
-              <text x="160" y="93">aether</text>
-            </g>
-            <g class="trace-node">
-              <circle cx="292" cy="100" r="9" />
-              <text x="292" y="123">provider</text>
-            </g>
-          </svg>
-          <div class="trace-readout" aria-hidden="true">
-            <div class="trace-line-1">
-              <span class="trace-frame trace-frame-1">X-Aether-Cache: <b>MISS</b></span>
-              <span class="trace-frame trace-frame-2">X-Aether-Cache: <b class="hit">EXACT_HIT</b></span>
-            </div>
-            <div class="trace-line-2">
-              <span class="trace-frame trace-frame-1">X-Aether-Cost-USD: 0.0000195</span>
-              <span class="trace-frame trace-frame-2">X-Aether-Cost-USD: <b class="hit">0</b></span>
-            </div>
-          </div>
-        </div>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href={`${base}/`} aria-label="Aether Gateway home">
+          <img src={`${base}/img/logo.svg`} alt="" width="28" height="28" />
+          <span>Aether Gateway</span>
+        </a>
+        <nav aria-label="Primary">
+          <ul class="nav-links">
+            <li class="nav-hide-sm"><a href={LINKS.docs}>Docs</a></li>
+            <li class="nav-hide-sm"><a href="#benchmarks">Benchmarks</a></li>
+            <li class="nav-hide-sm"><a href="#compare">Compare</a></li>
+            <li>
+              <a class="nav-icon" href={LINKS.github} aria-label="Aether Gateway on GitHub">
+                <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" fill="currentColor"
+                  ><path
+                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                  ></path></svg
+                >
+              </a>
+            </li>
+            <li><a class="button button-primary button-sm" href={LINKS.start}>Get started</a></li>
+          </ul>
+        </nav>
       </div>
     </header>
 
-    <main>
-      <section class="section reveal">
-        <div class="container">
-          <h2 class="section-title">Measured, not estimated</h2>
-          <p class="section-lede">
-            Every number here is reproducible via <code>make bench</code> against a real running stack &ndash; full
-            methodology and raw data in{' '}
-            <a href="https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/BENCHMARKS.md">BENCHMARKS.md</a>.
-          </p>
-          <div class="stat-grid">
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <a class="pill" href={LINKS.license}>
+              <span class="pill-dot" aria-hidden="true"></span>
+              Free &amp; open source <span aria-hidden="true">·</span> MIT licensed
+            </a>
+            <h1 id="hero-title" class="hero-title">
+              One endpoint for <span class="grad">every LLM provider.</span>
+            </h1>
+            <p class="hero-lede">
+              Aether is a self-hosted gateway that speaks the OpenAI API. Point the SDK you already use at it and get
+              automatic failover, exact and semantic caching, per-key quotas and per-request cost tracking &ndash; with
+              no changes to your application code.
+            </p>
+            <div class="cta-row">
+              <a class="button button-primary" href={LINKS.start}>
+                Get started <span aria-hidden="true">&rarr;</span>
+              </a>
+              <a class="button button-ghost" href={LINKS.github}>
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"
+                  ><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9Z"></path></svg
+                >
+                Star on GitHub
+              </a>
+            </div>
+            <div class="quickstart">
+              <span class="quickstart-label">Quickstart</span>
+              <code><span class="prompt" aria-hidden="true">$</span> docker compose up -d</code>
+            </div>
+            <p class="hero-meta">Self-hosted · Java 25 / Spring Boot 4.1 · Docker Compose &amp; Kubernetes</p>
+          </div>
+
+          <div class="code-window" aria-label="Switching an OpenAI client to Aether Gateway">
             {
-              STATS.map((stat) => (
-                <div class="stat-card">
-                  <div class="stat-value">{stat.value}</div>
-                  <div class="stat-label">{stat.label}</div>
-                  {stat.note && <div class="stat-note">{stat.note}</div>}
-                </div>
+              CODE_TABS.map((tab, i) => (
+                <input class="tab-input" type="radio" name="code-lang" id={`tab-${tab.id}`} checked={i === 0} />
               ))
             }
-          </div>
-        </div>
-      </section>
-
-      <section class="section section-alt reveal">
-        <div class="container">
-          <h2 class="section-title">What actually happens on a request</h2>
-          <p class="section-lede">
-            The response headers tell you exactly what the gateway did &ndash; no guessing whether a request was
-            served from cache or which provider actually answered it.
-          </p>
-          <div class="demo-layout">
-            <pre class="demo-code"><code>{`$ curl -X POST http://localhost:8080/v1/chat/completions \\
-    -H "Content-Type: application/json" \\
-    -d '{"model":"mock","messages":[{"role":"user","content":"What is 2+2?"}]}' -D -
-
-HTTP/1.1 200 OK
-X-Aether-Cache: MISS
-X-Aether-Cost-USD: 0.0000195
-X-Aether-Attempts: 1
-X-Aether-Provider: mock-primary`}</code></pre>
-            <div class="demo-note">
-              <p>Same prompt, sent again:</p>
-              <ul>
-                <li><code>X-Aether-Cache: EXACT_HIT</code> &ndash; served from the semantic cache, <code>X-Aether-Cost-USD: 0</code></li>
-              </ul>
-              <p>Force the primary provider to fail, then send a new prompt:</p>
-              <ul>
-                <li><code>X-Aether-Provider: mock-fallback</code> &ndash; failover happened, same request shape, no client change</li>
-              </ul>
-              <p>
-                This is a real transcript from a real <code>docker compose up</code>, not a mockup &ndash; see the{' '}
-                <a href={`${base}/docs/getting-started/`}>Getting Started guide</a> to reproduce it yourself in under a minute.
-              </p>
+            <div class="code-bar">
+              <span class="code-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <div class="tab-labels">
+                {CODE_TABS.map((tab) => <label for={`tab-${tab.id}`} data-tab={tab.id}>{tab.label}</label>)}
+              </div>
+            </div>
+            <div class="code-panels">
+              {
+                CODE_TABS.map((tab) => (
+                  <pre class="code-panel" data-tab={tab.id}><code set:html={tab.html} /></pre>
+                ))
+              }
+            </div>
+            <div class="code-response" aria-label="Response headers">
+              <div class="code-response-title">Response headers</div>
+              <pre><code><span class="t-dim">HTTP/1.1 200 OK</span>
+X-Aether-Provider: <span class="t-ok">mock-primary</span>
+X-Aether-Cache: <span class="t-ok">MISS</span>
+X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="section reveal">
-        <div class="container">
-          <h2 class="section-title">What it does</h2>
-          <p class="section-lede">
-            The engineering value isn't in calling models &ndash; it's in everything around the call. Six things it
-            actually handles for you:
-          </p>
-          <div class="feature-grid">
+      <section class="providers" aria-labelledby="providers-title">
+        <div class="container providers-inner">
+          <h2 id="providers-title" class="providers-title">Routes to</h2>
+          <ul class="provider-list">
             {
-              FEATURES.map((feature) => (
-                <div class="feature-card">
-                  <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={ICONS[feature.icon]} />
-                  <div class="feature-title">{feature.title}</div>
-                  <div class="feature-body" set:html={feature.body} />
+              PROVIDERS.map((p) => (
+                <li class="provider">
+                  <span class="provider-mono" aria-hidden="true">{p.mono}</span>
+                  {p.name}
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </section>
+
+      <section id="benchmarks" class="section stats" aria-labelledby="stats-title">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">Benchmarks</p>
+            <h2 id="stats-title" class="section-title">Measured, not estimated.</h2>
+            <p class="section-lede">
+              Every number comes from a committed run against the real stack. The harness, raw CSVs and methodology are
+              in the repository &ndash; reproduce them with <code>make bench</code>.
+            </p>
+          </div>
+          <dl class="stat-grid">
+            {
+              STATS.map((s) => (
+                <div class="stat">
+                  <dt class="stat-label">{s.label}</dt>
+                  <dd class="stat-value">
+                    {s.value}
+                    <span class="stat-unit">{s.unit}</span>
+                  </dd>
+                  <dd class="stat-detail">{s.detail}</dd>
                 </div>
               ))
             }
-          </div>
-        </div>
-      </section>
-
-      <section class="final-cta reveal">
-        <div class="container">
-          <h2 class="final-cta-title">Bring up the whole stack in one command</h2>
-          <p class="final-cta-lede">
-            Gateway, Postgres+pgvector, Redis, two mock providers, Prometheus, and a pre-provisioned Grafana
-            dashboard &ndash; seeded and ready, no manual setup.
+          </dl>
+          <p class="section-link">
+            <a href={LINKS.benchmarks}>Read the full benchmark report <span aria-hidden="true">&rarr;</span></a>
           </p>
-          <div class="cta-row cta-row-center">
-            <a class="button button-primary" href={`${base}/docs/getting-started/`}>Getting Started guide &rarr;</a>
-            <a class="button button-outline" href={`${base}/docs/`}>Browse the docs</a>
-          </div>
         </div>
       </section>
 
-      <footer class="site-footer">
-        <div class="container footer-grid">
-          <div>
-            <div class="footer-title">Get started</div>
-            <ul>
-              <li><a href={`${base}/docs/getting-started/`}>Getting Started</a></li>
-              <li><a href={`${base}/docs/usage/`}>Usage Guide</a></li>
-              <li><a href="https://github.com/Ashish-CodeJourney/aether-gateway#readme">README</a></li>
-              <li><a href="https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/BENCHMARKS.md">Benchmarks</a></li>
-            </ul>
+      <section class="section" aria-labelledby="features-title">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">Features</p>
+            <h2 id="features-title" class="section-title">Everything around the model call.</h2>
+            <p class="section-lede">
+              Calling a model is one line. Keeping it fast, affordable and up when a provider is not is the hard part &ndash;
+              that is what Aether does.
+            </p>
           </div>
-          <div>
-            <div class="footer-title">Design</div>
-            <ul>
-              <li><a href={`${base}/docs/adr/hexagonal-module-layout/`}>Architecture Decision Records</a></li>
-              <li><a href={`${base}/docs/design/api-contract/`}>Design docs</a></li>
-            </ul>
-          </div>
-          <div>
-            <div class="footer-title">Project</div>
-            <ul>
-              <li><a href="https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/CONTRIBUTING.md">Contributing</a></li>
-              <li><a href="https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/SECURITY.md">Security policy</a></li>
-              <li><a href="https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/LICENSE">MIT License</a></li>
-            </ul>
-          </div>
+          <ul class="feature-grid">
+            {
+              FEATURES.map((f) => (
+                <li class="feature">
+                  <svg
+                    class="feature-icon"
+                    viewBox="0 0 24 24"
+                    width="22"
+                    height="22"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                    set:html={ICONS[f.icon]}
+                  />
+                  <h3 class="feature-title">{f.title}</h3>
+                  <p class="feature-body" set:html={f.body} />
+                </li>
+              ))
+            }
+          </ul>
         </div>
-        <div class="container footer-copyright">
-          Aether Gateway &ndash; built to production standards. Docs built with Astro + Starlight.
+      </section>
+
+      <section class="section section-alt" aria-labelledby="flow-title">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">How it works</p>
+            <h2 id="flow-title" class="section-title">One request, six steps, one response.</h2>
+            <p class="section-lede">
+              Your application sends a normal OpenAI request. Aether runs it through the same pipeline every time and
+              tells you what happened in the response headers.
+            </p>
+          </div>
+
+          <div class="flow">
+            <div class="flow-end flow-client">
+              <span class="flow-end-label">Your app</span>
+              <span class="flow-end-sub">any OpenAI SDK</span>
+            </div>
+            <div class="flow-pipeline">
+              <div class="flow-bypass" aria-hidden="true"><span>cache hit: skip the provider, cost $0</span></div>
+              <ol class="flow-steps">
+                {
+                  FLOW.map((step, i) => (
+                    <li class="flow-step">
+                      <span class="flow-num" aria-hidden="true">{i + 1}</span>
+                      <h3 class="flow-title">{step.title}</h3>
+                      <p class="flow-body">{step.body}</p>
+                      <span class="flow-infra">{step.infra}</span>
+                    </li>
+                  ))
+                }
+              </ol>
+            </div>
+            <div class="flow-end flow-providers">
+              <span class="flow-end-label">Providers</span>
+              <span class="flow-end-sub">Ollama · Groq · Gemini · Anthropic · OpenAI-compatible</span>
+            </div>
+          </div>
+          <p class="flow-note">
+            On a cache hit, steps 4 and 5 are skipped entirely &ndash; the response comes back with
+            <code>X-Aether-Cache: EXACT_HIT</code> or <code>SEMANTIC_HIT</code> and <code>X-Aether-Cost-USD: 0</code>.
+            <a href={LINKS.architecture}>See the full architecture</a>.
+          </p>
         </div>
-      </footer>
+      </section>
+
+      <section id="compare" class="section" aria-labelledby="compare-title">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">Compare</p>
+            <h2 id="compare-title" class="section-title">Where Aether fits.</h2>
+            <p class="section-lede">
+              There are good LLM gateways already. Here is an honest look at how Aether differs, so you can pick the
+              right one.
+            </p>
+          </div>
+          <div class="table-wrap" role="region" aria-labelledby="compare-title" tabindex="0">
+            <table class="compare">
+              <thead>
+                <tr>
+                  <td></td>
+                  {COMPARE_COLUMNS.map((c, i) => <th scope="col" class={i === 0 ? 'is-us' : undefined}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {
+                  COMPARE_ROWS.map((row) => (
+                    <tr>
+                      <th scope="row">{row.label}</th>
+                      {row.cells.map((cell, i) => (
+                        <td class={i === 0 ? 'is-us' : undefined} set:html={cell} />
+                      ))}
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+          <div class="fit-grid">
+            <div class="fit fit-yes">
+              <h3>Aether is a good fit if you&hellip;</h3>
+              <ul>
+                <li>run on the JVM, or want a gateway your Java team can read and extend</li>
+                <li>want one self-hosted stack with caching, quotas, metrics and dashboards included</li>
+                <li>want performance numbers you can reproduce yourself, not just read</li>
+                <li>need a plain MIT license with no paid edition</li>
+              </ul>
+            </div>
+            <div class="fit fit-no">
+              <h3>Look elsewhere if you&hellip;</h3>
+              <ul>
+                <li>need the widest provider catalogue today &ndash; LiteLLM and Portkey support many more</li>
+                <li>want a fully managed, hosted service instead of running your own</li>
+                <li>want an in-process Python library rather than a network gateway</li>
+              </ul>
+            </div>
+          </div>
+          <p class="footnote">
+            Details about other projects are summarised from their public repositories and may change; check their
+            documentation for current status.
+          </p>
+        </div>
+      </section>
+
+      <section class="final-cta" aria-labelledby="cta-title">
+        <div class="container final-cta-inner">
+          <div>
+            <h2 id="cta-title" class="final-cta-title">Your first request is a minute away.</h2>
+            <p class="final-cta-lede">
+              One command brings up the gateway, Postgres + pgvector, Redis, two mock providers for failover demos,
+              Prometheus and Grafana &ndash; seeded and ready.
+            </p>
+            <div class="cta-row">
+              <a class="button button-primary" href={LINKS.start}>
+                Get started <span aria-hidden="true">&rarr;</span>
+              </a>
+              <a class="button button-ghost" href={LINKS.github}>Star on GitHub</a>
+            </div>
+          </div>
+          <pre class="terminal" aria-label="Quickstart commands"><code><span class="t-dim">$</span> git clone {REPO}.git
+<span class="t-dim">$</span> cd aether-gateway
+<span class="t-dim">$</span> docker compose up -d
+<span class="t-dim"># gateway on :8080 · Grafana on :3000</span></code></pre>
+        </div>
+      </section>
     </main>
 
-    <script>
-      const io = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting) {
-              entry.target.classList.add('in-view');
-              io.unobserve(entry.target);
-            }
-          }
-        },
-        {threshold: 0.12},
-      );
-      document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
-    </script>
+    <footer class="footer">
+      <div class="container footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href={`${base}/`}>
+            <img src={`${base}/img/logo.svg`} alt="" width="24" height="24" />
+            <span>Aether Gateway</span>
+          </a>
+          <p>A free, open-source, self-hosted LLM gateway. Released under the MIT License.</p>
+        </div>
+        <nav aria-label="Documentation">
+          <h2 class="footer-title">Docs</h2>
+          <ul>
+            <li><a href={LINKS.docs}>Introduction</a></li>
+            <li><a href={LINKS.start}>Getting started</a></li>
+            <li><a href={LINKS.usage}>Usage guide</a></li>
+            <li><a href={LINKS.adr}>Architecture decisions</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2 class="footer-title">Project</h2>
+          <ul>
+            <li><a href={LINKS.github}>GitHub</a></li>
+            <li><a href={LINKS.benchmarks}>Benchmarks</a></li>
+            <li><a href={LINKS.contributing}>Contributing</a></li>
+            <li><a href={LINKS.conduct}>Code of Conduct</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Legal">
+          <h2 class="footer-title">Legal</h2>
+          <ul>
+            <li><a href={LINKS.license}>MIT License</a></li>
+            <li><a href={LINKS.security}>Security policy</a></li>
+          </ul>
+        </nav>
+      </div>
+    </footer>
 
-    <style>
+    <style is:global>
       :root {
-        --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
-        --font-body: 'Inter', 'Segoe UI', sans-serif;
-        --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        color-scheme: light dark;
 
-        --accent: #6e56cf;
-        --accent-2: #d97706;
-        --accent-3: #0f9d8c;
-        --text: #1c1730;
-        --text-dim: #5b5470;
-        --border: rgba(76, 45, 158, 0.14);
-        --bg: #faf9fc;
-        --bg-alt: #f1eef9;
-        --panel: #ffffff;
+        --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+        --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+        --bg: light-dark(#fbfaff, #0c0a14);
+        --bg-alt: light-dark(#f3f0fb, #110e1c);
+        --surface: light-dark(#ffffff, #16121f);
+        --text: light-dark(#17132a, #f2effb);
+        --muted: light-dark(#575170, #a9a2c4);
+        --border: light-dark(#e4dff3, #2a2440);
+        --border-strong: light-dark(#cfc7ea, #3b3359);
+        --accent: light-dark(#5b43c4, #b1a5f6);
+        --accent-soft: light-dark(#ece7fb, #231c3d);
+        --on-accent: light-dark(#ffffff, #120d24);
+        --amber: light-dark(#b45309, #fbbf24);
+        --teal: light-dark(#0f766e, #2dd4bf);
+        --shadow: light-dark(0 24px 48px -28px rgba(63, 41, 148, 0.35), 0 24px 48px -24px rgba(0, 0, 0, 0.7));
+
+        --code-bg: #0f0c1a;
+        --code-bar: #17132a;
+        --code-text: #e6e1f7;
+        --code-dim: #8d86a8;
+        --code-border: #2a2440;
+
+        --radius: 12px;
       }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --accent: #ab9ff2;
-          --accent-2: #fbbf24;
-          --accent-3: #35d6b8;
-          --text: #f1eefc;
-          --text-dim: #b3a9d6;
-          --border: rgba(171, 159, 242, 0.16);
-          --bg: #0e0b16;
-          --bg-alt: #161225;
-          --panel: #1a1530;
-        }
+      :root[data-theme='light'] {
+        color-scheme: light;
+      }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        -webkit-text-size-adjust: 100%;
       }
       @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
         *,
         *::before,
         *::after {
-          animation-duration: 0.001ms !important;
-          animation-iteration-count: 1 !important;
-          transition-duration: 0.001ms !important;
+          animation: none !important;
+          transition: none !important;
         }
-      }
-
-      :global(html) {
-        font-family: var(--font-body);
       }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--text);
         font-family: var(--font-body);
+        font-size: 1rem;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
       }
       h1,
-      h2 {
+      h2,
+      h3 {
         font-family: var(--font-display);
-        color: var(--text);
+        line-height: 1.15;
+        margin: 0;
       }
-      .container {
-        max-width: 1140px;
-        margin: 0 auto;
-        padding: 0 1.5rem;
+      p {
+        margin: 0;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 3px;
       }
       code,
       pre {
         font-family: var(--font-mono);
       }
-      a {
-        color: var(--accent);
+      :not(pre) > code {
+        font-size: 0.86em;
+        padding: 0.1em 0.35em;
+        border-radius: 5px;
+        background: var(--accent-soft);
+        color: var(--text);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 4px;
+      }
+      .container {
+        width: 100%;
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+      }
+      .skip-link {
+        position: absolute;
+        left: 1rem;
+        top: -3rem;
+        z-index: 100;
+        padding: 0.5rem 1rem;
+        background: var(--accent);
+        color: var(--on-accent);
+        border-radius: 8px;
+      }
+      .skip-link:focus {
+        top: 1rem;
       }
 
-      /* ---- hero ---- */
-      .hero {
-        padding: 5.5rem 0 4.5rem;
-        background: radial-gradient(ellipse 70% 60% at 15% -10%, rgba(110, 86, 207, 0.22), transparent), var(--bg);
-        overflow: hidden;
-      }
-      .hero-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-        gap: 3rem;
-        align-items: center;
-      }
-      @media (max-width: 900px) {
-        .hero-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      .kicker {
+      /* ---- buttons ---- */
+      .button {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        font-family: var(--font-mono);
-        font-size: 0.8rem;
-        font-weight: 500;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--accent);
-        margin-bottom: 1.1rem;
-      }
-      .kicker .dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--accent-3);
-        box-shadow: 0 0 0 0 rgba(15, 157, 140, 0.5);
-        animation: pulse 2.2s ease-out infinite;
-      }
-      @keyframes pulse {
-        0% {
-          box-shadow: 0 0 0 0 rgba(15, 157, 140, 0.45);
-        }
-        70% {
-          box-shadow: 0 0 0 7px rgba(15, 157, 140, 0);
-        }
-        100% {
-          box-shadow: 0 0 0 0 rgba(15, 157, 140, 0);
-        }
-      }
-      .hero-title {
-        font-size: 3.1rem;
-        font-weight: 700;
-        letter-spacing: -0.03em;
-        margin: 0 0 1.25rem;
-        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 130%);
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-      .hero-lede {
-        font-size: 1.2rem;
-        line-height: 1.6;
-        color: var(--text-dim);
-        margin: 0 0 2rem;
-        max-width: 620px;
-      }
-      .hero-lede code {
-        font-size: 0.85em;
-        color: var(--text);
-      }
-
-      .cta-row {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-      }
-      .cta-row-center {
-        justify-content: center;
-      }
-      .button {
-        display: inline-block;
-        padding: 0.7rem 1.4rem;
-        border-radius: 8px;
+        padding: 0.75rem 1.25rem;
+        border-radius: 10px;
         font-weight: 600;
+        font-size: 0.97rem;
+        line-height: 1.2;
         text-decoration: none;
         border: 1px solid transparent;
-        transition: transform 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+        transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
       }
       .button:hover {
         transform: translateY(-1px);
       }
       .button-primary {
         background: var(--accent);
-        color: white;
+        color: var(--on-accent);
       }
       .button-primary:hover {
-        opacity: 0.92;
+        background: color-mix(in oklab, var(--accent) 88%, var(--text));
       }
-      .button-outline {
-        border-color: var(--border);
-        color: var(--accent);
+      .button-ghost {
+        background: var(--surface);
+        border-color: var(--border-strong);
+        color: var(--text);
       }
-      .button-outline:hover {
+      .button-ghost:hover {
         border-color: var(--accent);
       }
+      .button-sm {
+        padding: 0.5rem 0.9rem;
+        font-size: 0.9rem;
+      }
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
 
-      /* ---- signature: live request trace ---- */
-      .trace-panel {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 1.25rem 1.25rem 1.5rem;
-        box-shadow: 0 20px 44px -28px rgba(76, 45, 158, 0.35);
+      /* ---- nav ---- */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        backdrop-filter: saturate(160%) blur(12px);
+        -webkit-backdrop-filter: saturate(160%) blur(12px);
+        border-bottom: 1px solid var(--border);
       }
-      .trace-eyebrow {
-        font-family: var(--font-mono);
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--text-dim);
-        margin-bottom: 0.5rem;
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 64px;
       }
-      .trace-svg {
-        width: 100%;
-        height: auto;
-        overflow: visible;
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        color: var(--text);
+        text-decoration: none;
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 1.08rem;
+        letter-spacing: -0.01em;
       }
-      .trace-line {
-        fill: none;
-        stroke: var(--border);
-        stroke-width: 2;
-        stroke-dasharray: 4 5;
+      .brand img {
+        display: block;
       }
-      .trace-node circle {
-        fill: var(--bg);
-        stroke: var(--accent);
-        stroke-width: 2;
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 1.4rem;
+        list-style: none;
+        margin: 0;
+        padding: 0;
       }
-      .trace-node text {
-        font-family: var(--font-mono);
-        font-size: 9px;
-        fill: var(--text-dim);
-        text-anchor: middle;
+      .nav-links a:not(.button) {
+        color: var(--muted);
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 0.94rem;
       }
-      .trace-dot {
-        fill: var(--accent-3);
-        offset-path: path('M28 40 H140 Q160 40 160 60 V80 Q160 100 180 100 H292');
-        animation: travel 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+      .nav-links a:not(.button):hover {
+        color: var(--text);
       }
-      @keyframes travel {
-        0% {
-          offset-distance: 0%;
-          opacity: 0;
+      .nav-icon {
+        display: inline-flex;
+      }
+      @media (max-width: 640px) {
+        .nav-hide-sm {
+          display: none;
         }
-        6% {
-          opacity: 1;
-        }
-        46% {
-          offset-distance: 100%;
-          opacity: 1;
-        }
-        52% {
-          opacity: 0;
-        }
-        100% {
-          offset-distance: 100%;
-          opacity: 0;
+        .nav-links {
+          gap: 1rem;
         }
       }
-      .trace-readout {
-        margin-top: 1rem;
-        font-family: var(--font-mono);
-        font-size: 0.78rem;
-        color: var(--text-dim);
-        border-top: 1px dashed var(--border);
-        padding-top: 0.85rem;
-      }
-      .trace-line-1,
-      .trace-line-2 {
+
+      /* ---- hero ---- */
+      .hero {
         position: relative;
-        height: 1.3em;
+        padding: 5rem 0 4.5rem;
         overflow: hidden;
+        isolation: isolate;
       }
-      .trace-line-2 {
-        margin-top: 0.3em;
-      }
-      .trace-frame {
+      .hero::before {
+        content: '';
         position: absolute;
         inset: 0;
-        opacity: 0;
-        animation: crossfade 6.4s ease-in-out infinite;
+        z-index: -1;
+        background:
+          radial-gradient(ellipse 55% 50% at 12% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
+          radial-gradient(ellipse 40% 40% at 95% 30%, color-mix(in srgb, var(--amber) 12%, transparent), transparent 70%),
+          linear-gradient(var(--border) 1px, transparent 1px) 0 0 / 48px 48px,
+          linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0 / 48px 48px;
+        mask-image: linear-gradient(to bottom, #000 30%, transparent 95%);
+        -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent 95%);
+        opacity: 0.9;
       }
-      .trace-frame b {
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
+        gap: 3.5rem;
+        align-items: center;
+      }
+      @media (max-width: 980px) {
+        .hero {
+          padding: 3.5rem 0 3.5rem;
+        }
+        .hero-grid {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2.75rem;
+        }
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.4rem 0.85rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
         color: var(--text);
+        font-size: 0.88rem;
         font-weight: 600;
+        text-decoration: none;
+        margin-bottom: 1.5rem;
       }
-      .trace-frame b.hit {
-        color: var(--accent-3);
+      .pill:hover {
+        border-color: var(--accent);
       }
-      .trace-frame-1 {
-        animation-delay: 0s;
+      .pill-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--teal);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 25%, transparent);
       }
-      .trace-frame-2 {
-        animation-delay: 0s;
-        animation-name: crossfade-2;
+      .hero-title {
+        font-size: clamp(2.5rem, 5.6vw, 4.1rem);
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        line-height: 1.04;
+        margin-bottom: 1.4rem;
+        text-wrap: balance;
       }
-      @keyframes crossfade {
-        0%,
-        44% {
-          opacity: 1;
-        }
-        50%,
-        100% {
-          opacity: 0;
-        }
+      .grad {
+        background: linear-gradient(100deg, var(--accent) 10%, var(--amber) 95%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
       }
-      @keyframes crossfade-2 {
-        0%,
-        44% {
-          opacity: 0;
-        }
-        50%,
-        94% {
-          opacity: 1;
-        }
-        100% {
-          opacity: 0;
-        }
+      .hero-lede {
+        font-size: clamp(1.05rem, 1.6vw, 1.2rem);
+        color: var(--muted);
+        max-width: 36rem;
+        margin-bottom: 2rem;
+        text-wrap: pretty;
+      }
+      .quickstart {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 1.75rem;
+        padding: 0.35rem 0.35rem 0.35rem 0.85rem;
+        border: 1px dashed var(--border-strong);
+        border-radius: 10px;
+        max-width: 100%;
+        flex-wrap: wrap;
+      }
+      .quickstart-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .quickstart code {
+        padding: 0.4rem 0.75rem;
+        border-radius: 7px;
+        background: var(--code-bg);
+        color: var(--code-text);
+        font-size: 0.88rem;
+        white-space: nowrap;
+        user-select: all;
+      }
+      .quickstart .prompt {
+        color: var(--code-dim);
+        user-select: none;
+        margin-right: 0.35rem;
+      }
+      .hero-meta {
+        margin-top: 1.25rem;
+        font-size: 0.86rem;
+        color: var(--muted);
       }
 
-      /* ---- reveal-on-scroll ---- */
-      .reveal {
-        opacity: 0;
-        transform: translateY(14px);
-        transition: opacity 0.5s ease, transform 0.5s ease;
+      /* ---- code window ---- */
+      .code-window {
+        display: grid;
+        border-radius: 14px;
+        border: 1px solid var(--code-border);
+        background: var(--code-bg);
+        color: var(--code-text);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        min-width: 0;
       }
-      .reveal.in-view {
-        opacity: 1;
-        transform: none;
+      .tab-input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+        width: 1px;
+        height: 1px;
+      }
+      .code-bar {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0 1rem;
+        background: var(--code-bar);
+        border-bottom: 1px solid var(--code-border);
+      }
+      .code-dots {
+        display: inline-flex;
+        gap: 6px;
+      }
+      .code-dots i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #3b3359;
+      }
+      .tab-labels {
+        display: flex;
+        gap: 0.25rem;
+      }
+      .tab-labels label {
+        cursor: pointer;
+        padding: 0.8rem 0.75rem 0.7rem;
+        font-size: 0.83rem;
+        font-weight: 500;
+        color: var(--code-dim);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        user-select: none;
+      }
+      .tab-labels label:hover {
+        color: var(--code-text);
+      }
+      .code-panels {
+        display: grid;
+      }
+      .code-panel {
+        grid-area: 1 / 1;
+        visibility: hidden;
+        margin: 0;
+        padding: 1.25rem 1.25rem 1.1rem;
+        overflow-x: auto;
+        font-size: 0.84rem;
+        line-height: 1.7;
+      }
+      .code-panel mark {
+        display: inline-block;
+        min-width: 100%;
+        background: rgba(177, 165, 246, 0.12);
+        color: inherit;
+        box-shadow: inset 2px 0 0 #b1a5f6;
+        margin: 0 -1.25rem;
+        padding: 0 1.25rem;
+        width: calc(100% + 2.5rem);
+      }
+      #tab-python:checked ~ .code-panels [data-tab='python'],
+      #tab-typescript:checked ~ .code-panels [data-tab='typescript'],
+      #tab-curl:checked ~ .code-panels [data-tab='curl'] {
+        visibility: visible;
+      }
+      #tab-python:checked ~ .code-bar label[data-tab='python'],
+      #tab-typescript:checked ~ .code-bar label[data-tab='typescript'],
+      #tab-curl:checked ~ .code-bar label[data-tab='curl'] {
+        color: #ffffff;
+        border-bottom-color: #b1a5f6;
+      }
+      #tab-python:focus-visible ~ .code-bar label[data-tab='python'],
+      #tab-typescript:focus-visible ~ .code-bar label[data-tab='typescript'],
+      #tab-curl:focus-visible ~ .code-bar label[data-tab='curl'] {
+        outline: 2px solid #b1a5f6;
+        outline-offset: -4px;
+        border-radius: 6px;
+      }
+      .t-k {
+        color: #c4b5fd;
+      }
+      .t-s {
+        color: #fcd34d;
+      }
+      .t-f {
+        color: #5eead4;
+      }
+      .t-dim {
+        color: var(--code-dim);
+      }
+      .t-ok {
+        color: #5eead4;
+      }
+      .code-response {
+        border-top: 1px solid var(--code-border);
+        background: #0b0914;
+        padding: 0.9rem 1.25rem 1rem;
+      }
+      .code-response-title {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--code-dim);
+        margin-bottom: 0.35rem;
+      }
+      .code-response pre {
+        margin: 0;
+        font-size: 0.82rem;
+        line-height: 1.65;
+        overflow-x: auto;
+      }
+
+      /* ---- providers ---- */
+      .providers {
+        border-block: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .providers-inner {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem 2rem;
+        padding-block: 1.4rem;
+        flex-wrap: wrap;
+      }
+      .providers-title {
+        font-family: var(--font-body);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+      }
+      .provider-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem 1.75rem;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .provider {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 1.02rem;
+        color: var(--text);
+      }
+      .provider-mono {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        font-weight: 600;
       }
 
       /* ---- sections ---- */
       .section {
-        padding: 3.75rem 0;
+        padding: 5.5rem 0;
       }
       .section-alt {
         background: var(--bg-alt);
+        border-block: 1px solid var(--border);
+      }
+      @media (max-width: 640px) {
+        .section {
+          padding: 4rem 0;
+        }
+      }
+      .section-head {
+        max-width: 44rem;
+        margin-bottom: 2.75rem;
+      }
+      .eyebrow {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--accent);
+        margin-bottom: 0.75rem;
       }
       .section-title {
-        font-size: 1.65rem;
-        font-weight: 600;
-        margin: 0 0 0.5rem;
+        font-size: clamp(1.85rem, 3.6vw, 2.6rem);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        margin-bottom: 0.9rem;
+        text-wrap: balance;
       }
       .section-lede {
-        color: var(--text-dim);
-        margin: 0 0 2rem;
-        max-width: 680px;
+        font-size: 1.08rem;
+        color: var(--muted);
+        text-wrap: pretty;
+      }
+      .section-link {
+        margin-top: 2rem;
+        font-weight: 600;
+      }
+      .section-link a {
+        text-decoration: none;
+      }
+      .section-link a:hover {
+        text-decoration: underline;
       }
 
+      /* ---- stats ---- */
+      .stats {
+        padding-top: 5rem;
+      }
       .stat-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1.25rem;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        overflow: hidden;
+      }
+      .stat {
+        display: flex;
+        flex-direction: column;
+        padding: 1.75rem 1.5rem;
+        border-left: 1px solid var(--border);
+      }
+      .stat:first-child {
+        border-left: 0;
+      }
+      .stat-label {
+        order: 2;
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--text);
+        margin-top: 0.6rem;
+      }
+      .stat-value {
+        order: 1;
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: clamp(2.3rem, 4vw, 3rem);
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        line-height: 1;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+      }
+      .stat-unit {
+        font-size: 0.5em;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin-left: 0.15em;
+        color: var(--muted);
+      }
+      .stat-detail {
+        order: 3;
+        margin: 0.25rem 0 0;
+        font-size: 0.86rem;
+        color: var(--muted);
       }
       @media (max-width: 900px) {
         .stat-grid {
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .stat:nth-child(3) {
+          border-left: 0;
+        }
+        .stat:nth-child(n + 3) {
+          border-top: 1px solid var(--border);
         }
       }
-      .stat-card {
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1.25rem 1.25rem 1.1rem;
-        background: var(--panel);
-        transition: border-color 0.15s ease, transform 0.15s ease;
-      }
-      .stat-card:hover {
-        border-color: var(--accent);
-        transform: translateY(-2px);
-      }
-      .stat-value {
-        font-family: var(--font-display);
-        font-size: 1.85rem;
-        font-weight: 700;
-        color: var(--accent);
-        letter-spacing: -0.02em;
-        line-height: 1.1;
-      }
-      .stat-label {
-        font-size: 0.87rem;
-        color: var(--text-dim);
-        margin-top: 0.4rem;
-      }
-      .stat-note {
-        font-family: var(--font-mono);
-        font-size: 0.72rem;
-        color: var(--text-dim);
-        opacity: 0.75;
-        margin-top: 0.55rem;
-      }
-
-      .demo-layout {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-        align-items: start;
-      }
-      @media (max-width: 900px) {
-        .demo-layout {
-          grid-template-columns: 1fr;
+      @media (max-width: 520px) {
+        .stat-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .stat {
+          border-left: 0;
+        }
+        .stat:nth-child(n + 2) {
+          border-top: 1px solid var(--border);
         }
       }
-      .demo-code {
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 1rem;
-        overflow-x: auto;
-        font-size: 0.83rem;
-        background: var(--panel);
-        margin: 0;
-      }
-      .demo-note {
-        font-size: 0.92rem;
-        color: var(--text-dim);
-        line-height: 1.6;
-      }
-      .demo-note p {
-        margin: 0.9rem 0 0;
-      }
-      .demo-note p:first-child {
-        margin-top: 0;
-      }
-      .demo-note ul {
-        margin: 0.6rem 0 0;
-        padding-left: 1.2rem;
-      }
-      .demo-note li {
-        margin-bottom: 0.5rem;
-      }
-      .demo-note code {
-        color: var(--text);
-      }
 
+      /* ---- features ---- */
       .feature-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1.5rem;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+        list-style: none;
+        margin: 0;
+        padding: 0;
       }
-      @media (max-width: 900px) {
+      @media (max-width: 1080px) {
         .feature-grid {
-          grid-template-columns: 1fr;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
-      .feature-card {
-        border: 1px solid var(--border);
-        border-radius: 10px;
+      @media (max-width: 600px) {
+        .feature-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .feature {
         padding: 1.5rem;
-        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
         transition: border-color 0.15s ease, transform 0.15s ease;
       }
-      .feature-card:hover {
-        border-color: var(--accent);
+      .feature:hover {
+        border-color: var(--border-strong);
         transform: translateY(-2px);
       }
       .feature-icon {
-        width: 26px;
-        height: 26px;
+        display: block;
+        box-sizing: content-box;
+        padding: 0.55rem;
+        border-radius: 10px;
+        background: var(--accent-soft);
         color: var(--accent);
-        margin-bottom: 0.85rem;
+        margin-bottom: 1.1rem;
       }
       .feature-title {
-        font-family: var(--font-display);
-        font-size: 1.05rem;
+        font-size: 1.06rem;
         font-weight: 600;
+        letter-spacing: -0.01em;
         margin-bottom: 0.5rem;
-        color: var(--text);
       }
       .feature-body {
-        font-size: 0.92rem;
-        color: var(--text-dim);
-        line-height: 1.55;
+        font-size: 0.93rem;
+        color: var(--muted);
+        line-height: 1.6;
       }
       .feature-body code {
-        color: var(--text);
+        font-size: 0.8em;
       }
 
-      .final-cta {
+      /* ---- how it works ---- */
+      .flow {
+        display: grid;
+        gap: 1rem;
+      }
+      .flow-end {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: center;
+        gap: 0.25rem 0.75rem;
+        padding: 0.9rem 1.25rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
         text-align: center;
-        padding: 4.5rem 0 5.5rem;
+      }
+      .flow-end-label {
+        font-family: var(--font-display);
+        font-weight: 700;
+      }
+      .flow-end-sub {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      .flow-client {
+        position: relative;
+      }
+      .flow-pipeline {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        padding: 1.25rem;
+        border-radius: 16px;
+        background:
+          linear-gradient(var(--surface), var(--surface)) padding-box,
+          linear-gradient(120deg, var(--accent), var(--amber)) border-box;
+        border: 1.5px solid transparent;
+        column-gap: 0.75rem;
+      }
+      .flow-pipeline::before {
+        content: 'Aether Gateway';
+        position: absolute;
+        top: -0.75rem;
+        left: 1.25rem;
+        padding: 0 0.5rem;
+        background: var(--bg-alt);
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .flow-bypass {
+        grid-row: 1;
+        grid-column: 3 / 7;
+        margin: 0.5rem 8.33% 0.6rem;
+        height: 2.1rem;
+        border: 1.5px dashed var(--teal);
+        border-bottom: 0;
+        border-radius: 12px 12px 0 0;
+        position: relative;
+      }
+      .flow-bypass span {
+        position: absolute;
+        left: 50%;
+        top: -0.8rem;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        padding: 0.1rem 0.6rem;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--teal);
+        color: var(--teal);
+        font-size: 0.76rem;
+        font-weight: 600;
+      }
+      .flow-steps {
+        grid-row: 2;
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: subgrid;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .flow-step {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        padding: 1rem 0.9rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+      }
+      .flow-step:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        top: 1.6rem;
+        right: calc(-0.75rem - 1px);
+        width: 0.75rem;
+        height: 2px;
+        background: var(--border-strong);
+      }
+      .flow-num {
+        display: inline-grid;
+        place-items: center;
+        width: 1.6rem;
+        height: 1.6rem;
+        border-radius: 50%;
+        background: var(--accent);
+        color: var(--on-accent);
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin-bottom: 0.7rem;
+      }
+      .flow-step:nth-child(3) .flow-num {
+        background: var(--teal);
+        color: var(--on-accent);
+      }
+      .flow-title {
+        font-size: 0.98rem;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+      .flow-body {
+        font-size: 0.85rem;
+        color: var(--muted);
+        line-height: 1.5;
+        flex: 1;
+      }
+      .flow-infra {
+        align-self: flex-start;
+        margin-top: 0.8rem;
+        padding: 0.12rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+      .flow-note {
+        margin-top: 1.5rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+        max-width: 50rem;
+      }
+      @media (max-width: 980px) {
+        .flow-pipeline {
+          grid-template-columns: minmax(0, 1fr);
+          padding: 1.5rem 1rem 1rem;
+        }
+        .flow-bypass {
+          display: none;
+        }
+        .flow-steps {
+          grid-row: auto;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0.75rem;
+        }
+        .flow-step::after {
+          display: none;
+        }
+      }
+      @media (max-width: 520px) {
+        .flow-steps {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      /* ---- compare ---- */
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .compare {
+        width: 100%;
+        min-width: 720px;
+        border-collapse: collapse;
+        font-size: 0.93rem;
+      }
+      .compare th,
+      .compare td {
+        padding: 1rem 1.1rem;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--border);
+      }
+      .compare tbody tr:last-child > * {
+        border-bottom: 0;
+      }
+      .compare thead th {
+        font-family: var(--font-display);
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      .compare tbody th {
+        font-weight: 600;
+        color: var(--muted);
+        white-space: nowrap;
+        width: 9rem;
+      }
+      .compare td {
+        color: var(--muted);
+      }
+      .compare .is-us {
+        background: var(--accent-soft);
+        color: var(--text);
+        width: 28%;
+      }
+      .compare thead .is-us {
+        color: var(--accent);
+      }
+      .fit-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1.5rem;
+      }
+      @media (max-width: 760px) {
+        .fit-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .fit {
+        padding: 1.5rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .fit h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-bottom: 0.85rem;
+      }
+      .fit ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 0.6rem;
+      }
+      .fit li {
+        position: relative;
+        padding-left: 1.6rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .fit li::before {
+        position: absolute;
+        left: 0;
+        top: 0;
+        font-weight: 700;
+      }
+      .fit-yes li::before {
+        content: '✓';
+        color: var(--teal);
+      }
+      .fit-no li::before {
+        content: '→';
+        color: var(--amber);
+      }
+      .footnote {
+        margin-top: 1.25rem;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      /* ---- final CTA ---- */
+      .final-cta {
+        padding: 5rem 0;
+        background:
+          radial-gradient(ellipse 60% 80% at 0% 100%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+          radial-gradient(ellipse 50% 70% at 100% 0%, color-mix(in srgb, var(--amber) 14%, transparent), transparent 70%),
+          var(--bg-alt);
+        border-top: 1px solid var(--border);
+      }
+      .final-cta-inner {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 3rem;
+        align-items: center;
+      }
+      @media (max-width: 900px) {
+        .final-cta-inner {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2rem;
+        }
       }
       .final-cta-title {
-        font-size: 1.75rem;
-        font-weight: 600;
-        margin: 0 0 0.75rem;
+        font-size: clamp(1.85rem, 3.6vw, 2.6rem);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        margin-bottom: 0.9rem;
+        text-wrap: balance;
       }
       .final-cta-lede {
-        color: var(--text-dim);
-        margin: 0 0 1.75rem;
+        color: var(--muted);
+        font-size: 1.05rem;
+        margin-bottom: 1.75rem;
+        max-width: 34rem;
+      }
+      .terminal {
+        margin: 0;
+        padding: 1.4rem 1.5rem;
+        border-radius: 14px;
+        border: 1px solid var(--code-border);
+        background: var(--code-bg);
+        color: var(--code-text);
+        font-size: 0.88rem;
+        line-height: 1.85;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        box-shadow: var(--shadow);
       }
 
-      .site-footer {
-        background: #120f1a;
-        color: #b8b0d9;
-        padding: 3rem 0 1.5rem;
+      /* ---- footer ---- */
+      .footer {
+        padding: 3.5rem 0 3rem;
+        border-top: 1px solid var(--border);
+        background: var(--bg);
+        font-size: 0.93rem;
       }
       .footer-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: 2fr repeat(3, 1fr);
         gap: 2rem;
       }
-      @media (max-width: 700px) {
+      @media (max-width: 760px) {
         .footer-grid {
-          grid-template-columns: 1fr;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .footer-brand {
+          grid-column: 1 / -1;
         }
       }
+      .footer-brand p {
+        margin-top: 0.75rem;
+        color: var(--muted);
+        max-width: 22rem;
+      }
       .footer-title {
-        font-family: var(--font-display);
-        color: #ffffff;
+        font-family: var(--font-body);
+        font-size: 0.78rem;
         font-weight: 600;
-        margin-bottom: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        margin-bottom: 0.8rem;
       }
-      .site-footer ul {
+      .footer ul {
         list-style: none;
-        padding: 0;
         margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.5rem;
       }
-      .site-footer li {
-        margin-bottom: 0.5rem;
-      }
-      .site-footer a {
-        color: #d9d3f0;
+      .footer ul a {
+        color: var(--text);
         text-decoration: none;
       }
-      .site-footer a:hover {
+      .footer ul a:hover {
+        color: var(--accent);
         text-decoration: underline;
-      }
-      .footer-copyright {
-        margin-top: 2.5rem;
-        padding-top: 1.5rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
-        font-size: 0.85rem;
       }
     </style>
   </body>
