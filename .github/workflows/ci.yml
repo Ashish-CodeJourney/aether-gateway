@@ -159,11 +159,18 @@ jobs:
       - name: Start the stack
         run: docker compose up -d --build
 
+      # First boot downloads the ~90MB ONNX embedding model, so allow up to
+      # 5 minutes, but stop as soon as the gateway container exits rather
+      # than waiting out the timeout on a startup crash.
       - name: Wait for gateway health
         run: |
-          for i in $(seq 1 60); do
+          for i in $(seq 1 150); do
             if curl -sf http://localhost:8080/healthz > /dev/null; then
               exit 0
+            fi
+            if [ "$(docker compose ps --status running --services | grep -cx gateway)" = "0" ]; then
+              echo "gateway container is no longer running" >&2
+              exit 1
             fi
             sleep 2
           done
@@ -178,9 +185,15 @@ jobs:
             | tee /tmp/response.json
           grep -q '"object"' /tmp/response.json
 
-      - name: Compose logs (on failure)
+      - name: Gateway logs (on failure)
         if: failure()
-        run: docker compose logs
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail 300 gateway
+
+      - name: Full compose logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color
 
       - name: Tear down
         if: always()
@@ -188,12 +201,7 @@ jobs:
 
   push-images:
     name: Push images to Docker Hub
-    needs: docker-build-and-scan
-    # Temporarily skip compose-smoke-test dependency - ONNX embedding model
-    # initialization failing in CI (pre-existing issue, not related to
-    # recent changes). Smoke test passes locally. TODO: Fix ONNX timeout/
-    # memory constraints in CI environment.
-    # needs: compose-smoke-test
+    needs: compose-smoke-test
     if: >
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/trunk' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
