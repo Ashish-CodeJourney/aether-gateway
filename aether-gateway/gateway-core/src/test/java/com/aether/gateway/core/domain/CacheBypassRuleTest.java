@@ -64,4 +64,14 @@ class CacheBypassRuleTest {
 
         assertThat(reason).hasValue("no_cache_header");
     }
+
+    @Test
+    void bypassesWhenTheConversationCarriesToolMessagesEvenWithoutToolDefinitions() {
+        var request = new ChatCompletionRequest(
+                "mock", List.of(new ChatMessage("user", "hi"), new ChatMessage("tool", "18C", List.of(), "call_1")), false);
+
+        Optional<String> reason = CacheBypassRule.bypassReason(request, false);
+
+        assertThat(reason).hasValue("tools_present");
+    }
 }

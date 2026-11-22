@@ -17,7 +17,7 @@ public final class CacheBypassRule {
         if (request.temperature() != null && request.temperature() > MAX_CACHEABLE_TEMPERATURE) {
             return Optional.of("temperature_too_high");
         }
-        if (!request.tools().isEmpty()) {
+        if (request.usesTools()) {
             return Optional.of("tools_present");
         }
         return Optional.empty();
