@@ -19,6 +19,7 @@ import com.aether.gateway.providers.ollama.wire.WireOllamaEmbedRequest;
 import com.aether.gateway.providers.ollama.wire.WireOllamaEmbedResponse;
 import com.aether.gateway.providers.ollama.wire.WireOllamaMessage;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.json.JacksonJsonDecoder;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
@@ -74,7 +75,11 @@ public class OllamaAdapter implements ProviderAdapter {
                     converters.removeIf(c -> c instanceof JacksonJsonHttpMessageConverter);
                     converters.add(new JacksonJsonHttpMessageConverter(snakeCaseMapper));
                 });
-        var webBuilderWithAuth = webBuilder.baseUrl(baseUrl);
+        // The NDJSON stream's final line carries prompt_eval_count and
+        // eval_count, which WebClient's default camelCase decoder drops.
+        var webBuilderWithAuth = webBuilder
+                .baseUrl(baseUrl)
+                .codecs(codecs -> codecs.defaultCodecs().jacksonJsonDecoder(new JacksonJsonDecoder(snakeCaseMapper)));
         if (apiKey != null && !apiKey.isBlank()) {
             restBuilderWithAuth = restBuilderWithAuth.defaultHeader("Authorization", "Bearer " + apiKey);
             webBuilderWithAuth = webBuilderWithAuth.defaultHeader("Authorization", "Bearer " + apiKey);
@@ -128,9 +133,26 @@ public class OllamaAdapter implements ProviderAdapter {
                         responseId,
                         index.getAndIncrement(),
                         chunk.message() != null && chunk.message().content() != null ? chunk.message().content() : "",
-                        chunk.done()));
+                        chunk.done(),
+                        List.of(),
+                        null,
+                        streamedUsage(chunk)));
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
+    }
+
+    /** Ollama reports prompt_eval_count/eval_count on the final ({@code done}) line only. */
+    private static Usage streamedUsage(WireOllamaChatResponse chunk) {
+        if (!chunk.done() || (chunk.promptEvalCount() == null && chunk.evalCount() == null)) {
+            return null;
+        }
+        return toUsage(chunk);
+    }
+
+    private static Usage toUsage(WireOllamaChatResponse wire) {
+        return Usage.of(
+                wire.promptEvalCount() != null ? wire.promptEvalCount() : 0,
+                wire.evalCount() != null ? wire.evalCount() : 0);
     }
 
     /** {@code /api/embed} (batch, Ollama 0.3+), not the legacy single-prompt {@code /api/embeddings}. */
@@ -170,9 +192,7 @@ public class OllamaAdapter implements ProviderAdapter {
                 0,
                 new ChatMessage(wire.message().role(), wire.message().content()),
                 wire.done() ? "stop" : null);
-        Usage usage = Usage.of(
-                wire.promptEvalCount() != null ? wire.promptEvalCount() : 0,
-                wire.evalCount() != null ? wire.evalCount() : 0);
+        Usage usage = toUsage(wire);
         return new ChatCompletionResponse(
                 providerName + "-" + System.nanoTime(), "chat.completion", System.currentTimeMillis() / 1000,
                 model, List.of(choice), usage);

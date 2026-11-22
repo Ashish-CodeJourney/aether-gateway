@@ -4,6 +4,7 @@ import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.ToolsNotSupportedException;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ProviderAdapterContractTest;
 import okhttp3.mockwebserver.MockResponse;
@@ -74,6 +75,11 @@ class OllamaAdapterContractTest extends ProviderAdapterContractTest {
         return "Hello there";
     }
 
+    @Override
+    protected Usage expectedStreamedUsage() {
+        return Usage.of(5, 2);
+    }
+
     private static ChatCompletionRequest requestWithTools(boolean stream) {
         return new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "weather?")), stream, null,
                 List.of("{\"type\":\"function\",\"function\":{\"name\":\"get_weather\"}}"), null);
@@ -110,5 +116,22 @@ class OllamaAdapterContractTest extends ProviderAdapterContractTest {
                 .isInstanceOf(ToolsNotSupportedException.class)
                 .hasMessageContaining(adapter.providerName());
         assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
+    void reportsNoUsageWhenTheFinalLineCarriesNoCounts() {
+        server.enqueue(new MockResponse().setResponseCode(200).setHeader("Content-Type", "application/x-ndjson").setBody("""
+                {"model":"llama3","message":{"role":"assistant","content":"Hi"},"done":false}
+                {"model":"llama3","message":{"role":"assistant","content":""},"done":true}
+                """));
+
+        var chunks = reactor.adapter.JdkFlowAdapter
+                .flowPublisherToFlux(adapter.invokeStreaming(new ChatCompletionRequest("llama3", List.of(new ChatMessage("user", "hi")), true)))
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(1).last()).isTrue();
+        assertThat(chunks.get(1).usage()).isNull();
     }
 }

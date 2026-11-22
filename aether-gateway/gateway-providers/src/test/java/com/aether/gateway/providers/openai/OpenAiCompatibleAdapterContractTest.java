@@ -5,6 +5,7 @@ import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.ToolCall;
 import com.aether.gateway.core.domain.ToolCallDelta;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ProviderAdapterContractTest;
 import okhttp3.mockwebserver.MockResponse;
@@ -69,6 +70,8 @@ class OpenAiCompatibleAdapterContractTest extends ProviderAdapterContractTest {
 
                 data:{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"test-model","choices":[{"index":0,"delta":{"content":""},"finish_reason":"stop"}]}
 
+                data:{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"test-model","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}
+
                 data:[DONE]
 
                 """;
@@ -81,6 +84,11 @@ class OpenAiCompatibleAdapterContractTest extends ProviderAdapterContractTest {
     @Override
     protected String expectedStreamedContent() {
         return "Hello there";
+    }
+
+    @Override
+    protected Usage expectedStreamedUsage() {
+        return Usage.of(5, 2);
     }
 
     @Test
@@ -236,5 +244,66 @@ class OpenAiCompatibleAdapterContractTest extends ProviderAdapterContractTest {
         assertThat(body.has("tool_choice")).isTrue();
         assertThat(body.get("messages").get(1).has("tool_calls")).isTrue();
         assertThat(body.get("messages").get(2).get("tool_call_id").asString()).isEqualTo("call_1");
+    }
+
+    private static ChatCompletionRequest plainRequest(boolean stream) {
+        return new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hi")), stream);
+    }
+
+    @Test
+    void asksForUsageOnStreamingRequestsButNotOnPlainOnes() throws InterruptedException {
+        server.enqueue(successResponse());
+        server.enqueue(streamingResponse());
+
+        adapter.invoke(plainRequest(false));
+        reactor.adapter.JdkFlowAdapter.flowPublisherToFlux(adapter.invokeStreaming(plainRequest(true)))
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(sentBody().has("stream_options")).isFalse();
+        assertThat(sentBody().get("stream_options")).isEqualTo(JSON.readTree("{\"include_usage\":true}"));
+    }
+
+    @Test
+    void endsAStreamWithoutAUsageChunkOnItsFinishChunkWithNoUsage() {
+        // Some OpenAI-compatible servers ignore stream_options entirely.
+        server.enqueue(new MockResponse().setResponseCode(200).setHeader("Content-Type", "text/event-stream").setBody("""
+                data:{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}
+
+                data:{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"length"}]}
+
+                data:[DONE]
+
+                """));
+
+        var chunks = reactor.adapter.JdkFlowAdapter.flowPublisherToFlux(adapter.invokeStreaming(plainRequest(true)))
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(1).deltaContent()).isEqualTo("!");
+        assertThat(chunks.get(1).last()).isTrue();
+        assertThat(chunks.get(1).finishReason()).isEqualTo("length");
+        assertThat(chunks.get(1).usage()).isNull();
+    }
+
+    @Test
+    void attachesUsageReportedOnTheFinishChunkItself() {
+        server.enqueue(new MockResponse().setResponseCode(200).setHeader("Content-Type", "text/event-stream").setBody("""
+                data:{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}
+
+                data:{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":1,"total_tokens":10}}
+
+                data:[DONE]
+
+                """));
+
+        var chunks = reactor.adapter.JdkFlowAdapter.flowPublisherToFlux(adapter.invokeStreaming(plainRequest(true)))
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(1).last()).isTrue();
+        assertThat(chunks.get(1).usage()).isEqualTo(Usage.of(9, 1));
     }
 }

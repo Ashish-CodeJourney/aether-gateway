@@ -4,6 +4,7 @@ import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.ToolsNotSupportedException;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ProviderAdapterContractTest;
 import okhttp3.mockwebserver.MockResponse;
@@ -79,6 +80,11 @@ class GeminiAdapterContractTest extends ProviderAdapterContractTest {
         return "Hello there";
     }
 
+    @Override
+    protected Usage expectedStreamedUsage() {
+        return Usage.of(5, 2);
+    }
+
     @Test
     void attachesTheApiKeyAsAQueryParameterNotAHeader() throws InterruptedException {
         server.enqueue(successResponse());
@@ -130,5 +136,26 @@ class GeminiAdapterContractTest extends ProviderAdapterContractTest {
                 .isInstanceOf(ToolsNotSupportedException.class)
                 .hasMessageContaining(adapter.providerName());
         assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
+    void reportsTheLatestRunningUsageMetadataOnlyOnceTheStreamFinishes() {
+        // Gemini repeats a running usageMetadata on every chunk; only the
+        // final, complete count belongs to the response.
+        server.enqueue(new MockResponse().setResponseCode(200).setHeader("Content-Type", "text/event-stream").setBody("""
+                data: {"candidates":[{"content":{"parts":[{"text":"Hi"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":1,"totalTokenCount":9}}
+
+                data: {"candidates":[{"content":{"parts":[{"text":" you"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3,"totalTokenCount":11}}
+
+                """));
+
+        var chunks = reactor.adapter.JdkFlowAdapter
+                .flowPublisherToFlux(adapter.invokeStreaming(new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hi")), true)))
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(chunks).hasSize(2);
+        assertThat(chunks.get(0).usage()).isNull();
+        assertThat(chunks.get(1).usage()).isEqualTo(Usage.of(8, 3));
     }
 }

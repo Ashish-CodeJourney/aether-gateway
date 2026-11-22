@@ -19,7 +19,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
@@ -270,12 +272,24 @@ public final class AcceptanceEnvironment {
      * scenario here is written.
      */
     public static Map<String, Object> mostRecentRequestLogEntry() {
+        return mostRecentRequestLogEntryCreatedAfter(Instant.EPOCH);
+    }
+
+    /**
+     * As {@link #mostRecentRequestLogEntry()}, but waits for a row
+     * written after {@code since}: a streamed request's row is written
+     * when the stream ends, which can be just after the client has read
+     * it, so the newest row at that moment may still be the previous
+     * scenario's.
+     */
+    public static Map<String, Object> mostRecentRequestLogEntryCreatedAfter(Instant since) {
         String jdbcUrl = "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether";
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline) {
             try (Connection connection = DriverManager.getConnection(jdbcUrl, "postgres", "postgres");
                  PreparedStatement statement = connection.prepareStatement(
-                         "SELECT * FROM request_log ORDER BY created_at DESC LIMIT 1")) {
+                         "SELECT * FROM request_log WHERE created_at > ? ORDER BY created_at DESC LIMIT 1")) {
+                statement.setTimestamp(1, Timestamp.from(since));
                 var resultSet = statement.executeQuery();
                 if (resultSet.next()) {
                     Map<String, Object> row = new HashMap<>();

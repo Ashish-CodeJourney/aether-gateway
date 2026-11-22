@@ -20,6 +20,8 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 
 Set `"stream": true` for a Server-Sent Events response, identical in shape to OpenAI's streaming format (`data: {...}` chunks, terminated by `data: [DONE]`). Cancelling the client connection (closing the tab, aborting the fetch) propagates upstream and stops paying for tokens - this is measured, not assumed (see the streaming design notes linked from [Architecture Decisions](/docs/category/architecture-decisions)).
 
+A stream is billed at the token usage the provider reports when it finishes (Anthropic, Gemini, Ollama and OpenAI-compatible providers all report it; the gateway asks OpenAI-compatible ones with `stream_options.include_usage` itself), and that usage is what the request log, the cost metrics and the API key's monthly budget see. Its headers go out before that usage exists, so a streamed response carries no `X-Aether-Cost-USD`. A stream that is cancelled or fails before the provider reports usage, or from a provider that reports none, is recorded at the gateway's pre-request estimate instead.
+
 `GET /v1/models` lists the models configured across every route in `routing.yaml`.
 
 ## Embeddings
@@ -72,7 +74,7 @@ Every response carries headers describing exactly what happened, useful for debu
 | Header | Meaning |
 |---|---|
 | `X-Aether-Cache` | `MISS`, `EXACT_HIT`, or `SEMANTIC_HIT` |
-| `X-Aether-Cost-USD` | Real cost for a miss, `0` for any cache hit |
+| `X-Aether-Cost-USD` | Real cost for a miss, `0` for any cache hit; absent on a streamed miss, whose cost is only known once the stream ends |
 | `X-Aether-Provider` | Which provider actually served this (useful for confirming failover happened) |
 | `X-Aether-Attempts` | How many providers were tried before success |
 | `X-Aether-Quota-Remaining` | Remaining monthly token budget for the attached API key |

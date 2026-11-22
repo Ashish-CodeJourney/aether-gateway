@@ -36,11 +36,21 @@ public sealed interface ProviderResponse permits
      * {@code finishReason} is the provider's own reason when it gave one
      * (e.g. "tool_calls"); null leaves the choice to the caller, which
      * reports "stop" for a last chunk.
+     *
+     * <p>{@code usage} is the provider's own token count for the whole
+     * stream, set on the last chunk by adapters whose provider reports
+     * one. Null means none was reported, and the caller falls back to
+     * its pre-request estimate.
      */
-    record StreamChunk(String id, int index, String deltaContent, boolean last, List<ToolCallDelta> toolCallDeltas, String finishReason)
+    record StreamChunk(String id, int index, String deltaContent, boolean last, List<ToolCallDelta> toolCallDeltas, String finishReason,
+                       Usage usage)
             implements ProviderResponse {
         public StreamChunk {
             toolCallDeltas = toolCallDeltas == null ? List.of() : List.copyOf(toolCallDeltas);
+        }
+
+        public StreamChunk(String id, int index, String deltaContent, boolean last, List<ToolCallDelta> toolCallDeltas, String finishReason) {
+            this(id, index, deltaContent, last, toolCallDeltas, finishReason, null);
         }
 
         public StreamChunk(String id, int index, String deltaContent, boolean last) {

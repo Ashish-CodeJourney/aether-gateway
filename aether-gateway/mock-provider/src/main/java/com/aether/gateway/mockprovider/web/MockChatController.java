@@ -84,6 +84,9 @@ public class MockChatController {
         if (controls.streamDelayMs() != null) {
             body = body.delayElements(Duration.ofMillis(controls.streamDelayMs()));
         }
+        if (!truncated && request.includeStreamUsage()) {
+            body = body.concatWith(Mono.fromSupplier(() -> usageEvent(responseId, request, controls)));
+        }
         if (!truncated) {
             body = body.concatWith(Mono.just(ServerSentEvent.<String>builder("[DONE]").build()));
         }
@@ -106,8 +109,22 @@ public class MockChatController {
         var choice = new StreamChoiceDto(0, delta, chunk.finishReason());
         var payload = new StreamChunkResponseDto(
                 chunk.id(), "chat.completion.chunk", Instant.now().getEpochSecond(),
-                chunk.model(), List.of(choice));
+                chunk.model(), List.of(choice), null);
         return ServerSentEvent.builder(writeJson(payload)).build();
+    }
+
+    private ServerSentEvent<String> usageEvent(String responseId, ChatCompletionRequestDto request, MockControls controls) {
+        var payload = new StreamChunkResponseDto(
+                responseId, "chat.completion.chunk", Instant.now().getEpochSecond(),
+                request.model(), List.of(), usage(request, controls));
+        return ServerSentEvent.builder(writeJson(payload)).build();
+    }
+
+    /** The same counts a non-streaming reply to this request reports, so both paths bill alike. */
+    private UsageDto usage(ChatCompletionRequestDto request, MockControls controls) {
+        int completionTokens = controls.tokens() != null ? controls.tokens() : 12;
+        int promptTokens = estimatePromptTokens(request);
+        return new UsageDto(promptTokens, completionTokens, promptTokens + completionTokens);
     }
 
     private String writeJson(Object value) {
@@ -142,16 +159,12 @@ public class MockChatController {
     }
 
     private ChatCompletionResponseDto successBody(ChatCompletionRequestDto request, MockControls controls) {
-        int completionTokens = controls.tokens() != null ? controls.tokens() : 12;
-        int promptTokens = estimatePromptTokens(request);
-
         var toolCall = MockToolCalling.toolCallFor(request.toolNames(), lastRole(request));
         var message = toolCall
                 .map(call -> new ChatMessageDto("assistant", null, List.of(new ToolCallDto(
                         null, call.id(), "function", new FunctionCallDto(call.name(), call.arguments()))), null))
                 .orElseGet(() -> new ChatMessageDto("assistant", replyText(request, "Mock response for model " + request.model())));
         var choice = new ChoiceDto(0, message, toolCall.isPresent() ? "tool_calls" : "stop");
-        var usage = new UsageDto(promptTokens, completionTokens, promptTokens + completionTokens);
 
         return new ChatCompletionResponseDto(
                 "mock-" + UUID.randomUUID(),
@@ -159,7 +172,7 @@ public class MockChatController {
                 Instant.now().getEpochSecond(),
                 request.model(),
                 List.of(choice),
-                usage);
+                usage(request, controls));
     }
 
     private int estimatePromptTokens(ChatCompletionRequestDto request) {

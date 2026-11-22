@@ -12,12 +12,18 @@ import com.aether.gateway.providers.openai.wire.WireChatCompletionRequest;
 import com.aether.gateway.providers.openai.wire.WireChatCompletionResponse;
 import com.aether.gateway.providers.openai.wire.WireChatMessage;
 import com.aether.gateway.providers.openai.wire.WireFunctionCall;
+import com.aether.gateway.providers.openai.wire.WireStreamChoice;
 import com.aether.gateway.providers.openai.wire.WireStreamChunkResponse;
+import com.aether.gateway.providers.openai.wire.WireStreamOptions;
 import com.aether.gateway.providers.openai.wire.WireToolCall;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Domain to OpenAI chat-completions wire shape and back, shared by every
@@ -40,7 +46,8 @@ public final class OpenAiWireMapping {
                 .map(RAW_JSON::readTree)
                 .toList();
         JsonNode toolChoice = request.toolChoice() == null ? null : RAW_JSON.readTree(request.toolChoice());
-        return new WireChatCompletionRequest(request.model(), messages, stream, tools, toolChoice);
+        WireStreamOptions streamOptions = stream ? new WireStreamOptions(true) : null;
+        return new WireChatCompletionRequest(request.model(), messages, stream, tools, toolChoice, streamOptions);
     }
 
     private static WireChatMessage toWireMessage(ChatMessage message) {
@@ -67,8 +74,44 @@ public final class OpenAiWireMapping {
         return new ChatMessage(wire.role(), wire.content() == null ? "" : wire.content(), toolCalls, wire.toolCallId());
     }
 
-    public static ProviderResponse.StreamChunk toStreamChunk(WireStreamChunkResponse chunk, String responseId, int index) {
-        var choice = chunk.choices().get(0);
+    /**
+     * With {@code stream_options.include_usage}, the server follows the
+     * finish chunk with one more chunk carrying {@code usage} and empty
+     * {@code choices}. The finish chunk is therefore held back until the
+     * stream ends, so it can still be the last chunk and carry that usage;
+     * the usage-only chunk itself is never relayed.
+     */
+    public static Flux<ProviderResponse.StreamChunk> toStreamChunks(Flux<WireStreamChunkResponse> wireChunks, String responseId) {
+        AtomicInteger index = new AtomicInteger(0);
+        AtomicReference<ProviderResponse.StreamChunk> heldFinish = new AtomicReference<>();
+        AtomicReference<Usage> usage = new AtomicReference<>();
+
+        Flux<ProviderResponse.StreamChunk> relayed = wireChunks.handle((wire, sink) -> {
+            if (wire.usage() != null) {
+                usage.set(Usage.of(wire.usage().promptTokens(), wire.usage().completionTokens()));
+            }
+            if (wire.choices() == null || wire.choices().isEmpty()) {
+                return;
+            }
+            var chunk = toStreamChunk(wire.choices().get(0), responseId, index.getAndIncrement());
+            if (chunk.last()) {
+                heldFinish.set(chunk);
+            } else {
+                sink.next(chunk);
+            }
+        });
+        return relayed.concatWith(Mono.fromSupplier(() -> withUsage(heldFinish.get(), usage.get())));
+    }
+
+    private static ProviderResponse.StreamChunk withUsage(ProviderResponse.StreamChunk chunk, Usage usage) {
+        if (chunk == null) {
+            return null;
+        }
+        return new ProviderResponse.StreamChunk(
+                chunk.id(), chunk.index(), chunk.deltaContent(), chunk.last(), chunk.toolCallDeltas(), chunk.finishReason(), usage);
+    }
+
+    private static ProviderResponse.StreamChunk toStreamChunk(WireStreamChoice choice, String responseId, int index) {
         var delta = choice.delta();
         String content = delta != null && delta.content() != null ? delta.content() : "";
         List<ToolCallDelta> toolCallDeltas = delta == null || delta.toolCalls() == null ? List.of() : delta.toolCalls().stream()

@@ -9,11 +9,14 @@ import java.util.List;
  * {@code tools} and {@code toolChoice} are raw JSON trees relayed exactly
  * as the client sent them, and omitted entirely when absent: some
  * OpenAI-compatible servers reject an explicit {@code "tools": null}.
+ * {@code streamOptions} is likewise only sent on streaming requests,
+ * where OpenAI rejects it otherwise.
  */
 public record WireChatCompletionRequest(
         String model,
         List<WireChatMessage> messages,
         boolean stream,
         @JsonInclude(JsonInclude.Include.NON_EMPTY) List<JsonNode> tools,
-        @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode toolChoice) {
+        @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode toolChoice,
+        @JsonInclude(JsonInclude.Include.NON_NULL) WireStreamOptions streamOptions) {
 }

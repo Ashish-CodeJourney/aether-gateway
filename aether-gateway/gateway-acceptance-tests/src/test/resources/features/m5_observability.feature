@@ -14,3 +14,12 @@ Feature: Cost and cache-outcome visibility per request
     When a client sends "Cost model verification prompt, unique text" that is not served from cache
     Then a request log entry exists for this request
     And that entry's "cost_usd" matches the expected value computed from the configured rates and reported token usage
+
+  @m5 @F6.3 @F6.2
+  Scenario: A streamed response is logged and priced at the provider's reported usage
+    Given the mock provider reports 37 completion tokens for every reply
+    When a client streams "Streamed usage verification prompt, unique text" to completion bypassing the cache
+    Then a request log entry exists for that streamed request
+    And that entry's "output_tokens" is 37
+    And that entry's "input_tokens" value is greater than zero
+    And that entry's "cost_usd" matches the expected value computed from the configured rates and reported token usage

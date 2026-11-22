@@ -5,6 +5,7 @@ import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.ToolCall;
 import com.aether.gateway.core.domain.ToolCallDelta;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ProviderAdapterContractTest;
 import okhttp3.mockwebserver.MockResponse;
@@ -70,6 +71,8 @@ class MockProviderAdapterContractTest extends ProviderAdapterContractTest {
 
                 data:{"id":"m","object":"chat.completion.chunk","created":1,"model":"mock","choices":[{"index":0,"delta":{"content":""},"finish_reason":"stop"}]}
 
+                data:{"id":"m","object":"chat.completion.chunk","created":1,"model":"mock","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}
+
                 data:[DONE]
 
                 """);
@@ -78,6 +81,11 @@ class MockProviderAdapterContractTest extends ProviderAdapterContractTest {
     @Override
     protected String expectedStreamedContent() {
         return "Mock stream";
+    }
+
+    @Override
+    protected Usage expectedStreamedUsage() {
+        return Usage.of(5, 2);
     }
 
     private static ChatCompletionRequest toolRequest(boolean stream) {
@@ -141,5 +149,17 @@ class MockProviderAdapterContractTest extends ProviderAdapterContractTest {
         assertThat(chunks.get(0).toolCallDeltas()).containsExactly(new ToolCallDelta(0, "call_mock_0", "get_weather", ""));
         assertThat(chunks.get(1).toolCallDeltas()).containsExactly(new ToolCallDelta(0, null, null, "{}"));
         assertThat(chunks.get(2).finishReason()).isEqualTo("tool_calls");
+    }
+
+    @Test
+    void asksTheMockProviderForAUsageChunkOnStreamingRequests() throws InterruptedException {
+        server.enqueue(streamingResponse());
+
+        JdkFlowAdapter.flowPublisherToFlux(adapter.invokeStreaming(new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hi")), true)))
+                .collectList()
+                .block(Duration.ofSeconds(10));
+
+        JsonNode body = JSON.readTree(server.takeRequest(5, TimeUnit.SECONDS).getBody().readUtf8());
+        assertThat(body.get("stream_options")).isEqualTo(JSON.readTree("{\"include_usage\":true}"));
     }
 }
