@@ -69,13 +69,18 @@ reply = client.chat.completions.<span class="t-f">create</span>(
   },
 ];
 
-const PROVIDERS: {name: string; mono: string}[] = [
-  {name: 'Ollama', mono: 'Ol'},
-  {name: 'Groq', mono: 'Gq'},
-  {name: 'Google Gemini', mono: 'Ge'},
-  {name: 'Anthropic', mono: 'An'},
-  {name: 'Any OpenAI-compatible API', mono: '{ }'},
+// Icons are Simple Icons (CC0) copied into public/providers. Groq and OpenAI
+// have no icon there, so they get a text badge rather than a drawn logo.
+type Provider = {name: string; short: string} & ({icon: string} | {badge: string});
+const PROVIDERS: Provider[] = [
+  {name: 'Ollama', short: 'Ollama', icon: 'ollama'},
+  {name: 'Groq', short: 'Groq', badge: 'Gq'},
+  {name: 'Google Gemini', short: 'Gemini', icon: 'googlegemini'},
+  {name: 'Anthropic', short: 'Anthropic', icon: 'anthropic'},
+  {name: 'OpenAI', short: 'OpenAI', badge: 'OA'},
+  {name: 'Any OpenAI-compatible API', short: 'OpenAI-compatible', badge: '{ }'},
 ];
+const iconStyle = (icon: string) => `--icon: url(${base}/providers/${icon}.svg)`;
 
 const STATS: {value: string; unit: string; label: string; detail: string}[] = [
   {value: '8.9', unit: 'ms', label: 'Cache-hit latency', detail: 'p95, end to end'},
@@ -306,12 +311,23 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
             {
               PROVIDERS.map((p) => (
                 <li class="provider">
-                  <span class="provider-mono" aria-hidden="true">{p.mono}</span>
+                  {'icon' in p ? (
+                    <span class="p-icon" role="img" aria-label={`${p.name} logo`} style={iconStyle(p.icon)} />
+                  ) : (
+                    <span class="p-badge" aria-hidden="true">{p.badge}</span>
+                  )}
                   {p.name}
                 </li>
               ))
             }
           </ul>
+          <p class="provider-eg">
+            &hellip;including self-hosted model servers such as{' '}
+            <span class="p-example"><span class="p-icon p-icon-sm" role="img" aria-label="vLLM logo" style={iconStyle('vllm')} />vLLM</span>{' '}
+            and{' '}
+            <span class="p-example"><span class="p-icon p-icon-sm" role="img" aria-label="Hugging Face logo" style={iconStyle('huggingface')} />Hugging Face TGI</span>.
+          </p>
+          <p class="trademark-note">Product names and logos are trademarks of their respective owners.</p>
         </div>
       </section>
 
@@ -414,7 +430,20 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
             </div>
             <div class="flow-end flow-providers">
               <span class="flow-end-label">Providers</span>
-              <span class="flow-end-sub">Ollama · Groq · Gemini · Anthropic · OpenAI-compatible</span>
+              <ul class="flow-provider-list">
+                {
+                  PROVIDERS.map((p) => (
+                    <li>
+                      {'icon' in p ? (
+                        <span class="p-icon p-icon-sm" role="img" aria-label={`${p.name} logo`} style={iconStyle(p.icon)} />
+                      ) : (
+                        <span class="p-badge p-badge-sm" aria-hidden="true">{p.badge}</span>
+                      )}
+                      {p.short}
+                    </li>
+                  ))
+                }
+              </ul>
             </div>
           </div>
           <p class="flow-note">
@@ -1030,7 +1059,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .provider-list {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.6rem 1.75rem;
+        gap: 0.75rem 2rem;
         list-style: none;
         margin: 0;
         padding: 0;
@@ -1038,23 +1067,69 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .provider {
         display: inline-flex;
         align-items: center;
-        gap: 0.55rem;
+        gap: 0.6rem;
         font-family: var(--font-display);
         font-weight: 600;
         font-size: 1.02rem;
         color: var(--text);
       }
-      .provider-mono {
+      /* Provider marks are monochrome masks painted in currentColor, so the
+         row reads as one uniform set in both colour schemes. */
+      .p-icon {
+        flex: none;
+        display: inline-block;
+        width: 22px;
+        height: 22px;
+        background-color: currentColor;
+        -webkit-mask: var(--icon) center / contain no-repeat;
+        mask: var(--icon) center / contain no-repeat;
+        forced-color-adjust: none;
+      }
+      .p-icon-sm {
+        width: 16px;
+        height: 16px;
+      }
+      .p-badge {
+        flex: none;
         display: inline-grid;
         place-items: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 8px;
-        background: var(--accent-soft);
-        color: var(--accent);
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        border: 1.5px solid currentColor;
         font-family: var(--font-mono);
-        font-size: 0.7rem;
+        font-size: 0.6rem;
         font-weight: 600;
+        line-height: 1;
+        letter-spacing: -0.02em;
+      }
+      .p-badge-sm {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border-width: 1.25px;
+        font-size: 0.47rem;
+      }
+      .provider-eg,
+      .trademark-note {
+        flex-basis: 100%;
+        color: var(--muted);
+      }
+      .provider-eg {
+        font-size: 0.9rem;
+        margin-top: -0.25rem;
+      }
+      .p-example {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-left: 0.2rem;
+        color: var(--text);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .trademark-note {
+        font-size: 0.78rem;
       }
 
       /* ---- sections ---- */
@@ -1259,6 +1334,25 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .flow-end-sub {
         font-size: 0.9rem;
         color: var(--muted);
+      }
+      .flow-provider-list {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.35rem 1.1rem;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      .flow-provider-list li {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+      .flow-providers {
+        align-items: center;
       }
       .flow-client {
         position: relative;
