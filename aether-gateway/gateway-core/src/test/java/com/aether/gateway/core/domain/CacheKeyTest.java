@@ -65,4 +65,45 @@ class CacheKeyTest {
 
         assertThat(CacheKey.exactHash(requestA)).isNotEqualTo(CacheKey.exactHash(requestB));
     }
+
+    @Test
+    void differsWhenTwoToolsShareANameButDifferInTheirSchema() {
+        String narrow = "{\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"parameters\":{\"type\":\"object\"}}}";
+        String wide = "{\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}}}";
+        var requestA = new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hello")), false, null, List.of(narrow), null);
+        var requestB = new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hello")), false, null, List.of(wide), null);
+
+        assertThat(CacheKey.exactHash(requestA)).isNotEqualTo(CacheKey.exactHash(requestB));
+    }
+
+    @Test
+    void differsWhenToolChoiceDiffers() {
+        var requestA = new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hello")), false, null, List.of("{}"), "\"auto\"");
+        var requestB = new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hello")), false, null, List.of("{}"), "\"required\"");
+
+        assertThat(CacheKey.exactHash(requestA)).isNotEqualTo(CacheKey.exactHash(requestB));
+    }
+
+    @Test
+    void differsWhenAnAssistantToolCallsArgumentsDiffer() {
+        var requestA = conversationWithToolCall("{\"city\":\"Paris\"}");
+        var requestB = conversationWithToolCall("{\"city\":\"Rome\"}");
+
+        assertThat(CacheKey.exactHash(requestA)).isNotEqualTo(CacheKey.exactHash(requestB));
+    }
+
+    @Test
+    void differsWhenAToolResultAnswersADifferentCall() {
+        var requestA = new ChatCompletionRequest("mock", List.of(new ChatMessage("tool", "18C", List.of(), "call_1")), false);
+        var requestB = new ChatCompletionRequest("mock", List.of(new ChatMessage("tool", "18C", List.of(), "call_2")), false);
+
+        assertThat(CacheKey.exactHash(requestA)).isNotEqualTo(CacheKey.exactHash(requestB));
+    }
+
+    private static ChatCompletionRequest conversationWithToolCall(String arguments) {
+        var call = new ToolCall("call_1", "function", "get_weather", arguments);
+        return new ChatCompletionRequest("mock", List.of(
+                new ChatMessage("user", "weather?"),
+                new ChatMessage("assistant", "", List.of(call), null)), false);
+    }
 }

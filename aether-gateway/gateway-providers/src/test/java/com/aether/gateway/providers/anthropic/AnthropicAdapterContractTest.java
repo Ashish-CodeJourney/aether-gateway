@@ -3,6 +3,8 @@ package com.aether.gateway.providers.anthropic;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ToolCall;
+import com.aether.gateway.core.domain.ToolCallDelta;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ProviderAdapterContractTest;
 import okhttp3.mockwebserver.MockResponse;
@@ -223,5 +225,163 @@ class AnthropicAdapterContractTest extends ProviderAdapterContractTest {
         assertThat(chunks.get(0).deltaContent()).isEqualTo("Hello ");
         assertThat(chunks.get(1).deltaContent()).isEqualTo("there");
         assertThat(chunks.get(2).last()).isTrue();
+    }
+
+    private static final tools.jackson.databind.ObjectMapper JSON = new tools.jackson.databind.ObjectMapper();
+
+    private static final String WEATHER_TOOL = """
+            {"type":"function","function":{"name":"get_weather","description":"Current weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}""";
+
+    private static final String TIME_TOOL = """
+            {"type":"function","function":{"name":"get_time"}}""";
+
+    private ChatCompletionRequest toolRequest(String toolChoice, ChatMessage... messages) {
+        return new ChatCompletionRequest("claude-sonnet-4-5", List.of(messages), false, null, List.of(WEATHER_TOOL, TIME_TOOL), toolChoice);
+    }
+
+    private tools.jackson.databind.JsonNode sentBody() throws InterruptedException {
+        return JSON.readTree(server.takeRequest(5, TimeUnit.SECONDS).getBody().readUtf8());
+    }
+
+    @Test
+    void translatesOpenAiToolDefinitionsIntoAnthropicToolsWithAnInputSchema() throws InterruptedException {
+        server.enqueue(successResponse());
+
+        adapter.invoke(toolRequest(null, new ChatMessage("user", "hi")));
+
+        assertThat(sentBody().get("tools")).isEqualTo(JSON.readTree("""
+                [{"name":"get_weather","description":"Current weather","input_schema":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}},
+                 {"name":"get_time","input_schema":{"type":"object","properties":{}}}]
+                """));
+    }
+
+    @Test
+    void translatesEachOpenAiToolChoiceIntoItsAnthropicEquivalent() throws InterruptedException {
+        var expectations = java.util.Map.of(
+                "\"auto\"", "{\"type\":\"auto\"}",
+                "\"required\"", "{\"type\":\"any\"}",
+                "\"none\"", "{\"type\":\"none\"}",
+                "{\"type\":\"function\",\"function\":{\"name\":\"get_time\"}}", "{\"type\":\"tool\",\"name\":\"get_time\"}");
+
+        for (var expectation : expectations.entrySet()) {
+            server.enqueue(successResponse());
+            adapter.invoke(toolRequest(expectation.getKey(), new ChatMessage("user", "hi")));
+
+            assertThat(sentBody().get("tool_choice")).as(expectation.getKey()).isEqualTo(JSON.readTree(expectation.getValue()));
+        }
+    }
+
+    @Test
+    void sendsNoToolFieldsForAPlainRequest() throws InterruptedException {
+        server.enqueue(successResponse());
+
+        adapter.invoke(request(new ChatMessage("user", "hi")));
+
+        var body = sentBody();
+        assertThat(body.has("tools")).isFalse();
+        assertThat(body.has("tool_choice")).isFalse();
+        assertThat(body.get("messages").get(0)).isEqualTo(JSON.readTree("{\"role\":\"user\",\"content\":\"hi\"}"));
+    }
+
+    @Test
+    void translatesAssistantToolCallsIntoToolUseBlocksAndMergesConsecutiveToolResultsIntoOneUserTurn() throws InterruptedException {
+        server.enqueue(successResponse());
+
+        adapter.invoke(toolRequest(null,
+                new ChatMessage("user", "Weather and time in Paris?"),
+                new ChatMessage("assistant", "Checking.", List.of(
+                        new ToolCall("toolu_1", "function", "get_weather", "{\"city\":\"Paris\"}"),
+                        new ToolCall("toolu_2", "function", "get_time", "{}")), null),
+                new ChatMessage("tool", "18C", List.of(), "toolu_1"),
+                new ChatMessage("tool", "14:00", List.of(), "toolu_2")));
+
+        var messages = sentBody().get("messages");
+        assertThat(messages).hasSize(3);
+        assertThat(messages.get(1)).isEqualTo(JSON.readTree("""
+                {"role":"assistant","content":[
+                  {"type":"text","text":"Checking."},
+                  {"type":"tool_use","id":"toolu_1","name":"get_weather","input":{"city":"Paris"}},
+                  {"type":"tool_use","id":"toolu_2","name":"get_time","input":{}}]}
+                """));
+        assertThat(messages.get(2)).isEqualTo(JSON.readTree("""
+                {"role":"user","content":[
+                  {"type":"tool_result","tool_use_id":"toolu_1","content":"18C"},
+                  {"type":"tool_result","tool_use_id":"toolu_2","content":"14:00"}]}
+                """));
+    }
+
+    @Test
+    void returnsToolUseBlocksAsOpenAiToolCalls() {
+        server.enqueue(jsonResponse(200, """
+                {
+                  "id": "msg_tool", "type": "message", "role": "assistant", "model": "claude-sonnet-4-5",
+                  "content": [
+                    {"type": "text", "text": "Let me check."},
+                    {"type": "tool_use", "id": "toolu_01A09q90qw90lq917835lq9", "name": "get_weather", "input": {"city": "Paris"}}
+                  ],
+                  "stop_reason": "tool_use",
+                  "usage": {"input_tokens": 300, "output_tokens": 40}
+                }
+                """));
+
+        var result = (ProviderResponse.Completion) adapter.invoke(toolRequest(null, new ChatMessage("user", "Weather?")));
+
+        var choice = result.response().choices().get(0);
+        assertThat(choice.finishReason()).isEqualTo("tool_calls");
+        assertThat(choice.message().content()).isEqualTo("Let me check.");
+        assertThat(choice.message().toolCalls()).hasSize(1);
+        var call = choice.message().toolCalls().get(0);
+        assertThat(call.id()).isEqualTo("toolu_01A09q90qw90lq917835lq9");
+        assertThat(call.functionName()).isEqualTo("get_weather");
+        assertThat(JSON.readTree(call.argumentsJson())).isEqualTo(JSON.readTree("{\"city\":\"Paris\"}"));
+    }
+
+    @Test
+    void streamsToolUseAsOpenAiToolCallFragmentsIndexedAmongToolCallsOnly() {
+        server.enqueue(new MockResponse().setResponseCode(200).setHeader("Content-Type", "text/event-stream").setBody("""
+                event: message_start
+                data: {"type":"message_start","message":{"id":"msg_01","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[],"stop_reason":null,"usage":{"input_tokens":5,"output_tokens":0}}}
+
+                event: content_block_start
+                data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+                event: content_block_delta
+                data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Checking."}}
+
+                event: content_block_stop
+                data: {"type":"content_block_stop","index":0}
+
+                event: content_block_start
+                data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01","name":"get_weather","input":{}}}
+
+                event: content_block_delta
+                data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"city\\":"}}
+
+                event: content_block_delta
+                data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" \\"Paris\\"}"}}
+
+                event: content_block_stop
+                data: {"type":"content_block_stop","index":1}
+
+                event: message_delta
+                data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":20}}
+
+                event: message_stop
+                data: {"type":"message_stop"}
+
+                """));
+
+        var chunks = reactor.adapter.JdkFlowAdapter
+                .flowPublisherToFlux(adapter.invokeStreaming(toolRequest(null, new ChatMessage("user", "Weather?"))))
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(chunks).hasSize(5);
+        assertThat(chunks.get(0).deltaContent()).isEqualTo("Checking.");
+        assertThat(chunks.get(1).toolCallDeltas()).containsExactly(new ToolCallDelta(0, "toolu_01", "get_weather", ""));
+        assertThat(chunks.get(2).toolCallDeltas()).containsExactly(new ToolCallDelta(0, null, null, "{\"city\":"));
+        assertThat(chunks.get(3).toolCallDeltas()).containsExactly(new ToolCallDelta(0, null, null, " \"Paris\"}"));
+        assertThat(chunks.get(4).last()).isTrue();
+        assertThat(chunks.get(4).finishReason()).isEqualTo("tool_calls");
     }
 }

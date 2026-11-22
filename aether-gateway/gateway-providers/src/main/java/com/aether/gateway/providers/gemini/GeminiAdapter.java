@@ -9,6 +9,7 @@ import com.aether.gateway.core.domain.EmbeddingOutcome;
 import com.aether.gateway.core.domain.EmbeddingRequest;
 import com.aether.gateway.core.domain.EmbeddingResponse;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ToolsNotSupportedException;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.gemini.wire.WireGeminiBatchEmbedRequest;
@@ -52,6 +53,12 @@ import java.util.stream.IntStream;
  * exactly like the other two adapters' own "last" signal, so all three
  * still satisfy the identical {@link ProviderAdapter} port despite none
  * of the three sharing a wire format.
+ *
+ * <p>Tool calling ({@code functionDeclarations}/{@code functionCall}
+ * parts) is not translated yet. A request that uses tools is refused with
+ * {@code tools_not_supported} rather than sent without them, since a reply
+ * that silently ignored the tools would look valid to the client and be
+ * wrong.
  */
 public class GeminiAdapter implements ProviderAdapter {
 
@@ -91,6 +98,9 @@ public class GeminiAdapter implements ProviderAdapter {
 
     @Override
     public ProviderResponse invoke(ChatCompletionRequest request) {
+        if (request.usesTools()) {
+            return ToolsNotSupportedException.asProviderError(providerName);
+        }
         var wireRequest = toWireRequest(request);
         try {
             WireGeminiResponse wireResponse = restClient.post()
@@ -113,6 +123,9 @@ public class GeminiAdapter implements ProviderAdapter {
 
     @Override
     public Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request) {
+        if (request.usesTools()) {
+            throw new ToolsNotSupportedException(providerName);
+        }
         var camelCaseMapper = JsonMapper.builder().build();
         String responseId = providerName + "-" + System.nanoTime();
         AtomicInteger index = new AtomicInteger(0);

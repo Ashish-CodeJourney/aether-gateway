@@ -1,19 +1,27 @@
 package com.aether.gateway.proxy.web;
 
+import tools.jackson.databind.JsonNode;
+
 import java.util.List;
 import java.util.Map;
 
 /**
- * {@code tools} is a raw passthrough (no tool-calling execution is
- * implemented by this project); its only use is F4.5's cache bypass
- * rule and F4.1's cache key, both of which only need each tool's name,
- * extracted in {@link ChatCompletionDtoMapper}.
+ * {@code tools} and {@code toolChoice} are bound as raw JSON trees, not
+ * typed DTOs: the gateway relays tool calling rather than executing it,
+ * so their JSON-schema payloads are handed to the domain as opaque JSON
+ * text, unchanged.
  */
 public record ChatCompletionRequestDto(
         String model,
         List<ChatMessageDto> messages,
         Boolean stream,
         Double temperature,
-        List<Map<String, Object>> tools,
-        Map<String, String> variables) {
+        List<JsonNode> tools,
+        Map<String, String> variables,
+        JsonNode toolChoice) {
+
+    public ChatCompletionRequestDto(
+            String model, List<ChatMessageDto> messages, Boolean stream, Double temperature, List<JsonNode> tools, Map<String, String> variables) {
+        this(model, messages, stream, temperature, tools, variables, null);
+    }
 }

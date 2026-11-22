@@ -5,7 +5,10 @@ import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ToolCall;
+import com.aether.gateway.core.domain.ToolCallDelta;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
@@ -30,25 +33,27 @@ public class ChatCompletionDtoMapper {
 
     public ChatCompletionRequest toDomain(ChatCompletionRequestDto dto) {
         List<ChatMessage> messages = dto.messages().stream()
-                .map(m -> new ChatMessage(m.role(), m.content()))
+                .map(this::toDomainMessage)
                 .toList();
         boolean stream = dto.stream() != null && dto.stream();
-        List<String> toolNames = dto.tools() == null ? List.of() : dto.tools().stream()
-                .map(this::toolName)
+        List<String> tools = dto.tools() == null ? List.of() : dto.tools().stream()
+                .map(JsonNode::toString)
                 .toList();
-        return new ChatCompletionRequest(dto.model(), messages, stream, dto.temperature(), toolNames);
+        String toolChoice = dto.toolChoice() == null || dto.toolChoice().isNull() ? null : dto.toolChoice().toString();
+        return new ChatCompletionRequest(dto.model(), messages, stream, dto.temperature(), tools, toolChoice);
     }
 
-    @SuppressWarnings("unchecked")
-    private String toolName(java.util.Map<String, Object> tool) {
-        Object function = tool.get("function");
-        if (function instanceof java.util.Map<?, ?> functionMap) {
-            Object name = functionMap.get("name");
-            if (name != null) {
-                return name.toString();
-            }
-        }
-        return String.valueOf(tool.get("type"));
+    private ChatMessage toDomainMessage(ChatMessageDto dto) {
+        List<ToolCall> toolCalls = dto.toolCalls() == null ? List.of() : dto.toolCalls().stream()
+                .map(call -> new ToolCall(
+                        call.id(),
+                        call.type(),
+                        call.function() == null ? null : call.function().name(),
+                        call.function() == null ? null : call.function().arguments()))
+                .toList();
+        // OpenAI sends "content": null on an assistant turn that only calls tools.
+        String content = dto.content() == null && !toolCalls.isEmpty() ? "" : dto.content();
+        return new ChatMessage(dto.role(), content, toolCalls, dto.toolCallId());
     }
 
     public ChatCompletionResponseDto toDto(ChatCompletionResponse response) {
@@ -64,15 +69,34 @@ public class ChatCompletionDtoMapper {
     }
 
     private ChoiceDto toChoiceDto(ChatCompletionChoice choice) {
-        var messageDto = new ChatMessageDto(choice.message().role(), choice.message().content());
+        ChatMessage message = choice.message();
+        List<ToolCallDto> toolCalls = message.toolCalls().stream()
+                .map(call -> new ToolCallDto(null, call.id(), call.type(), new FunctionCallDto(call.functionName(), call.argumentsJson())))
+                .toList();
+        String content = message.content().isEmpty() && !toolCalls.isEmpty() ? null : message.content();
+        var messageDto = new ChatMessageDto(message.role(), content, toolCalls, message.toolCallId());
         return new ChoiceDto(choice.index(), messageDto, choice.finishReason());
     }
 
     public StreamChunkResponseDto toDto(ProviderResponse.StreamChunk chunk) {
-        var delta = new DeltaDto(chunk.deltaContent());
-        var choice = new StreamChoiceDto(0, delta, chunk.last() ? "stop" : null);
+        List<ToolCallDto> toolCalls = chunk.toolCallDeltas().stream()
+                .map(this::toToolCallFragment)
+                .toList();
+        String content = chunk.deltaContent().isEmpty() && !toolCalls.isEmpty() ? null : chunk.deltaContent();
+        var delta = new DeltaDto(content, toolCalls);
+        String finishReason = chunk.last() ? (chunk.finishReason() != null ? chunk.finishReason() : "stop") : null;
+        var choice = new StreamChoiceDto(0, delta, finishReason);
         return new StreamChunkResponseDto(
                 chunk.id(), "chat.completion.chunk", Instant.now().getEpochSecond(), null, List.of(choice));
+    }
+
+    private ToolCallDto toToolCallFragment(ToolCallDelta delta) {
+        boolean introducesTheCall = delta.id() != null || delta.functionName() != null;
+        return new ToolCallDto(
+                delta.index(),
+                delta.id(),
+                introducesTheCall ? "function" : null,
+                new FunctionCallDto(delta.functionName(), delta.argumentsFragment()));
     }
 
     public String toJson(Object value) {

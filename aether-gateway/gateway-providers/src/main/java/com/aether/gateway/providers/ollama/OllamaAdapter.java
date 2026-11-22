@@ -9,6 +9,7 @@ import com.aether.gateway.core.domain.EmbeddingOutcome;
 import com.aether.gateway.core.domain.EmbeddingRequest;
 import com.aether.gateway.core.domain.EmbeddingResponse;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ToolsNotSupportedException;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ollama.wire.WireOllamaChatRequest;
@@ -46,6 +47,13 @@ import java.util.stream.IntStream;
  * instance (it has no built-in auth), but is honoured as an optional
  * Bearer header for the case where an operator has put Ollama behind an
  * authenticating reverse proxy.
+ *
+ * <p>Tool calling is not translated for this wire format yet. A request
+ * that uses tools is refused with {@code tools_not_supported} rather than
+ * sent without them, since a reply that silently ignored the tools would
+ * look valid to the client and be wrong. Ollama's OpenAI-compatible
+ * endpoint ({@code /v1}) behind the OpenAI-compatible adapter is the way
+ * to use tools with Ollama today.
  */
 public class OllamaAdapter implements ProviderAdapter {
 
@@ -81,6 +89,9 @@ public class OllamaAdapter implements ProviderAdapter {
 
     @Override
     public ProviderResponse invoke(ChatCompletionRequest request) {
+        if (request.usesTools()) {
+            return ToolsNotSupportedException.asProviderError(providerName);
+        }
         var wireRequest = toWireRequest(request, false);
         try {
             WireOllamaChatResponse wireResponse = restClient.post()
@@ -100,6 +111,9 @@ public class OllamaAdapter implements ProviderAdapter {
 
     @Override
     public Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request) {
+        if (request.usesTools()) {
+            throw new ToolsNotSupportedException(providerName);
+        }
         String responseId = providerName + "-" + System.nanoTime();
         AtomicInteger index = new AtomicInteger(0);
 

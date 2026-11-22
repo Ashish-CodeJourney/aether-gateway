@@ -5,6 +5,7 @@ import com.aether.gateway.core.domain.CacheDecision;
 import com.aether.gateway.core.domain.CacheMatching;
 import com.aether.gateway.core.domain.CacheThresholdGate;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
+import com.aether.gateway.core.domain.ChatCompletionResponse;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.CostCalculator;
 import com.aether.gateway.core.domain.ModelPricing;
@@ -20,6 +21,7 @@ import com.aether.gateway.core.domain.RequestMetrics;
 import com.aether.gateway.core.domain.RouteCacheConfig;
 import com.aether.gateway.core.domain.RouteConfig;
 import com.aether.gateway.core.domain.TokenEstimator;
+import com.aether.gateway.core.domain.ToolsNotSupportedException;
 import com.aether.gateway.core.port.ApiKeyLookupPort;
 import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
@@ -54,6 +56,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -194,6 +197,8 @@ public class ChatCompletionController {
                 .map(response -> attachPromptVersionHeader(response, resolvedPromptVersion.get()))
                 .onErrorResume(PromptNotFoundException.class,
                         e -> Mono.just(promptErrorResponse(HttpStatus.NOT_FOUND, "prompt_not_found", e.getMessage())))
+                .onErrorResume(ToolsNotSupportedException.class,
+                        e -> Mono.just(promptErrorResponse(HttpStatus.BAD_REQUEST, ToolsNotSupportedException.ERROR_CODE, e.getMessage())))
                 .onErrorResume(PromptVariableValidationException.class,
                         e -> Mono.just(promptErrorResponse(HttpStatus.BAD_REQUEST, "prompt_variable_validation_failed", e.getMessage())))
                 // F9.4 and pre-existing ChatCompletionRequest validation
@@ -242,7 +247,8 @@ public class ChatCompletionController {
                 .map(m -> new ChatMessageDto(m.role(), m.content()))
                 .toList();
         return new ChatCompletionRequestDto(
-                requestDto.model(), renderedMessages, requestDto.stream(), requestDto.temperature(), requestDto.tools(), requestDto.variables());
+                requestDto.model(), renderedMessages, requestDto.stream(), requestDto.temperature(), requestDto.tools(), requestDto.variables(),
+                requestDto.toolChoice());
     }
 
     private ResponseEntity<Object> promptErrorResponse(HttpStatus status, String errorCode, String message) {
@@ -506,15 +512,23 @@ public class ChatCompletionController {
                 .map(response -> toResponseEntity(response, allowed, domainRequest, key, cacheLookup, requestStartNanos));
     }
 
-    /** F4.5/F4.6: only ever stores on a genuine cache Miss (never Bypass) and only ever a successful, non-error completion. */
+    /**
+     * F4.5/F4.6: only ever stores on a genuine cache Miss (never Bypass) and only ever a successful, non-error completion.
+     * A completion carrying tool calls is never stored either: it is a step in an agent loop whose next turn depends on
+     * the client actually running the tool, so replaying it is never a safe substitute for asking the model again.
+     */
     private void maybeStore(CacheLookup cacheLookup, ChatCompletionRequest domainRequest, ProviderResponse response) {
         if (!(cacheLookup.decision() instanceof CacheDecision.Miss)) {
             return;
         }
-        if (response instanceof ProviderResponse.Completion completion) {
+        if (response instanceof ProviderResponse.Completion completion && !containsToolCalls(completion.response())) {
             String responseJson = mapper.toJson(mapper.toDto(completion.response()));
             cachePort.store(cacheLookup.namespace(), domainRequest, responseJson, cacheLookup.routeCache().ttl(), cacheLookup.matching());
         }
+    }
+
+    private static boolean containsToolCalls(ChatCompletionResponse response) {
+        return response.choices().stream().anyMatch(choice -> !choice.message().toolCalls().isEmpty());
     }
 
     private void reconcileAndRelease(ApiKeyContext key, QuotaDecision.Allowed allowed, ProviderResponse response) {
@@ -603,13 +617,27 @@ public class ChatCompletionController {
         AtomicBoolean cancelled = new AtomicBoolean(false);
         AtomicBoolean sawError = new AtomicBoolean(false);
         AtomicLong ttfbNanos = new AtomicLong(-1);
+        AtomicBoolean sawToolCall = new AtomicBoolean(false);
         String streamId = "aether-" + UUID.randomUUID();
+        Flow.Publisher<ProviderResponse.StreamChunk> upstream;
+        try {
+            // Resolved before streamStarted() and before any response
+            // headers exist, so a provider refusing the request (e.g.
+            // ToolsNotSupportedException) still surfaces as a plain 4xx.
+            upstream = chatStreamUseCase.stream(domainRequest);
+        } catch (RuntimeException e) {
+            reconcileAndReleaseOnFailure(key, allowed);
+            throw e;
+        }
         metricsPort.streamStarted();
 
         Flux<ServerSentEvent<String>> body = JdkFlowAdapter
-                .flowPublisherToFlux(chatStreamUseCase.stream(domainRequest))
+                .flowPublisherToFlux(upstream)
                 .doOnNext(chunk -> {
                     chunksSent.incrementAndGet();
+                    if (!chunk.toolCallDeltas().isEmpty()) {
+                        sawToolCall.set(true);
+                    }
                     accumulated.append(chunk.deltaContent());
                     ttfbNanos.compareAndSet(-1, System.nanoTime());
                 })
@@ -633,7 +661,7 @@ public class ChatCompletionController {
                     metricsPort.streamEnded();
                     releaseStreamQuota(key, allowed, estimatedTokens);
                     // F4.6: never cache a cancelled stream or one that errored.
-                    if (cacheLookup.decision() instanceof CacheDecision.Miss && !cancelled.get() && !sawError.get() && chunksSent.get() > 0) {
+                    if (cacheLookup.decision() instanceof CacheDecision.Miss && !cancelled.get() && !sawError.get() && !sawToolCall.get() && chunksSent.get() > 0) {
                         storeStreamedResponse(cacheLookup, domainRequest, streamId, accumulated.toString());
                     }
                     String status = cancelled.get() ? "CANCELLED" : sawError.get() ? "FAILED" : "OK";

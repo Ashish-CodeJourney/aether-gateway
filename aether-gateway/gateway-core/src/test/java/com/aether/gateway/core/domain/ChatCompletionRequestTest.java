@@ -66,6 +66,39 @@ class ChatCompletionRequestTest {
         assertThat(request.messages()).hasSize(1);
     }
 
+    @Test
+    void carriesToolDefinitionsAndToolChoiceAsOpaqueJson() {
+        String tool = "{\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"parameters\":{\"type\":\"object\"}}}";
+
+        var request = new ChatCompletionRequest("mock", List.of(userMessage("hi")), false, null, List.of(tool), "\"auto\"");
+
+        assertThat(request.tools()).containsExactly(tool);
+        assertThat(request.toolChoice()).isEqualTo("\"auto\"");
+    }
+
+    @Test
+    void withModelKeepsEveryOtherFieldIncludingToolPayloads() {
+        var request = new ChatCompletionRequest(
+                "alias", List.of(userMessage("hi")), true, 0.2, List.of("{\"type\":\"function\"}"), "\"required\"");
+
+        var rewritten = request.withModel("upstream-model");
+
+        assertThat(rewritten).isEqualTo(new ChatCompletionRequest(
+                "upstream-model", List.of(userMessage("hi")), true, 0.2, List.of("{\"type\":\"function\"}"), "\"required\""));
+    }
+
+    @Test
+    void usesToolsIsTrueForToolDefinitionsOrToolMessagesInTheConversation() {
+        var plain = new ChatCompletionRequest("mock", List.of(userMessage("hi")), false);
+        var withDefinitions = new ChatCompletionRequest("mock", List.of(userMessage("hi")), false, null, List.of("{}"), null);
+        var withToolResult = new ChatCompletionRequest(
+                "mock", List.of(userMessage("hi"), new ChatMessage("tool", "18C", List.of(), "call_1")), false);
+
+        assertThat(plain.usesTools()).isFalse();
+        assertThat(withDefinitions.usesTools()).isTrue();
+        assertThat(withToolResult.usesTools()).isTrue();
+    }
+
     private static ChatMessage userMessage(String content) {
         return new ChatMessage("user", content);
     }

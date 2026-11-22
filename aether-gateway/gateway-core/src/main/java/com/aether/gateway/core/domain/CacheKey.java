@@ -19,13 +19,25 @@ public final class CacheKey {
 
     private static String canonicalize(ChatCompletionRequest request) {
         String messagesPart = request.messages().stream()
-                .map(m -> m.role() + ":" + normalizeWhitespace(m.content()))
+                .map(CacheKey::canonicalizeMessage)
                 .collect(Collectors.joining("|"));
         String toolsPart = String.join(",", request.tools());
         return "model=" + request.model()
                 + ";temperature=" + request.temperature()
                 + ";tools=" + toolsPart
+                + ";toolChoice=" + request.toolChoice()
                 + ";messages=" + messagesPart;
+    }
+
+    private static String canonicalizeMessage(ChatMessage message) {
+        String base = message.role() + ":" + normalizeWhitespace(message.content());
+        if (!message.hasToolContent()) {
+            return base;
+        }
+        String calls = message.toolCalls().stream()
+                .map(call -> call.id() + "/" + call.functionName() + "/" + call.argumentsJson())
+                .collect(Collectors.joining(","));
+        return base + "[toolCallId=" + message.toolCallId() + ";toolCalls=" + calls + "]";
     }
 
     private static String normalizeWhitespace(String content) {

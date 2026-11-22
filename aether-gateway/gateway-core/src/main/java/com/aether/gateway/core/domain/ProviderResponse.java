@@ -32,7 +32,20 @@ public sealed interface ProviderResponse permits
         }
     }
 
-    record StreamChunk(String id, int index, String deltaContent, boolean last) implements ProviderResponse {
+    /**
+     * {@code finishReason} is the provider's own reason when it gave one
+     * (e.g. "tool_calls"); null leaves the choice to the caller, which
+     * reports "stop" for a last chunk.
+     */
+    record StreamChunk(String id, int index, String deltaContent, boolean last, List<ToolCallDelta> toolCallDeltas, String finishReason)
+            implements ProviderResponse {
+        public StreamChunk {
+            toolCallDeltas = toolCallDeltas == null ? List.of() : List.copyOf(toolCallDeltas);
+        }
+
+        public StreamChunk(String id, int index, String deltaContent, boolean last) {
+            this(id, index, deltaContent, last, List.of(), null);
+        }
     }
 
     /** {@code attemptCount}/{@code failoverChain}: see {@link Completion}'s javadoc; same reasoning applies here. */

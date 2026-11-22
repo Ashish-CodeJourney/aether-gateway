@@ -126,8 +126,7 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
                 // failure-rate tracking sees it. Terminal errors (not
                 // the provider's fault) and successes pass through as
                 // plain return values and count as breaker successes.
-                ChatCompletionRequest downstreamRequest = new ChatCompletionRequest(
-                        member.model(), request.messages(), request.stream(), request.temperature(), request.tools());
+                ChatCompletionRequest downstreamRequest = request.withModel(member.model());
                 Supplier<ProviderResponse> decorated = Bulkhead.decorateSupplier(
                         bulkhead, () -> breaker.executeSupplier(() -> {
                             ProviderResponse r = adapter.invoke(downstreamRequest);
@@ -211,8 +210,7 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
             if (adapter == null) {
                 continue;
             }
-            ChatCompletionRequest downstreamRequest = new ChatCompletionRequest(
-                    member.model(), request.messages(), request.stream(), request.temperature(), request.tools());
+            ChatCompletionRequest downstreamRequest = request.withModel(member.model());
             return adapter.invokeStreaming(downstreamRequest);
         }
         return errorPublisher();

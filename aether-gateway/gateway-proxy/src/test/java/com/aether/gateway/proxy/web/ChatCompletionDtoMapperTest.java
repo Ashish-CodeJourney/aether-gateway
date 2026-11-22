@@ -8,8 +8,12 @@ import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.Usage;
 import org.junit.jupiter.api.Test;
 
+import com.aether.gateway.core.domain.ToolCall;
+import com.aether.gateway.core.domain.ToolCallDelta;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -54,14 +58,59 @@ class ChatCompletionDtoMapperTest {
     }
 
     @Test
-    void extractsToolNamesFromTheFunctionShape() {
-        var toolWithFunctionName = Map.of("type", "function", "function", Map.of("name", "get_weather"));
+    void carriesEachToolDefinitionThroughAsOpaqueJson() {
+        JsonNode tool = json("""
+                {"type":"function","function":{"name":"get_weather","description":"Weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}
+                """);
         var dto = new ChatCompletionRequestDto(
-                "mock", List.of(new ChatMessageDto("user", "hi")), false, null, List.of(toolWithFunctionName), null);
+                "mock", List.of(new ChatMessageDto("user", "hi")), false, null, List.of(tool), null);
 
         ChatCompletionRequest domain = mapper.toDomain(dto);
 
-        assertThat(domain.tools()).containsExactly("get_weather");
+        assertThat(domain.tools()).hasSize(1);
+        assertThat(json(domain.tools().get(0))).isEqualTo(tool);
+    }
+
+    @Test
+    void carriesToolChoiceThroughAsOpaqueJsonWhetherAStringOrAnObject() {
+        var asString = new ChatCompletionRequestDto(
+                "mock", List.of(new ChatMessageDto("user", "hi")), false, null, null, null, json("\"required\""));
+        JsonNode forced = json("{\"type\":\"function\",\"function\":{\"name\":\"get_weather\"}}");
+        var asObject = new ChatCompletionRequestDto(
+                "mock", List.of(new ChatMessageDto("user", "hi")), false, null, null, null, forced);
+
+        assertThat(mapper.toDomain(asString).toolChoice()).isEqualTo("\"required\"");
+        assertThat(json(mapper.toDomain(asObject).toolChoice())).isEqualTo(forced);
+    }
+
+    @Test
+    void leavesToolChoiceAbsentWhenTheClientSentNone() {
+        var dto = new ChatCompletionRequestDto("mock", List.of(new ChatMessageDto("user", "hi")), false, null, null, null);
+
+        assertThat(mapper.toDomain(dto).toolChoice()).isNull();
+    }
+
+    @Test
+    void mapsAnAssistantTurnWithToolCallsAndNullContent() {
+        var call = new ToolCallDto(null, "call_1", "function", new FunctionCallDto("get_weather", "{\"city\":\"Paris\"}"));
+        var dto = new ChatCompletionRequestDto("mock", List.of(
+                new ChatMessageDto("user", "weather?"),
+                new ChatMessageDto("assistant", null, List.of(call), null)), false, null, null, null);
+
+        ChatCompletionRequest domain = mapper.toDomain(dto);
+
+        assertThat(domain.messages().get(1)).isEqualTo(new ChatMessage(
+                "assistant", "", List.of(new ToolCall("call_1", "function", "get_weather", "{\"city\":\"Paris\"}")), null));
+    }
+
+    @Test
+    void mapsAToolResultTurnWithItsToolCallId() {
+        var dto = new ChatCompletionRequestDto("mock", List.of(
+                new ChatMessageDto("tool", "18C and sunny", null, "call_1")), false, null, null, null);
+
+        ChatCompletionRequest domain = mapper.toDomain(dto);
+
+        assertThat(domain.messages().get(0)).isEqualTo(new ChatMessage("tool", "18C and sunny", List.of(), "call_1"));
     }
 
     @Test
@@ -107,5 +156,79 @@ class ChatCompletionDtoMapperTest {
         StreamChunkResponseDto dto = mapper.toDto(chunk);
 
         assertThat(dto.choices().get(0).finishReason()).isEqualTo("stop");
+    }
+
+    @Test
+    void mapsAToolCallingResponseToOpenAiShapeWithNullContent() {
+        var call = new ToolCall("call_1", "function", "get_weather", "{\"city\":\"Paris\"}");
+        var domainResponse = new ChatCompletionResponse(
+                "id-1", "chat.completion", 1234L, "mock",
+                List.of(new ChatCompletionChoice(0, new ChatMessage("assistant", "", List.of(call), null), "tool_calls")),
+                Usage.of(5, 3));
+
+        JsonNode body = json(mapper.toJson(mapper.toDto(domainResponse)));
+
+        JsonNode choice = body.get("choices").get(0);
+        assertThat(choice.get("finish_reason").asString()).isEqualTo("tool_calls");
+        assertThat(choice.get("message").get("content").isNull()).isTrue();
+        assertThat(choice.get("message").get("tool_calls")).isEqualTo(json("""
+                [{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\\"city\\":\\"Paris\\"}"}}]
+                """));
+    }
+
+    @Test
+    void omitsToolFieldsFromAPlainTextResponse() {
+        var domainResponse = new ChatCompletionResponse(
+                "id-1", "chat.completion", 1234L, "mock",
+                List.of(new ChatCompletionChoice(0, new ChatMessage("assistant", "hi there"), "stop")),
+                Usage.of(5, 3));
+
+        JsonNode message = json(mapper.toJson(mapper.toDto(domainResponse))).get("choices").get(0).get("message");
+
+        assertThat(message.get("content").asString()).isEqualTo("hi there");
+        assertThat(message.has("tool_calls")).isFalse();
+        assertThat(message.has("tool_call_id")).isFalse();
+    }
+
+    @Test
+    void aToolCallingResponseSurvivesTheJsonRoundTripTheCacheWouldUse() {
+        var call = new ToolCall("call_1", "function", "get_weather", "{\"city\":\"Paris\"}");
+        var domainResponse = new ChatCompletionResponse(
+                "id-1", "chat.completion", 1234L, "mock",
+                List.of(new ChatCompletionChoice(0, new ChatMessage("assistant", "", List.of(call), null), "tool_calls")),
+                Usage.of(5, 3));
+        ChatCompletionResponseDto dto = mapper.toDto(domainResponse);
+
+        assertThat(mapper.responseFromJson(mapper.toJson(dto))).isEqualTo(dto);
+    }
+
+    @Test
+    void mapsStreamedToolCallFragmentsToOpenAiDeltaShape() {
+        var chunk = new ProviderResponse.StreamChunk("resp-1", 0, "", false, List.of(
+                new ToolCallDelta(0, "call_1", "get_weather", ""),
+                new ToolCallDelta(0, null, null, "{\"city\":")), null);
+
+        JsonNode delta = json(mapper.toJson(mapper.toDto(chunk))).get("choices").get(0).get("delta");
+
+        assertThat(delta.get("tool_calls")).isEqualTo(json("""
+                [{"index":0,"id":"call_1","type":"function","function":{"name":"get_weather","arguments":""}},
+                 {"index":0,"function":{"arguments":"{\\"city\\":"}}]
+                """));
+        assertThat(delta.has("content")).isFalse();
+    }
+
+    @Test
+    void usesTheProvidersFinishReasonOnTheLastStreamChunk() {
+        var chunk = new ProviderResponse.StreamChunk("resp-1", 3, "", true, List.of(), "tool_calls");
+
+        StreamChunkResponseDto dto = mapper.toDto(chunk);
+
+        assertThat(dto.choices().get(0).finishReason()).isEqualTo("tool_calls");
+    }
+
+    private static final ObjectMapper TEST_JSON = new ObjectMapper();
+
+    private static JsonNode json(String text) {
+        return TEST_JSON.readTree(text);
     }
 }

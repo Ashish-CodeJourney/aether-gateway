@@ -106,4 +106,27 @@ class OpenAiCompatibleAdapterLiveTest {
 
         assertThat(result).isInstanceOf(ProviderResponse.ProviderError.class);
     }
+
+    /**
+     * Forces a call with {@code tool_choice: "required"} so the assertion
+     * does not depend on the model choosing to use the tool; a backing
+     * model without tool support fails here, which is the point.
+     */
+    @Test
+    void relaysARealToolCallFromARealSelfHostedOpenAiCompatibleProxy() {
+        String weatherTool = """
+                {"type":"function","function":{"name":"get_weather","description":"Current weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}""";
+        var toolRequest = new ChatCompletionRequest(
+                MODEL,
+                List.of(new ChatMessage("user", "What is the weather in Paris? Use the tool.")),
+                false, null, List.of(weatherTool), "\"required\"");
+
+        ProviderResponse result = adapter().invoke(toolRequest);
+
+        assertThat(result).isInstanceOf(ProviderResponse.Completion.class);
+        var choice = ((ProviderResponse.Completion) result).response().choices().get(0);
+        assertThat(choice.message().toolCalls()).isNotEmpty();
+        assertThat(choice.message().toolCalls().get(0).functionName()).isEqualTo("get_weather");
+        assertThat(choice.message().toolCalls().get(0).argumentsJson()).containsIgnoringCase("paris");
+    }
 }
