@@ -155,6 +155,22 @@ class AnthropicAdapterContractTest extends ProviderAdapterContractTest {
     }
 
     @Test
+    void sendsTheStreamingRequestInAnthropicsSnakeCaseWireFormatWithoutNullFields() throws InterruptedException {
+        server.enqueue(streamingResponse());
+
+        reactor.adapter.JdkFlowAdapter
+                .flowPublisherToFlux(adapter.invokeStreaming(request(new ChatMessage("user", "hi"))))
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10));
+
+        String body = server.takeRequest(5, TimeUnit.SECONDS).getBody().readUtf8();
+        assertThat(body).contains("\"max_tokens\":4096");
+        assertThat(body).contains("\"stream\":true");
+        assertThat(body).doesNotContain("maxTokens");
+        assertThat(body).doesNotContain(":null");
+    }
+
+    @Test
     void reportsUsageFromTheApisOwnInputAndOutputTokenCounts() {
         server.enqueue(successResponse());
 

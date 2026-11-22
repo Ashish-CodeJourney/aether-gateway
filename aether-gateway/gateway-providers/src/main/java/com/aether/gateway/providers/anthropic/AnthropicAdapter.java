@@ -17,6 +17,7 @@ import com.aether.gateway.providers.anthropic.wire.WireAnthropicStreamEvent;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.codec.json.JacksonJsonEncoder;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
@@ -123,7 +124,8 @@ public class AnthropicAdapter implements ProviderAdapter {
                 });
         var web = webBuilder
                 .baseUrl(baseUrl)
-                .defaultHeader("anthropic-version", API_VERSION);
+                .defaultHeader("anthropic-version", API_VERSION)
+                .codecs(codecs -> codecs.defaultCodecs().jacksonJsonEncoder(new JacksonJsonEncoder(mapper)));
         if (apiKey != null && !apiKey.isBlank()) {
             rest = rest.defaultHeader("x-api-key", apiKey);
             web = web.defaultHeader("x-api-key", apiKey);
