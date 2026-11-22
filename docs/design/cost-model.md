@@ -36,6 +36,13 @@ provider prices (Groq, Gemini, etc.) get added to this same file once
 Phase 12 (M9) wires up real providers - the price table's shape does not
 need to change, only its contents.
 
+Embedding models (`POST /v1/embeddings`) use the same entry shape with
+`outputPricePerMillion: 0.0`, since an embedding has no completion
+tokens; cost is `input_tokens * inputPricePerMillion / 1,000,000`. The
+embeddings endpoint looks an entry up by the serving chain member's
+upstream model first, then by the route alias, and reports `0` for a
+model with no entry.
+
 ## `cost_usd`: the math
 
 `CostCalculator.costUsd(pricing, inputTokens, outputTokens)`

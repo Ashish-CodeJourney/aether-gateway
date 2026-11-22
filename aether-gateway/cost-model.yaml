@@ -27,3 +27,17 @@ models:
     model: mac/gemma4:12b-mlx
     inputPricePerMillion: 0.0
     outputPricePerMillion: 0.0
+  # Embedding models use the same entry shape: input price only, output
+  # always 0 (an embedding has no completion tokens). Prices are
+  # OpenAI's published rates; the provider name must match a provider
+  # in routing.yaml (here the commented-out "openai-main" example).
+  # /v1/embeddings looks an entry up by the chain member's upstream
+  # model first, then by the route alias; unpriced models cost 0.
+  - provider: openai-main
+    model: text-embedding-3-small
+    inputPricePerMillion: 0.02
+    outputPricePerMillion: 0.0
+  - provider: openai-main
+    model: text-embedding-3-large
+    inputPricePerMillion: 0.13
+    outputPricePerMillion: 0.0
