@@ -5,6 +5,7 @@ import com.aether.gateway.mockprovider.DefaultControlsHolder;
 import com.aether.gateway.mockprovider.FaultInjector;
 import com.aether.gateway.mockprovider.MockControls;
 import com.aether.gateway.mockprovider.MockFailure;
+import com.aether.gateway.mockprovider.MockToolCalling;
 import com.aether.gateway.mockprovider.StreamChunkGenerator;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -70,8 +71,9 @@ public class MockChatController {
 
     private Mono<ResponseEntity<Object>> streamingResponse(ChatCompletionRequestDto request, MockControls controls) {
         String responseId = "mock-" + UUID.randomUUID();
-        List<StreamChunkGenerator.Chunk> chunks = streamChunkGenerator.generate(
-                responseId, request.model(), "Mock streaming response for model " + request.model());
+        List<StreamChunkGenerator.Chunk> chunks = MockToolCalling.toolCallFor(request.toolNames(), lastRole(request))
+                .map(call -> streamChunkGenerator.generateToolCall(responseId, request.model(), call))
+                .orElseGet(() -> streamChunkGenerator.generate(responseId, request.model(), streamedText(request)));
 
         int limit = controls.truncateAt() != null ? Math.min(controls.truncateAt(), chunks.size()) : chunks.size();
         boolean truncated = controls.truncateAt() != null && controls.truncateAt() < chunks.size();
@@ -97,7 +99,10 @@ public class MockChatController {
     }
 
     private ServerSentEvent<String> toSseEvent(StreamChunkGenerator.Chunk chunk) {
-        var delta = new DeltaDto(chunk.deltaContent());
+        var fragment = chunk.toolCall();
+        List<ToolCallDto> toolCalls = fragment == null ? List.of() : List.of(new ToolCallDto(
+                0, fragment.id(), fragment.id() == null ? null : "function", new FunctionCallDto(fragment.name(), fragment.arguments())));
+        var delta = new DeltaDto(chunk.deltaContent(), toolCalls);
         var choice = new StreamChoiceDto(0, delta, chunk.finishReason());
         var payload = new StreamChunkResponseDto(
                 chunk.id(), "chat.completion.chunk", Instant.now().getEpochSecond(),
@@ -140,8 +145,12 @@ public class MockChatController {
         int completionTokens = controls.tokens() != null ? controls.tokens() : 12;
         int promptTokens = estimatePromptTokens(request);
 
-        var message = new ChatMessageDto("assistant", "Mock response for model " + request.model());
-        var choice = new ChoiceDto(0, message, "stop");
+        var toolCall = MockToolCalling.toolCallFor(request.toolNames(), lastRole(request));
+        var message = toolCall
+                .map(call -> new ChatMessageDto("assistant", null, List.of(new ToolCallDto(
+                        null, call.id(), "function", new FunctionCallDto(call.name(), call.arguments()))), null))
+                .orElseGet(() -> new ChatMessageDto("assistant", replyText(request, "Mock response for model " + request.model())));
+        var choice = new ChoiceDto(0, message, toolCall.isPresent() ? "tool_calls" : "stop");
         var usage = new UsageDto(promptTokens, completionTokens, promptTokens + completionTokens);
 
         return new ChatCompletionResponseDto(
@@ -155,8 +164,23 @@ public class MockChatController {
 
     private int estimatePromptTokens(ChatCompletionRequestDto request) {
         return request.messages().stream()
-                .mapToInt(m -> Math.max(1, m.content().length() / 4))
+                .mapToInt(m -> Math.max(1, (m.content() == null ? 0 : m.content().length()) / 4))
                 .sum();
+    }
+
+    private static String lastRole(ChatCompletionRequestDto request) {
+        return request.messages().getLast().role();
+    }
+
+    private static String streamedText(ChatCompletionRequestDto request) {
+        return replyText(request, "Mock streaming response for model " + request.model());
+    }
+
+    private static String replyText(ChatCompletionRequestDto request, String defaultText) {
+        ChatMessageDto last = request.messages().getLast();
+        return "tool".equals(last.role())
+                ? MockToolCalling.replyToToolResult(request.model(), last.toolCallId(), last.content())
+                : defaultText;
     }
 
     private MockControls parseControls(HttpHeaders headers) {
