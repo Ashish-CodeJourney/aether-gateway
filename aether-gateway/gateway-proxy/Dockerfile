@@ -50,6 +50,12 @@ FROM eclipse-temurin:25-jre
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends wget \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -r aether && useradd -r -g aether aether
+# docker-compose.yml mounts a named volume at /onnx-cache for the ONNX
+# embedding model. A fresh named volume copies the ownership of the
+# image's directory at that path; without this directory, Docker creates
+# the mount point as root and the non-root gateway fails at startup with
+# NoSuchFileException while caching tokenizer.json.
+RUN mkdir -p /onnx-cache && chown aether:aether /onnx-cache
 WORKDIR /app
 COPY --from=extracted /extracted/lib/ ./lib/
 COPY --from=extracted /extracted/gateway-proxy.jar ./gateway-proxy.jar
