@@ -4,10 +4,18 @@ import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
 import com.aether.gateway.core.domain.ChatMessage;
+import com.aether.gateway.core.domain.Embedding;
+import com.aether.gateway.core.domain.EmbeddingOutcome;
+import com.aether.gateway.core.domain.EmbeddingRequest;
+import com.aether.gateway.core.domain.EmbeddingResponse;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
+import com.aether.gateway.providers.gemini.wire.WireGeminiBatchEmbedRequest;
+import com.aether.gateway.providers.gemini.wire.WireGeminiBatchEmbedResponse;
 import com.aether.gateway.providers.gemini.wire.WireGeminiContent;
+import com.aether.gateway.providers.gemini.wire.WireGeminiEmbedContent;
+import com.aether.gateway.providers.gemini.wire.WireGeminiEmbedContentRequest;
 import com.aether.gateway.providers.gemini.wire.WireGeminiPart;
 import com.aether.gateway.providers.gemini.wire.WireGeminiRequest;
 import com.aether.gateway.providers.gemini.wire.WireGeminiResponse;
@@ -28,6 +36,7 @@ import java.util.List;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * F2.2 (Phase 12/M9): Google Gemini. A third, genuinely distinct wire
@@ -129,6 +138,40 @@ public class GeminiAdapter implements ProviderAdapter {
                 });
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux);
+    }
+
+    /**
+     * Always {@code batchEmbedContents}, even for one input, so there is a
+     * single code path. Gemini's embedding responses carry no token
+     * counts, so usage is the gateway's own estimate.
+     */
+    @Override
+    public EmbeddingOutcome embed(EmbeddingRequest request) {
+        String qualifiedModel = "models/" + request.model();
+        var wireRequest = new WireGeminiBatchEmbedRequest(request.inputs().stream()
+                .map(text -> new WireGeminiEmbedContentRequest(
+                        qualifiedModel, new WireGeminiEmbedContent(List.of(new WireGeminiPart(text))), request.dimensions()))
+                .toList());
+        try {
+            WireGeminiBatchEmbedResponse wireResponse = restClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1beta/models/{model}:batchEmbedContents")
+                            .queryParamIfPresent("key", java.util.Optional.ofNullable(apiKey))
+                            .build(request.model()))
+                    .body(wireRequest)
+                    .retrieve()
+                    .body(WireGeminiBatchEmbedResponse.class);
+            List<Embedding> data = IntStream.range(0, wireResponse.embeddings().size())
+                    .mapToObj(i -> new Embedding(i, wireResponse.embeddings().get(i).values()))
+                    .toList();
+            return new EmbeddingOutcome.Success(new EmbeddingResponse(request.model(), data, request.estimatedPromptTokens()));
+        } catch (HttpStatusCodeException e) {
+            int status = e.getStatusCode().value();
+            boolean retryable = status == 429 || status == 503 || status == 504;
+            return new EmbeddingOutcome.Failure(new ProviderResponse.ProviderError("provider_error", e.getMessage(), status, retryable));
+        } catch (RestClientException e) {
+            return new EmbeddingOutcome.Failure(new ProviderResponse.ProviderError("provider_unreachable", e.getMessage(), 502, true));
+        }
     }
 
     private WireGeminiRequest toWireRequest(ChatCompletionRequest request) {

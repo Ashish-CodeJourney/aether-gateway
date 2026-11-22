@@ -4,11 +4,17 @@ import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
 import com.aether.gateway.core.domain.ChatMessage;
+import com.aether.gateway.core.domain.Embedding;
+import com.aether.gateway.core.domain.EmbeddingOutcome;
+import com.aether.gateway.core.domain.EmbeddingRequest;
+import com.aether.gateway.core.domain.EmbeddingResponse;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ollama.wire.WireOllamaChatRequest;
 import com.aether.gateway.providers.ollama.wire.WireOllamaChatResponse;
+import com.aether.gateway.providers.ollama.wire.WireOllamaEmbedRequest;
+import com.aether.gateway.providers.ollama.wire.WireOllamaEmbedResponse;
 import com.aether.gateway.providers.ollama.wire.WireOllamaMessage;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
@@ -24,6 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.util.List;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 /**
  * F2.2 (Phase 12/M9): local Ollama serving. Ollama's own wire format
@@ -109,6 +116,31 @@ public class OllamaAdapter implements ProviderAdapter {
                         chunk.done()));
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux);
+    }
+
+    /** {@code /api/embed} (batch, Ollama 0.3+), not the legacy single-prompt {@code /api/embeddings}. */
+    @Override
+    public EmbeddingOutcome embed(EmbeddingRequest request) {
+        var wireRequest = new WireOllamaEmbedRequest(request.model(), request.inputs(), request.dimensions());
+        try {
+            WireOllamaEmbedResponse wireResponse = restClient.post()
+                    .uri("/api/embed")
+                    .body(wireRequest)
+                    .retrieve()
+                    .body(WireOllamaEmbedResponse.class);
+            List<Embedding> data = IntStream.range(0, wireResponse.embeddings().size())
+                    .mapToObj(i -> new Embedding(i, wireResponse.embeddings().get(i)))
+                    .toList();
+            int promptTokens = wireResponse.promptEvalCount() != null ? wireResponse.promptEvalCount() : request.estimatedPromptTokens();
+            String model = wireResponse.model() != null ? wireResponse.model() : request.model();
+            return new EmbeddingOutcome.Success(new EmbeddingResponse(model, data, promptTokens));
+        } catch (HttpStatusCodeException e) {
+            int status = e.getStatusCode().value();
+            boolean retryable = status == 429 || status == 503 || status == 504;
+            return new EmbeddingOutcome.Failure(new ProviderResponse.ProviderError("provider_error", e.getMessage(), status, retryable));
+        } catch (RestClientException e) {
+            return new EmbeddingOutcome.Failure(new ProviderResponse.ProviderError("provider_unreachable", e.getMessage(), 502, true));
+        }
     }
 
     private WireOllamaChatRequest toWireRequest(ChatCompletionRequest request, boolean stream) {

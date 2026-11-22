@@ -1,6 +1,8 @@
 package com.aether.gateway.core.port;
 
 import com.aether.gateway.core.domain.ChatCompletionRequest;
+import com.aether.gateway.core.domain.EmbeddingOutcome;
+import com.aether.gateway.core.domain.EmbeddingRequest;
 import com.aether.gateway.core.domain.ProviderResponse;
 
 import java.util.concurrent.Flow;
@@ -23,4 +25,13 @@ public interface ProviderAdapter {
     ProviderResponse invoke(ChatCompletionRequest request);
 
     Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request);
+
+    /**
+     * Not every provider has an embeddings API (Anthropic does not), so
+     * this defaults to a clean refusal rather than forcing every adapter
+     * to implement it; the router fails over past a refusal.
+     */
+    default EmbeddingOutcome embed(EmbeddingRequest request) {
+        return EmbeddingOutcome.unsupportedBy(providerName());
+    }
 }

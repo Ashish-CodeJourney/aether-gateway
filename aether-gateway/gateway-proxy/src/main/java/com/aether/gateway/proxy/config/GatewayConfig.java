@@ -13,6 +13,7 @@ import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
 import com.aether.gateway.core.port.CostModelPort;
+import com.aether.gateway.core.port.EmbeddingUseCase;
 import com.aether.gateway.core.port.MetricsPort;
 import com.aether.gateway.core.port.ModelCatalogUseCase;
 import com.aether.gateway.core.port.ProviderAdapter;
@@ -46,6 +47,7 @@ import com.aether.gateway.router.RouterBreakerStatus;
 import com.aether.gateway.router.RouterModelCatalog;
 import com.aether.gateway.router.resilience.BreakerHintGateway;
 import com.aether.gateway.router.resilience.RedisBreakerHintGateway;
+import com.aether.gateway.router.resilience.ResilientEmbeddingRouter;
 import com.aether.gateway.router.resilience.ResilientRouter;
 import com.aether.gateway.router.routing.RoutingPolicyRepository;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
@@ -184,6 +186,25 @@ public class GatewayConfig {
     @Bean
     public ChatStreamUseCase chatStreamUseCase(ResilientRouter resilientRouter) {
         return resilientRouter;
+    }
+
+    // Same registries and limits as the chat router, so a provider's
+    // breaker state and bulkhead capacity are shared across endpoints.
+    @Bean
+    public EmbeddingUseCase embeddingUseCase(
+            RoutingPolicyRepository routingPolicyRepository,
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            BulkheadRegistry bulkheadRegistry,
+            RetryBackoff retryBackoff,
+            BreakerHintGateway breakerHintGateway) {
+        return new ResilientEmbeddingRouter(
+                routingPolicyRepository,
+                circuitBreakerRegistry,
+                bulkheadRegistry,
+                retryBackoff,
+                1,
+                Duration.ofSeconds(10),
+                breakerHintGateway);
     }
 
     @Bean
