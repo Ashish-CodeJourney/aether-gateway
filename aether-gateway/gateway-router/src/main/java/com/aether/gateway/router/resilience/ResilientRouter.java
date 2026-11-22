@@ -1,12 +1,15 @@
 package com.aether.gateway.router.resilience;
 
+import com.aether.gateway.core.domain.AttributedStream;
 import com.aether.gateway.core.domain.ChainMember;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.FailureClassifier;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ProviderStreamException;
 import com.aether.gateway.core.domain.RetryBackoff;
 import com.aether.gateway.core.domain.RouteConfig;
 import com.aether.gateway.core.domain.RouteResolver;
+import com.aether.gateway.core.domain.StreamAttribution;
 import com.aether.gateway.core.domain.TimeoutBudget;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
@@ -18,11 +21,19 @@ import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import reactor.adapter.JdkFlowAdapter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
@@ -180,40 +191,218 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
         };
     }
 
+    /**
+     * Streaming counterpart of {@link #complete}: the same chain walk,
+     * breakers, bulkheads, retries and timeout budget, applied only up to
+     * a stream's first chunk. A retryable {@link ProviderStreamException}
+     * before that moves on exactly as a retryable {@code ProviderError}
+     * would; once a chunk has reached the caller the stream is committed
+     * to that provider, because switching mid-stream would duplicate or
+     * corrupt output already sent to the client.
+     *
+     * <p>The first attempt is started eagerly so an adapter refusing the
+     * request outright (e.g. {@code ToolsNotSupportedException}) still
+     * throws from this call; retries and failovers run on subscription.
+     */
     @Override
     public Flow.Publisher<ProviderResponse.StreamChunk> stream(ChatCompletionRequest request) {
+        AtomicReference<StreamAttribution> attribution = new AtomicReference<>();
         RouteConfig route = routingSource.routeFor(request.model()).orElse(null);
-        if (route == null) {
-            return errorPublisher();
+        Flux<ProviderResponse.StreamChunk> chunks = route == null
+                ? unknownRouteStream(request.model(), attribution)
+                : new StreamWalk(request, routeResolver.resolveAttemptOrder(route, random), attribution).fromMember(0);
+        return new RoutedStream(JdkFlowAdapter.publisherToFlowPublisher(chunks), attribution);
+    }
+
+    private Flux<ProviderResponse.StreamChunk> unknownRouteStream(String model, AtomicReference<StreamAttribution> attribution) {
+        ProviderResponse.ProviderError error = unknownRoute(model);
+        attribution.set(new StreamAttribution(null, error.attemptCount(), error.failoverChain()));
+        return Flux.error(new ProviderStreamException(error.httpStatus(), error.errorCode(), error.message(), false));
+    }
+
+    private record RoutedStream(
+            Flow.Publisher<ProviderResponse.StreamChunk> chunks,
+            AtomicReference<StreamAttribution> settled) implements AttributedStream {
+
+        @Override
+        public void subscribe(Flow.Subscriber<? super ProviderResponse.StreamChunk> subscriber) {
+            chunks.subscribe(subscriber);
         }
-        List<ChainMember> order = routeResolver.resolveAttemptOrder(route, random);
-        for (ChainMember member : order) {
-            CircuitBreaker breaker = breakerFor(member);
-            // tryAcquirePermission(), not getState(): the former
-            // evaluates Resilience4j's lazy OPEN -> HALF_OPEN transition
-            // on every call, so a recovered provider is actually
-            // re-probed; a stale getState() check would leave the
-            // breaker stuck OPEN forever once observed open, same
-            // reasoning as in complete() above. The permission is
-            // released immediately: the streaming path does not retry or
-            // fail over mid-stream (once bytes reach the client,
-            // switching providers would duplicate or corrupt output), so
-            // there is no matching onSuccess/onError call site here to
-            // pair with a held permission; this trades precise breaker
-            // accounting on the streaming path for correctness of the
-            // open/half-open check itself.
-            if (!breaker.tryAcquirePermission()) {
-                continue;
+
+        @Override
+        public Optional<StreamAttribution> attribution() {
+            return Optional.ofNullable(settled.get());
+        }
+    }
+
+    /** One request's walk along its chain; members are tried one after another, never concurrently. */
+    private final class StreamWalk {
+        private final ChatCompletionRequest request;
+        private final List<ChainMember> order;
+        private final AtomicReference<StreamAttribution> attribution;
+        private final TimeoutBudget budget = new TimeoutBudget(totalTimeoutBudget);
+        private final List<String> attempted = new ArrayList<>();
+
+        StreamWalk(ChatCompletionRequest request, List<ChainMember> order, AtomicReference<StreamAttribution> attribution) {
+            this.request = request;
+            this.order = order;
+            this.attribution = attribution;
+        }
+
+        Flux<ProviderResponse.StreamChunk> fromMember(int index) {
+            if (index >= order.size() || budget.isExhausted()) {
+                return allMembersFailed();
             }
-            breaker.releasePermission();
+            ChainMember member = order.get(index);
+            CircuitBreaker breaker = breakerFor(member);
             ProviderAdapter adapter = routingSource.adapterFor(member.provider()).orElse(null);
             if (adapter == null) {
-                continue;
+                return fromMember(index + 1);
             }
-            ChatCompletionRequest downstreamRequest = request.withModel(member.model());
-            return adapter.invokeStreaming(downstreamRequest);
+            attempted.add(member.provider());
+            return attempt(index, member, adapter, breaker, 1);
         }
-        return errorPublisher();
+
+        private Flux<ProviderResponse.StreamChunk> attempt(
+                int index, ChainMember member, ProviderAdapter adapter, CircuitBreaker breaker, int attemptNumber) {
+            if (budget.isExhausted()) {
+                return allMembersFailed();
+            }
+            Bulkhead bulkhead = bulkheadRegistry.bulkhead(member.provider());
+            if (!bulkhead.tryAcquirePermission()) {
+                return fromMember(index + 1);
+            }
+            // tryAcquirePermission(), not getState(): it evaluates
+            // Resilience4j's lazy OPEN -> HALF_OPEN transition, so a
+            // recovered provider is re-probed (see complete()).
+            if (!breaker.tryAcquirePermission()) {
+                bulkhead.onComplete();
+                if (breaker.getState() == CircuitBreaker.State.OPEN) {
+                    breakerJustOpened(member);
+                }
+                return fromMember(index + 1);
+            }
+            StreamAttempt streamAttempt = new StreamAttempt(breaker, bulkhead);
+            Flow.Publisher<ProviderResponse.StreamChunk> upstream;
+            try {
+                upstream = adapter.invokeStreaming(request.withModel(member.model()));
+            } catch (RuntimeException e) {
+                streamAttempt.abandon();
+                throw e;
+            }
+            return JdkFlowAdapter.flowPublisherToFlux(upstream)
+                    .doOnNext(chunk -> {
+                        if (streamAttempt.firstChunk()) {
+                            budget.spend(streamAttempt.elapsed());
+                            streamAttempt.succeed();
+                            settle(member.provider(), attemptNumber);
+                        }
+                    })
+                    .doOnComplete(() -> {
+                        if (!streamAttempt.sawChunk()) {
+                            budget.spend(streamAttempt.elapsed());
+                            streamAttempt.succeed();
+                            settle(member.provider(), attemptNumber);
+                        }
+                    })
+                    .doOnTerminate(streamAttempt::releaseBulkhead)
+                    .doOnCancel(streamAttempt::abandon)
+                    .onErrorResume(failure -> !streamAttempt.sawChunk(),
+                            failure -> afterFailureBeforeFirstChunk(failure, index, member, adapter, breaker, attemptNumber, streamAttempt));
+        }
+
+        private Flux<ProviderResponse.StreamChunk> afterFailureBeforeFirstChunk(
+                Throwable failure, int index, ChainMember member, ProviderAdapter adapter, CircuitBreaker breaker,
+                int attemptNumber, StreamAttempt streamAttempt) {
+            budget.spend(streamAttempt.elapsed());
+            if (!(failure instanceof ProviderStreamException providerFailure)) {
+                streamAttempt.fail(failure);
+                settle(null, attemptNumber);
+                return Flux.error(failure);
+            }
+            if (!providerFailure.retryable()) {
+                // Not the provider's fault: counts as a breaker success,
+                // as a terminal ProviderError does in complete().
+                streamAttempt.succeed();
+                settle(null, attemptNumber);
+                return Flux.error(providerFailure);
+            }
+            streamAttempt.fail(providerFailure);
+            if (attemptNumber > maxRetriesPerProvider || budget.isExhausted()) {
+                if (breaker.getState() == CircuitBreaker.State.OPEN) {
+                    breakerJustOpened(member);
+                }
+                return Flux.defer(() -> fromMember(index + 1));
+            }
+            return Mono.delay(Duration.ofMillis(retryBackoff.delayMillis(attemptNumber, random)))
+                    .thenMany(Flux.defer(() -> attempt(index, member, adapter, breaker, attemptNumber + 1)));
+        }
+
+        private Flux<ProviderResponse.StreamChunk> allMembersFailed() {
+            ProviderResponse.ProviderError error = allUnavailable(request.model(), attempted);
+            attribution.set(new StreamAttribution(null, error.attemptCount(), error.failoverChain()));
+            return Flux.error(new ProviderStreamException(error.httpStatus(), error.errorCode(), error.message(), false));
+        }
+
+        private void settle(String servedByProvider, int attemptCount) {
+            attribution.set(new StreamAttribution(servedByProvider, attemptCount, attempted));
+        }
+    }
+
+    /**
+     * The breaker permission and bulkhead slot held by one streaming
+     * attempt. Each is given back exactly once, whichever of first chunk,
+     * completion, failure or cancellation comes first.
+     */
+    private static final class StreamAttempt {
+        private final CircuitBreaker breaker;
+        private final Bulkhead bulkhead;
+        private final long startNanos = System.nanoTime();
+        private final AtomicBoolean chunkSeen = new AtomicBoolean();
+        private final AtomicBoolean breakerSettled = new AtomicBoolean();
+        private final AtomicBoolean bulkheadReleased = new AtomicBoolean();
+
+        StreamAttempt(CircuitBreaker breaker, Bulkhead bulkhead) {
+            this.breaker = breaker;
+            this.bulkhead = bulkhead;
+        }
+
+        boolean firstChunk() {
+            return chunkSeen.compareAndSet(false, true);
+        }
+
+        boolean sawChunk() {
+            return chunkSeen.get();
+        }
+
+        Duration elapsed() {
+            return Duration.ofNanos(System.nanoTime() - startNanos);
+        }
+
+        void succeed() {
+            if (breakerSettled.compareAndSet(false, true)) {
+                breaker.onSuccess(elapsed().toNanos(), TimeUnit.NANOSECONDS);
+            }
+        }
+
+        void fail(Throwable failure) {
+            if (breakerSettled.compareAndSet(false, true)) {
+                breaker.onError(elapsed().toNanos(), TimeUnit.NANOSECONDS, failure);
+            }
+        }
+
+        void abandon() {
+            if (breakerSettled.compareAndSet(false, true)) {
+                breaker.releasePermission();
+            }
+            releaseBulkhead();
+        }
+
+        void releaseBulkhead() {
+            if (bulkheadReleased.compareAndSet(false, true)) {
+                bulkhead.onComplete();
+            }
+        }
     }
 
     private CircuitBreaker breakerFor(ChainMember member) {
@@ -246,22 +435,16 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
         }
     }
 
-    private ProviderResponse unknownRoute(String model) {
+    private ProviderResponse.ProviderError unknownRoute(String model) {
         return new ProviderResponse.ProviderError(
                 "unknown_route", "No route configured for model " + model, 400, false);
     }
 
-    private ProviderResponse allUnavailable(String model, List<String> attempted) {
+    private ProviderResponse.ProviderError allUnavailable(String model, List<String> attempted) {
         return new ProviderResponse.ProviderError(
                 "no_healthy_provider",
                 "All providers unavailable for model " + model + " (attempted: " + attempted + ")",
                 502, false, attempted.size(), attempted);
-    }
-
-    private Flow.Publisher<ProviderResponse.StreamChunk> errorPublisher() {
-        var publisher = new java.util.concurrent.SubmissionPublisher<ProviderResponse.StreamChunk>();
-        publisher.closeExceptionally(new IllegalStateException("No healthy provider available for streaming"));
-        return publisher;
     }
 
     private Duration elapsedSince(long startNanos) {
