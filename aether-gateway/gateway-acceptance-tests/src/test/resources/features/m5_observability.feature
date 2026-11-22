@@ -3,7 +3,7 @@ Feature: Cost and cache-outcome visibility per request
   @m5 @F6.2 @F6.4
   Scenario: A cache hit records its avoided cost
     Given a prior request was made and cached for prompt "Explain photosynthesis"
-    When a client sends "Please explain how photosynthesis works" with cache threshold "0.75"
+    When a client sends "Explain photosynthesis" with no cache threshold header
     Then a request log entry exists for this request
     And that entry's cache outcome is "SEMANTIC_HIT" or "EXACT_HIT"
     And that entry's "saved_usd" value is greater than zero

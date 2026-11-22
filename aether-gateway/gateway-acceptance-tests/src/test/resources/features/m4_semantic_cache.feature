@@ -1,5 +1,12 @@
 Feature: Semantic cache correctness
 
+  X-Aether-Cache-Threshold can only make matching stricter than the
+  route's own cache.threshold, so the scenarios that probe loose
+  thresholds run against a route configured with threshold 0.5.
+
+  Background:
+    Given cache requests target the "mock-lenient-cache" route
+
   @m4 @F4.2 @AC3
   Scenario: A near-duplicate prompt is served from the semantic cache
     Given a prior request was made and cached for prompt "What is the capital of France?"
@@ -9,8 +16,7 @@ Feature: Semantic cache correctness
 
   @m4 @F4.7
   Scenario: A route's own cache threshold applies when no header is sent
-    Given cache requests target the "mock-lenient-cache" route
-    And a prior request was made and cached for prompt "What is the capital of Italy?"
+    Given a prior request was made and cached for prompt "What is the capital of Italy?"
     When a client sends "Can you tell me Italy's capital city?" with no cache threshold header
     Then the response header "X-Aether-Cache" is "SEMANTIC_HIT"
 
@@ -20,6 +26,17 @@ Feature: Semantic cache correctness
     When a client sends "What is 2 + 3?" with cache threshold "0.5"
     Then the response header "X-Aether-Cache" is not "SEMANTIC_HIT"
     And the response header "X-Aether-Cache" is not "EXACT_HIT"
+
+  @m4 @F4.2
+  Scenario Outline: A cache threshold header that would loosen matching, or is not a valid threshold, is rejected
+    When a client sends "What is the capital of Spain?" with cache threshold "<threshold>"
+    Then the request is rejected with status 400 and error "invalid_request"
+
+    Examples:
+      | threshold |
+      | 0.3       |
+      | 1.5       |
+      | loose     |
 
   @m4 @F4.4
   Scenario: Cache entries never cross API key namespaces

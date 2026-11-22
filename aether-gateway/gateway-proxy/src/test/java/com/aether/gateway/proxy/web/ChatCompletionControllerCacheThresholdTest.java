@@ -17,6 +17,8 @@ import com.aether.gateway.core.port.QuotaPort;
 import com.aether.gateway.core.port.RequestLogPort;
 import com.aether.gateway.router.routing.RoutingSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.scheduler.Schedulers;
@@ -26,11 +28,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalDouble;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -119,5 +123,21 @@ class ChatCompletionControllerCacheThresholdTest {
         send(client(), "0.97").expectStatus().isOk();
 
         verify(cachePort).lookup(eq("anonymous"), any(), eq(0.97), eq(false));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0.5", "0.79", "1.5", "abc", "NaN"})
+    void rejectsAHeaderThatIsInvalidOrLooserThanTheRouteBeforeAnyQuotaOrCacheWork(String header) {
+        routeWithCache(new RouteCacheConfig(true, OptionalDouble.of(0.8), Duration.ofHours(1)));
+
+        send(client(), header)
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.title").isEqualTo("invalid_request")
+                .jsonPath("$.status").isEqualTo(400)
+                .jsonPath("$.detail").value(detail -> assertThat((String) detail).contains("X-Aether-Cache-Threshold"));
+
+        verify(ipRateLimitPort, never()).tryConsume(anyString());
+        verify(cachePort, never()).lookup(anyString(), any(), any(), anyBoolean());
     }
 }

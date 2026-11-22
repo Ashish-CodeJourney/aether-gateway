@@ -5,6 +5,8 @@ import com.aether.gateway.acceptance.support.GatewayClient;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.net.http.HttpResponse;
 import java.util.HashMap;
@@ -24,6 +26,7 @@ public class SemanticCacheSteps {
 
     private final GatewayClient client = new GatewayClient();
     private final Map<String, String> apiKeysByAlias = new HashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private HttpResponse<String> lastResponse;
     private String route = "mock";
@@ -43,8 +46,12 @@ public class SemanticCacheSteps {
 
     @Given("a prior request was made and cached for prompt {string}")
     public void aPriorRequestWasMadeAndCachedForPrompt(String prompt) throws Exception {
+        // The strictest threshold, so the seed is stored as its own entry
+        // rather than served from some looser match left by an earlier
+        // scenario in the shared anonymous namespace.
         HttpResponse<String> response = client.postJson(
-                AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions", requestBody(prompt), null, null);
+                AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions",
+                requestBody(prompt), null, Map.of("X-Aether-Cache-Threshold", "1.0"));
         assertThat(response.statusCode()).as("seeding the cache requires the seed request itself to succeed").isEqualTo(200);
     }
 
@@ -82,6 +89,14 @@ public class SemanticCacheSteps {
             AcceptanceEnvironment.seedApiKey(rawKey, null, null, null);
             return rawKey;
         });
+    }
+
+    @Then("the request is rejected with status {int} and error {string}")
+    public void theRequestIsRejectedWithStatusAndError(int status, String errorTitle) {
+        assertThat(lastResponse.statusCode()).as("body: %s", lastResponse.body()).isEqualTo(status);
+        JsonNode body = objectMapper.readTree(lastResponse.body());
+        assertThat(body.get("title").asText()).isEqualTo(errorTitle);
+        assertThat(body.get("detail").asText()).contains("X-Aether-Cache-Threshold");
     }
 
     @Then("the response header {string} is {string}")
