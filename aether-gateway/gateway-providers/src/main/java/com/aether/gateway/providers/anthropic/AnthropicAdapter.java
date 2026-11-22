@@ -5,6 +5,8 @@ import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ToolCall;
+import com.aether.gateway.core.domain.ToolCallDelta;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.anthropic.wire.WireAnthropicContentBlock;
@@ -27,6 +29,10 @@ import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -49,7 +55,12 @@ import java.util.stream.Collectors;
  *   <li>the stream is a sequence of named event types
  *       ({@code message_start}, {@code content_block_delta},
  *       {@code message_stop}, ...) rather than one repeated chunk shape
- *       ended by a {@code [DONE]} sentinel.</li>
+ *       ended by a {@code [DONE]} sentinel;</li>
+ *   <li>tool calling uses {@code tools} with {@code input_schema},
+ *       {@code tool_use} and {@code tool_result} content blocks, and
+ *       streams a call's input as {@code input_json_delta} fragments -
+ *       translated to and from OpenAI's shape here and in
+ *       {@link AnthropicRequestTranslation}.</li>
  * </ul>
  *
  * <p><strong>Not verified against the live API.</strong> Every test
@@ -147,6 +158,8 @@ public class AnthropicAdapter implements ProviderAdapter {
     public Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request) {
         String responseId = providerName + "-" + System.nanoTime();
         AtomicInteger index = new AtomicInteger(0);
+        Map<Integer, Integer> toolOrdinalByBlockIndex = new ConcurrentHashMap<>();
+        AtomicReference<String> stopReason = new AtomicReference<>();
 
         Flux<ProviderResponse.StreamChunk> flux = webClient.post()
                 .uri("/messages")
@@ -156,18 +169,51 @@ public class AnthropicAdapter implements ProviderAdapter {
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
                 })
                 .map(sse -> streamMapper.readValue(sse.data(), WireAnthropicStreamEvent.class))
-                // message_start, content_block_start, ping and
-                // content_block_stop carry no text and do not terminate
-                // the stream; forwarding them would pad it with empty
-                // chunks every client then has to filter out.
-                .filter(event -> "content_block_delta".equals(event.type()) || "message_stop".equals(event.type()))
-                .map(event -> {
-                    boolean last = "message_stop".equals(event.type());
-                    String text = event.delta() != null && event.delta().text() != null ? event.delta().text() : "";
-                    return new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), text, last);
+                // message_start, ping, content_block_stop, message_delta
+                // and a text block's content_block_start carry nothing to
+                // relay and do not terminate the stream; forwarding them
+                // would pad it with empty chunks every client then has to
+                // filter out. message_delta's stop reason is held until
+                // message_stop, which is the chunk that reports it.
+                .mapNotNull(event -> switch (event.type()) {
+                    case "content_block_start" -> toolUseStart(event, toolOrdinalByBlockIndex)
+                            .map(delta -> new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), "", false, List.of(delta), null))
+                            .orElse(null);
+                    case "content_block_delta" -> contentDelta(event, toolOrdinalByBlockIndex, responseId, index.getAndIncrement());
+                    case "message_delta" -> {
+                        if (event.delta() != null && event.delta().stopReason() != null) {
+                            stopReason.set(event.delta().stopReason());
+                        }
+                        yield null;
+                    }
+                    case "message_stop" -> new ProviderResponse.StreamChunk(
+                            responseId, index.getAndIncrement(), "", true, List.of(), mapStopReason(stopReason.get()));
+                    default -> null;
                 });
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux);
+    }
+
+    /** Tool calls are numbered among tool_use blocks only, as OpenAI clients expect, not by Anthropic's block index. */
+    private Optional<ToolCallDelta> toolUseStart(WireAnthropicStreamEvent event, Map<Integer, Integer> toolOrdinalByBlockIndex) {
+        WireAnthropicContentBlock block = event.contentBlock();
+        if (block == null || !"tool_use".equals(block.type())) {
+            return Optional.empty();
+        }
+        int ordinal = toolOrdinalByBlockIndex.size();
+        toolOrdinalByBlockIndex.put(event.index(), ordinal);
+        return Optional.of(new ToolCallDelta(ordinal, block.id(), block.name(), ""));
+    }
+
+    private ProviderResponse.StreamChunk contentDelta(
+            WireAnthropicStreamEvent event, Map<Integer, Integer> toolOrdinalByBlockIndex, String responseId, int chunkIndex) {
+        var delta = event.delta();
+        if (delta != null && delta.partialJson() != null && toolOrdinalByBlockIndex.containsKey(event.index())) {
+            var fragment = new ToolCallDelta(toolOrdinalByBlockIndex.get(event.index()), null, null, delta.partialJson());
+            return new ProviderResponse.StreamChunk(responseId, chunkIndex, "", false, List.of(fragment), null);
+        }
+        String text = delta != null && delta.text() != null ? delta.text() : "";
+        return new ProviderResponse.StreamChunk(responseId, chunkIndex, text, false);
     }
 
     /**
@@ -182,10 +228,7 @@ public class AnthropicAdapter implements ProviderAdapter {
     }
 
     private WireAnthropicRequest toWireRequest(ChatCompletionRequest request, boolean stream) {
-        List<WireAnthropicMessage> messages = request.messages().stream()
-                .filter(m -> !"system".equals(m.role()))
-                .map(m -> new WireAnthropicMessage(m.role(), m.content()))
-                .toList();
+        List<WireAnthropicMessage> messages = AnthropicRequestTranslation.messages(request.messages());
 
         String system = request.messages().stream()
                 .filter(m -> "system".equals(m.role()))
@@ -197,7 +240,9 @@ public class AnthropicAdapter implements ProviderAdapter {
                 messages,
                 defaultMaxTokens,
                 system.isBlank() ? null : system,
-                stream);
+                stream,
+                AnthropicRequestTranslation.tools(request.tools()),
+                AnthropicRequestTranslation.toolChoice(request.toolChoice()));
     }
 
     private ChatCompletionResponse toDomainResponse(WireAnthropicResponse wire) {
@@ -206,8 +251,13 @@ public class AnthropicAdapter implements ProviderAdapter {
                 .map(WireAnthropicContentBlock::text)
                 .collect(Collectors.joining());
 
+        List<ToolCall> toolCalls = wire.content() == null ? List.of() : wire.content().stream()
+                .filter(block -> "tool_use".equals(block.type()))
+                .map(block -> new ToolCall(block.id(), "function", block.name(), block.input() == null ? "{}" : block.input().toString()))
+                .toList();
+
         var choice = new ChatCompletionChoice(
-                0, new ChatMessage("assistant", text), mapStopReason(wire.stopReason()));
+                0, new ChatMessage("assistant", text, toolCalls, null), mapStopReason(wire.stopReason()));
         Usage usage = Usage.of(
                 wire.usage() != null && wire.usage().inputTokens() != null ? wire.usage().inputTokens() : 0,
                 wire.usage() != null && wire.usage().outputTokens() != null ? wire.usage().outputTokens() : 0);
