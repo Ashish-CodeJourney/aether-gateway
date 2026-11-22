@@ -1,4 +1,8 @@
 ---
+import RequestFlow from '../components/landing/RequestFlow.astro';
+import QuickstartTerminal from '../components/landing/QuickstartTerminal.astro';
+import {PROVIDERS, iconStyle} from '../components/landing/providers';
+
 // `trailingSlash: 'never'` (astro.config.mjs) also strips BASE_URL's own
 // trailing slash, so every link below explicitly joins with `/`.
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -17,8 +21,6 @@ const LINKS = {
   usage: `${base}/docs/usage/`,
   adr: `${base}/docs/adr/hexagonal-module-layout/`,
   architecture: `${base}/docs/design/architecture-diagram/`,
-  cacheCorrectness: `${base}/docs/design/cache-correctness/`,
-  k8s: `${base}/docs/design/kubernetes-deployment/`,
   github: REPO,
   benchmarks: `${BLOB}/BENCHMARKS.md`,
   license: `${BLOB}/LICENSE`,
@@ -27,66 +29,18 @@ const LINKS = {
   conduct: `${BLOB}/CODE_OF_CONDUCT.md`,
 };
 
-const CODE_TABS: {id: string; label: string; html: string}[] = [
-  {
-    id: 'python',
-    label: 'Python',
-    html: `<span class="t-k">from</span> openai <span class="t-k">import</span> OpenAI
-
-client = <span class="t-f">OpenAI</span>(
-<mark>    base_url=<span class="t-s">"http://localhost:8080/v1"</span>,</mark>
-<mark>    api_key=<span class="t-s">"your-aether-key"</span>,</mark>
-)
-
-reply = client.chat.completions.<span class="t-f">create</span>(
-    model=<span class="t-s">"mock"</span>,
-    messages=[{<span class="t-s">"role"</span>: <span class="t-s">"user"</span>, <span class="t-s">"content"</span>: <span class="t-s">"What is 2+2?"</span>}],
-)`,
-  },
-  {
-    id: 'typescript',
-    label: 'TypeScript',
-    html: `<span class="t-k">import</span> OpenAI <span class="t-k">from</span> <span class="t-s">"openai"</span>;
-
-<span class="t-k">const</span> client = <span class="t-k">new</span> <span class="t-f">OpenAI</span>({
-<mark>  baseURL: <span class="t-s">"http://localhost:8080/v1"</span>,</mark>
-<mark>  apiKey: process.env.AETHER_API_KEY,</mark>
-});
-
-<span class="t-k">const</span> reply = <span class="t-k">await</span> client.chat.completions.<span class="t-f">create</span>({
-  model: <span class="t-s">"mock"</span>,
-  messages: [{ role: <span class="t-s">"user"</span>, content: <span class="t-s">"What is 2+2?"</span> }],
-});`,
-  },
-  {
-    id: 'curl',
-    label: 'curl',
-    html: `<span class="t-f">curl</span> http://localhost:8080/v1/chat/completions \\
-<mark>  -H <span class="t-s">"Authorization: Bearer $AETHER_API_KEY"</span> \\</mark>
-  -H <span class="t-s">"Content-Type: application/json"</span> \\
-  -d <span class="t-s">'{"model":"mock","messages":[
-        {"role":"user","content":"What is 2+2?"}]}'</span>`,
-  },
+const MARQUEE: {label: string; icon?: string; badge?: string; tag?: string}[] = [
+  ...PROVIDERS.map((p) => ('icon' in p ? {label: p.name, icon: p.icon} : {label: p.name, badge: p.badge})),
+  {label: 'vLLM', icon: 'vllm', tag: 'OpenAI-compatible'},
+  {label: 'Hugging Face TGI', icon: 'huggingface', tag: 'OpenAI-compatible'},
+  {label: 'Any OpenAI-compatible API', badge: '{ }'},
 ];
 
-// Icons are Simple Icons (CC0) copied into public/providers. Groq and OpenAI
-// have no icon there, so they get a text badge rather than a drawn logo.
-type Provider = {name: string; short: string} & ({icon: string} | {badge: string});
-const PROVIDERS: Provider[] = [
-  {name: 'Ollama', short: 'Ollama', icon: 'ollama'},
-  {name: 'Groq', short: 'Groq', badge: 'Gq'},
-  {name: 'Google Gemini', short: 'Gemini', icon: 'googlegemini'},
-  {name: 'Anthropic', short: 'Anthropic', icon: 'anthropic'},
-  {name: 'OpenAI', short: 'OpenAI', badge: 'OA'},
-  {name: 'Any OpenAI-compatible API', short: 'OpenAI-compatible', badge: '{ }'},
-];
-const iconStyle = (icon: string) => `--icon: url(${base}/providers/${icon}.svg)`;
-
-const STATS: {value: string; unit: string; label: string; detail: string}[] = [
-  {value: '8.9', unit: 'ms', label: 'Cache-hit latency', detail: 'p95, end to end'},
-  {value: '67.92', unit: 'ms', label: 'Failover to a healthy provider', detail: 'p99 across 100 injected outages'},
-  {value: '500', unit: '/500', label: 'Streams survived a rolling update', detail: 'Kubernetes, run twice, zero broken'},
-  {value: '7.23', unit: 'ms', label: 'Prompt embedding for semantic cache', detail: 'mean, all-MiniLM-L6-v2'},
+const STATS: {value: number; decimals: number; unit: string; label: string; detail: string}[] = [
+  {value: 8.9, decimals: 1, unit: 'ms', label: 'Cache-hit latency', detail: 'p95, end to end, confirmed EXACT_HIT'},
+  {value: 67.92, decimals: 2, unit: 'ms', label: 'Failover to a healthy provider', detail: 'p99 across 100 injected outages'},
+  {value: 500, decimals: 0, unit: '/500', label: 'Streams survived a rolling update', detail: 'Kubernetes, run twice, zero broken'},
+  {value: 7.23, decimals: 2, unit: 'ms', label: 'Prompt embedding for semantic cache', detail: 'mean, all-MiniLM-L6-v2'},
 ];
 
 const FEATURES: {title: string; icon: string; body: string}[] = [
@@ -103,7 +57,7 @@ const FEATURES: {title: string; icon: string; body: string}[] = [
   {
     title: 'Quotas per API key',
     icon: 'gauge',
-    body: 'Rate limits, concurrency caps and monthly token budgets are reserved atomically in Redis before a request reaches a provider.',
+    body: 'Rate limits, concurrency caps and monthly token budgets, reserved atomically in Redis before the call and reconciled to the real count after.',
   },
   {
     title: 'Cost on every response',
@@ -113,7 +67,12 @@ const FEATURES: {title: string; icon: string; body: string}[] = [
   {
     title: 'Streaming that stops when users leave',
     icon: 'stream',
-    body: 'SSE responses relay token by token, and a client disconnect cancels the upstream call, so you stop paying for tokens nobody will read.',
+    body: 'SSE relayed token by token. A client disconnect cancels the upstream call, so you stop paying for tokens nobody will read.',
+  },
+  {
+    title: 'Tool calling and embeddings',
+    icon: 'tool',
+    body: 'OpenAI-format <code>tools</code> and <code>tool_calls</code> pass through, streaming included, and <code>/v1/embeddings</code> gets the same auth, failover and cost headers.',
   },
   {
     title: 'Observability and console',
@@ -121,14 +80,9 @@ const FEATURES: {title: string; icon: string; body: string}[] = [
     body: 'Prometheus metrics and a ready-made Grafana dashboard, plus an operator console for API keys, versioned prompts, cache stats and the request log.',
   },
   {
-    title: 'Tool calling and embeddings',
-    icon: 'console',
-    body: 'OpenAI-format <code>tools</code> and <code>tool_calls</code> pass through, streaming included, and <code>/v1/embeddings</code> gets the same failover and cost headers.',
-  },
-  {
     title: 'Kubernetes-ready',
     icon: 'k8s',
-    body: 'Plain manifests with graceful SSE drain, a PodDisruptionBudget and a NetworkPolicy, proven against a real zero-downtime rolling update.',
+    body: 'Plain manifests with graceful SSE drain, a PodDisruptionBudget and a NetworkPolicy, proven against real zero-downtime rolling updates.',
   },
 ];
 
@@ -140,8 +94,8 @@ const ICONS: Record<string, string> = {
   gauge: '<path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15 16 9"/><circle cx="12" cy="15" r="1.3"/>',
   ledger: '<rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/>',
   stream: '<path d="M3 8h10M3 12h14M3 16h7"/><path d="m17 14 4 4m0-4-4 4"/>',
+  tool: '<path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L4 17v3h3l5.2-5.2a4 4 0 0 0 5.3-5.3L15 12l-3-3Z"/>',
   chart: '<path d="M4 4v16h16"/><path d="m7 15 4-5 3 3 5-6"/>',
-  console: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9h18M7 13h4M7 16h7"/>',
   k8s: '<path d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8Z"/><path d="M12 3.5v17M4.5 8l7.5 4.5M19.5 8 12 12.5M4.5 16l7.5-4.5M19.5 16 12 12.5"/>',
 };
 
@@ -156,10 +110,7 @@ const FLOW: {title: string; body: string; infra: string}[] = [
 
 const COMPARE_COLUMNS = ['Aether Gateway', 'LiteLLM', 'Portkey Gateway', 'Build your own'];
 const COMPARE_ROWS: {label: string; cells: string[]}[] = [
-  {
-    label: 'Runtime',
-    cells: ['Java 25 · Spring Boot 4.1 (JVM)', 'Python', 'TypeScript', 'Your stack'],
-  },
+  {label: 'Runtime', cells: ['Java 25 · Spring Boot 4.1 (JVM)', 'Python', 'TypeScript', 'Your stack']},
   {
     label: 'License',
     cells: ['MIT, no paid edition', 'MIT core, enterprise features licensed separately', 'MIT gateway, managed platform available', 'Yours'],
@@ -177,7 +128,7 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-js">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -187,7 +138,8 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
     <link rel="icon" href={`${base}/favicon.ico`} sizes="32x32" />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
     <link rel="apple-touch-icon" href={`${base}/apple-touch-icon.png`} />
-    <meta name="theme-color" content="#0B1B34" />
+    <meta name="theme-color" content="#FFFFFF" />
+    <meta name="color-scheme" content="light" />
     <meta property="og:title" content={TITLE} />
     <meta property="og:description" content={DESCRIPTION} />
     <meta property="og:type" content="website" />
@@ -200,15 +152,12 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
     <meta name="twitter:description" content={DESCRIPTION} />
     <meta name="twitter:image" content={`${SITE}/img/social-card.jpg`} />
     <script is:inline>
-      try {
-        const theme = localStorage.getItem('starlight-theme');
-        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-      } catch {}
+      document.documentElement.classList.replace('no-js', 'js');
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
   </head>
@@ -218,13 +167,13 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
     <header class="nav">
       <div class="container nav-inner">
         <a class="brand" href={`${base}/`}>
-          <img src={`${base}/logo-dark.svg`} alt="Aether Gateway home" width="177" height="30" />
+          <img src={`${base}/logo.svg`} alt="Aether Gateway home" width="177" height="30" />
         </a>
         <nav aria-label="Primary">
           <ul class="nav-links">
             <li class="nav-hide-sm"><a href={LINKS.docs}>Docs</a></li>
-            <li class="nav-hide-sm"><a href="#benchmarks">Benchmarks</a></li>
-            <li class="nav-hide-sm"><a href="#compare">Compare</a></li>
+            <li class="nav-hide-md"><a href="#benchmarks">Benchmarks</a></li>
+            <li class="nav-hide-md"><a href="#compare">Compare</a></li>
             <li>
               <a class="nav-icon" href={LINKS.github} aria-label="Aether Gateway on GitHub">
                 <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" fill="currentColor"
@@ -242,112 +191,99 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
 
     <main id="main">
       <section class="hero" aria-labelledby="hero-title">
-        <div class="container hero-grid">
-          <div class="hero-copy">
-            <a class="pill" href={LINKS.license}>
-              <span class="pill-dot" aria-hidden="true"></span>
-              Free &amp; open source <span aria-hidden="true">·</span> MIT licensed
+        <div class="hero-bg" aria-hidden="true">
+          <span class="blob blob-1"></span>
+          <span class="blob blob-2"></span>
+          <span class="blob blob-3"></span>
+          <span class="hero-grid-lines"></span>
+        </div>
+        <div class="container hero-inner">
+          <a class="pill reveal" href={LINKS.license}>
+            <span class="pill-tag">MIT</span>
+            Free &amp; open source <span aria-hidden="true">·</span> self-hosted
+            <span aria-hidden="true" class="pill-arrow">&rarr;</span>
+          </a>
+          <h1 id="hero-title" class="hero-title reveal">
+            One endpoint for <span class="grad-text">every LLM provider.</span>
+          </h1>
+          <p class="hero-lede reveal">
+            Aether is a self-hosted gateway that speaks the OpenAI API. Point the SDK you already use at it and get
+            automatic failover, caching, per-key quotas and the cost of every call &ndash; without touching your
+            application code.
+          </p>
+          <div class="cta-row reveal">
+            <a class="button button-primary button-lg" href={LINKS.start}>
+              Get started <span aria-hidden="true">&rarr;</span>
             </a>
-            <h1 id="hero-title" class="hero-title">
-              One endpoint for <span class="hero-accent">every LLM provider.</span>
-            </h1>
-            <p class="hero-lede">
-              Aether is a self-hosted gateway that speaks the OpenAI API. Point the SDK you already use at it and get
-              automatic failover, exact and semantic caching, per-key quotas and per-request cost tracking &ndash; with
-              no changes to your application code.
-            </p>
-            <div class="cta-row">
-              <a class="button button-primary" href={LINKS.start}>
-                Get started <span aria-hidden="true">&rarr;</span>
-              </a>
-              <a class="button button-ghost" href={LINKS.github}>
-                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"
-                  ><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9Z"></path></svg
-                >
-                Star on GitHub
-              </a>
-            </div>
-            <div class="quickstart">
-              <span class="quickstart-label">Quickstart</span>
-              <code><span class="prompt" aria-hidden="true">$</span> docker compose up -d</code>
-            </div>
-            <p class="hero-meta">Self-hosted · Java 25 / Spring Boot 4.1 · Docker Compose &amp; Kubernetes</p>
+            <a class="button button-ghost button-lg" href={LINKS.github}>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"
+                ><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9Z"></path></svg
+              >
+              Star on GitHub
+            </a>
           </div>
-
-          <div class="code-window" aria-label="Switching an OpenAI client to Aether Gateway">
-            {
-              CODE_TABS.map((tab, i) => (
-                <input class="tab-input" type="radio" name="code-lang" id={`tab-${tab.id}`} checked={i === 0} />
-              ))
-            }
-            <div class="code-bar">
-              <span class="code-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <div class="tab-labels">
-                {CODE_TABS.map((tab) => <label for={`tab-${tab.id}`} data-tab={tab.id}>{tab.label}</label>)}
-              </div>
-            </div>
-            <div class="code-panels">
-              {
-                CODE_TABS.map((tab) => (
-                  <pre class="code-panel" data-tab={tab.id}><code set:html={tab.html} /></pre>
-                ))
-              }
-            </div>
-            <div class="code-response" aria-label="Response headers">
-              <div class="code-response-title">Response headers</div>
-              <pre><code><span class="t-dim">HTTP/1.1 200 OK</span>
-X-Aether-Provider: <span class="t-ok">mock-primary</span>
-X-Aether-Cache: <span class="t-ok">MISS</span>
-X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
-            </div>
-          </div>
+          <p class="hero-meta reveal">
+            <code class="hero-cmd"><span aria-hidden="true">$ </span>docker compose up -d</code>
+            <span>Java 25 · Spring Boot 4.1 · Docker Compose &amp; Kubernetes</span>
+          </p>
+        </div>
+        <div class="container hero-flow reveal" id="flow">
+          <RequestFlow />
         </div>
       </section>
 
       <section class="providers" aria-labelledby="providers-title">
-        <div class="container providers-inner">
-          <h2 id="providers-title" class="providers-title">Routes to</h2>
-          <ul class="provider-list">
-            {
-              PROVIDERS.map((p) => (
-                <li class="provider">
-                  {'icon' in p ? (
-                    <span class="p-icon" role="img" aria-label={`${p.name} logo`} style={iconStyle(p.icon)} />
-                  ) : (
-                    <span class="p-badge" aria-hidden="true">{p.badge}</span>
-                  )}
-                  {p.name}
-                </li>
-              ))
-            }
-          </ul>
-          <p class="provider-eg">
-            &hellip;including self-hosted model servers such as{' '}
-            <span class="p-example"><span class="p-icon p-icon-sm" role="img" aria-label="vLLM logo" style={iconStyle('vllm')} />vLLM</span>{' '}
-            and{' '}
-            <span class="p-example"><span class="p-icon p-icon-sm" role="img" aria-label="Hugging Face logo" style={iconStyle('huggingface')} />Hugging Face TGI</span>.
-          </p>
-          <p class="trademark-note">Product names and logos are trademarks of their respective owners.</p>
+        <div class="container">
+          <div class="providers-head">
+            <h2 id="providers-title" class="kicker">One OpenAI-compatible API in front of</h2>
+            <button type="button" class="chip-btn chip-btn-quiet marquee-toggle" data-marquee-toggle aria-pressed="false">
+              Pause logos
+            </button>
+          </div>
+        </div>
+        <div class="marquee" data-marquee>
+          {
+            [0, 1].map((copy) => (
+              <ul class="marquee-track" aria-hidden={copy === 1 ? 'true' : undefined}>
+                {MARQUEE.map((m) => (
+                  <li class="marquee-item">
+                    {m.icon ? (
+                      <span class="p-icon" role={copy === 0 ? 'img' : undefined} aria-label={copy === 0 ? `${m.label} logo` : undefined} style={iconStyle(m.icon)} />
+                    ) : (
+                      <span class="p-badge" aria-hidden="true">{m.badge}</span>
+                    )}
+                    <span>{m.label}</span>
+                    {m.tag && <span class="marquee-tag">{m.tag}</span>}
+                  </li>
+                ))}
+              </ul>
+            ))
+          }
+        </div>
+        <div class="container">
+          <p class="trademark-note">Product names and logos are trademarks of their respective owners. Aether is not affiliated with them.</p>
         </div>
       </section>
 
       <section id="benchmarks" class="section stats" aria-labelledby="stats-title">
         <div class="container">
-          <div class="section-head">
+          <div class="section-head section-head-center reveal">
             <p class="eyebrow">Benchmarks</p>
             <h2 id="stats-title" class="section-title">Measured, not estimated.</h2>
             <p class="section-lede">
-              Every number comes from a committed run against the real stack. The harness, raw CSVs and methodology are
-              in the repository &ndash; reproduce them with <code>make bench</code>.
+              Every number comes from a committed run against the real stack. The harness, raw CSVs and methodology
+              are in the repository &ndash; reproduce them with <code>make bench</code>.
             </p>
           </div>
           <dl class="stat-grid">
             {
-              STATS.map((s) => (
-                <div class="stat">
+              STATS.map((s, i) => (
+                <div class="stat reveal" style={`--d:${i * 80}ms`}>
                   <dt class="stat-label">{s.label}</dt>
                   <dd class="stat-value">
-                    {s.value}
+                    <span class="stat-num" data-count={s.value} data-decimals={s.decimals}>
+                      {s.value.toFixed(s.decimals)}
+                    </span>
                     <span class="stat-unit">{s.unit}</span>
                   </dd>
                   <dd class="stat-detail">{s.detail}</dd>
@@ -355,39 +291,46 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
               ))
             }
           </dl>
-          <p class="section-link">
+          <p class="section-link reveal">
             <a href={LINKS.benchmarks}>Read the full benchmark report <span aria-hidden="true">&rarr;</span></a>
           </p>
         </div>
       </section>
 
-      <section class="section section-alt" aria-labelledby="features-title">
+      <section id="quickstart" class="section" aria-labelledby="qs-title">
         <div class="container">
-          <div class="section-head">
+          <div class="section-head reveal">
+            <p class="eyebrow">Drop-in</p>
+            <h2 id="qs-title" class="section-title">Change two lines. Keep your SDK.</h2>
+            <p class="section-lede">
+              Aether speaks the OpenAI API &ndash; chat completions, streaming, tool calling and embeddings &ndash; so
+              the client you already use keeps working. Swap the base URL and key, and every response starts telling
+              you what it cost.
+            </p>
+          </div>
+          <div class="reveal">
+            <QuickstartTerminal />
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-tint" aria-labelledby="features-title">
+        <div class="container">
+          <div class="section-head section-head-center reveal">
             <p class="eyebrow">Features</p>
             <h2 id="features-title" class="section-title">Everything around the model call.</h2>
             <p class="section-lede">
-              Calling a model is one line. Keeping it fast, affordable and up when a provider is not is the hard part &ndash;
-              that is what Aether does.
+              Calling a model is one line. Keeping it fast, affordable and up when a provider is not is the hard part
+              &ndash; that is what Aether does.
             </p>
           </div>
           <ul class="feature-grid">
             {
-              FEATURES.map((f) => (
-                <li class="feature">
-                  <svg
-                    class="feature-icon"
-                    viewBox="0 0 24 24"
-                    width="22"
-                    height="22"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                    set:html={ICONS[f.icon]}
-                  />
+              FEATURES.map((f, i) => (
+                <li class="feature reveal" style={`--d:${(i % 4) * 70}ms`}>
+                  <span class="feature-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" set:html={ICONS[f.icon]} />
+                  </span>
                   <h3 class="feature-title">{f.title}</h3>
                   <p class="feature-body" set:html={f.body} />
                 </li>
@@ -399,64 +342,36 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
 
       <section class="section" aria-labelledby="flow-title">
         <div class="container">
-          <div class="section-head">
+          <div class="section-head reveal">
             <p class="eyebrow">How it works</p>
             <h2 id="flow-title" class="section-title">One request, six steps, one response.</h2>
             <p class="section-lede">
-              Your application sends a normal OpenAI request. Aether runs it through the same pipeline every time and
-              tells you what happened in the response headers.
+              Every request runs through the same pipeline, and the response headers tell you what happened. On a
+              cache hit, routing and streaming are skipped entirely &ndash; <code>X-Aether-Cache: EXACT_HIT</code>,
+              <code>X-Aether-Cost-USD: 0</code>.
             </p>
           </div>
-
-          <div class="flow">
-            <div class="flow-end flow-client">
-              <span class="flow-end-label">Your app</span>
-              <span class="flow-end-sub">any OpenAI SDK</span>
-            </div>
-            <div class="flow-pipeline">
-              <div class="flow-bypass" aria-hidden="true"><span>cache hit: skip the provider, cost $0</span></div>
-              <ol class="flow-steps">
-                {
-                  FLOW.map((step, i) => (
-                    <li class="flow-step">
-                      <span class="flow-num" aria-hidden="true">{i + 1}</span>
-                      <h3 class="flow-title">{step.title}</h3>
-                      <p class="flow-body">{step.body}</p>
-                      <span class="flow-infra">{step.infra}</span>
-                    </li>
-                  ))
-                }
-              </ol>
-            </div>
-            <div class="flow-end flow-providers">
-              <span class="flow-end-label">Providers</span>
-              <ul class="flow-provider-list">
-                {
-                  PROVIDERS.map((p) => (
-                    <li>
-                      {'icon' in p ? (
-                        <span class="p-icon p-icon-sm" role="img" aria-label={`${p.name} logo`} style={iconStyle(p.icon)} />
-                      ) : (
-                        <span class="p-badge p-badge-sm" aria-hidden="true">{p.badge}</span>
-                      )}
-                      {p.short}
-                    </li>
-                  ))
-                }
-              </ul>
-            </div>
-          </div>
-          <p class="flow-note">
-            On a cache hit, steps 4 and 5 are skipped entirely &ndash; the response comes back with
-            <code>X-Aether-Cache: EXACT_HIT</code> or <code>SEMANTIC_HIT</code> and <code>X-Aether-Cost-USD: 0</code>.{' '}
-            <a href={LINKS.architecture}>See the full architecture</a>.
+          <ol class="pipeline">
+            {
+              FLOW.map((step, i) => (
+                <li class="pipe-step reveal" style={`--d:${i * 70}ms`}>
+                  <span class="pipe-num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+                  <h3 class="pipe-title">{step.title}</h3>
+                  <p class="pipe-body">{step.body}</p>
+                  <span class="pipe-infra">{step.infra}</span>
+                </li>
+              ))
+            }
+          </ol>
+          <p class="section-link reveal">
+            <a href={LINKS.architecture}>See the full architecture <span aria-hidden="true">&rarr;</span></a>
           </p>
         </div>
       </section>
 
-      <section id="compare" class="section section-alt" aria-labelledby="compare-title">
+      <section id="compare" class="section section-tint" aria-labelledby="compare-title">
         <div class="container">
-          <div class="section-head">
+          <div class="section-head reveal">
             <p class="eyebrow">Compare</p>
             <h2 id="compare-title" class="section-title">Where Aether fits.</h2>
             <p class="section-lede">
@@ -464,7 +379,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
               right one.
             </p>
           </div>
-          <div class="table-wrap" role="region" aria-labelledby="compare-title" tabindex="0">
+          <div class="table-wrap reveal" role="region" aria-labelledby="compare-title" tabindex="0">
             <table class="compare">
               <thead>
                 <tr>
@@ -487,7 +402,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
             </table>
           </div>
           <div class="fit-grid">
-            <div class="fit fit-yes">
+            <div class="fit fit-yes reveal">
               <h3>Aether is a good fit if you&hellip;</h3>
               <ul>
                 <li>run on the JVM, or want a gateway your Java team can read and extend</li>
@@ -496,7 +411,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
                 <li>need a plain MIT license with no paid edition</li>
               </ul>
             </div>
-            <div class="fit fit-no">
+            <div class="fit fit-no reveal" style="--d:80ms">
               <h3>Look elsewhere if you&hellip;</h3>
               <ul>
                 <li>need the widest provider catalogue today &ndash; LiteLLM and Portkey support many more</li>
@@ -512,25 +427,28 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         </div>
       </section>
 
-      <section class="final-cta" aria-labelledby="cta-title">
-        <div class="container final-cta-inner">
-          <div>
-            <h2 id="cta-title" class="final-cta-title">Your first request is a minute away.</h2>
-            <p class="final-cta-lede">
-              One command brings up the gateway, Postgres + pgvector, Redis, two mock providers for failover demos,
-              Prometheus and Grafana &ndash; seeded and ready.
-            </p>
-            <div class="cta-row">
-              <a class="button button-primary" href={LINKS.start}>
-                Get started <span aria-hidden="true">&rarr;</span>
-              </a>
-              <a class="button button-ghost" href={LINKS.github}>Star on GitHub</a>
+      <section class="final" aria-labelledby="cta-title">
+        <div class="container">
+          <div class="final-card reveal">
+            <div class="final-bg" aria-hidden="true"><span class="blob blob-1"></span><span class="blob blob-2"></span></div>
+            <div class="final-copy">
+              <h2 id="cta-title" class="final-title">Your first request is a minute away.</h2>
+              <p class="final-lede">
+                One command brings up the gateway, Postgres + pgvector, Redis, two mock providers for failover demos,
+                Prometheus and Grafana &ndash; seeded and ready.
+              </p>
+              <div class="cta-row">
+                <a class="button button-primary button-lg" href={LINKS.start}>
+                  Get started <span aria-hidden="true">&rarr;</span>
+                </a>
+                <a class="button button-ghost button-lg" href={LINKS.github}>Star on GitHub</a>
+              </div>
             </div>
-          </div>
-          <pre class="terminal" aria-label="Quickstart commands"><code><span class="t-dim">$</span> git clone {REPO}.git
+            <pre class="final-term" aria-label="Quickstart commands"><code><span class="t-dim">$</span> git clone {REPO}.git
 <span class="t-dim">$</span> cd aether-gateway
 <span class="t-dim">$</span> docker compose up -d
 <span class="t-dim"># gateway on :8080 · Grafana on :3000</span></code></pre>
+          </div>
         </div>
       </section>
     </main>
@@ -539,7 +457,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       <div class="container footer-grid">
         <div class="footer-brand">
           <a class="brand" href={`${base}/`}>
-            <img src={`${base}/logo-dark.svg`} alt="Aether Gateway home" width="165" height="28" />
+            <img src={`${base}/logo.svg`} alt="Aether Gateway home" width="165" height="28" />
           </a>
           <p>A free, open-source, self-hosted LLM gateway. Released under the MIT License.</p>
         </div>
@@ -571,52 +489,92 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       </div>
     </footer>
 
+    <script>
+      import {countTo, reducedMotion, watchVisibility} from '../scripts/motion';
+
+      const revealables = document.querySelectorAll<HTMLElement>('.reveal');
+      if (reducedMotion() || !('IntersectionObserver' in window)) {
+        revealables.forEach((el) => el.classList.add('is-in'));
+      } else {
+        const io = new IntersectionObserver(
+          (entries) =>
+            entries.forEach((e) => {
+              if (!e.isIntersecting) return;
+              e.target.classList.add('is-in');
+              io.unobserve(e.target);
+            }),
+          {rootMargin: '0px 0px -8% 0px', threshold: 0.08},
+        );
+        revealables.forEach((el) => io.observe(el));
+      }
+
+      document.querySelectorAll<HTMLElement>('[data-count]').forEach((el) => {
+        const to = Number(el.dataset.count);
+        const decimals = Number(el.dataset.decimals ?? '0');
+        let done = false;
+        watchVisibility(el, (visible) => {
+          if (!visible || done) return;
+          done = true;
+          el.dataset.current = '0';
+          countTo(el, to, decimals, 1400);
+        }, 0.6);
+      });
+
+      const marquee = document.querySelector<HTMLElement>('[data-marquee]');
+      const toggle = document.querySelector<HTMLButtonElement>('[data-marquee-toggle]');
+      if (marquee && toggle) {
+        const set = (paused: boolean) => {
+          marquee.toggleAttribute('data-paused', paused);
+          toggle.setAttribute('aria-pressed', String(paused));
+          toggle.textContent = paused ? 'Play logos' : 'Pause logos';
+        };
+        toggle.addEventListener('click', () => set(!marquee.hasAttribute('data-paused')));
+      }
+    </script>
+
     <style is:global>
       :root {
-        color-scheme: light dark;
+        color-scheme: light;
 
         --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
         --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-        /* Brand: navy + cyan. Navy bands look the same in both schemes. */
-        --navy: #0b1b34;
-        --navy-2: #12284a;
-        --navy-deep: #07111f;
-        --navy-line: #24426e;
-        --navy-text: #ffffff;
-        --navy-muted: #b4c3da;
+        /* Light sky palette. Text pairs are >= 4.5:1 on white and on --tint-2. */
+        --bg: #ffffff;
+        --tint: #f7fbff;
+        --tint-2: #eef7ff;
+        --sky: #cff5fb;
+        --periwinkle: #dce8ff;
         --cyan: #22d3ee;
         --cyan-500: #06b6d4;
+        --teal: #0e7490;
+        --teal-800: #155e75;
+        --blue: #2563eb;
+        --ink: #0f172a;
+        --ink-2: #334155;
+        --muted: #475569;
+        --faint: #64748b;
+        --border: #e3ebf4;
+        --border-strong: #cfdbe8;
+        --ok: #047857;
+        --ok-soft: #e7f8f0;
+        --danger: #b91c1c;
+        --danger-soft: #fef1f1;
+        --warn: #a16207;
+        --warn-soft: #fef8e7;
 
-        /* Light / dark surfaces. Every text pair here is >= 4.5:1. */
-        --bg: light-dark(#ffffff, #07111f);
-        --bg-alt: light-dark(#f4f7fb, #0a1830);
-        --surface: light-dark(#ffffff, #0f2240);
-        --text: light-dark(#0b1b34, #e8eef7);
-        --muted: light-dark(#475569, #a3b3cb);
-        --border: light-dark(#e2e8f0, #1a3257);
-        --border-strong: light-dark(#cbd5e1, #2a4670);
-        --accent: light-dark(#0e7490, #22d3ee);
-        --accent-soft: light-dark(#e0f7fb, #0c3045);
-        --on-accent: #0b1b34;
-        --ok: light-dark(#047857, #34d399);
-        --focus: light-dark(#0e7490, #22d3ee);
-        --shadow: 0 1px 2px rgba(11, 27, 52, 0.06), 0 12px 32px -18px rgba(11, 27, 52, 0.35);
+        --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 2px 6px -2px rgba(15, 23, 42, 0.06);
+        --shadow-md: 0 1px 2px rgba(15, 23, 42, 0.05), 0 14px 32px -14px rgba(14, 116, 144, 0.28);
+        --shadow-lg: 0 2px 4px rgba(15, 23, 42, 0.04), 0 30px 70px -28px rgba(37, 99, 235, 0.3), 0 18px 40px -24px rgba(6, 182, 212, 0.3);
 
-        --code-bg: #071326;
-        --code-bar: #0d1e3a;
+        --code-bg: #0b1220;
+        --code-bar: #111a2c;
         --code-text: #e2e8f0;
         --code-dim: #94a3b8;
-        --code-border: #1e3a5f;
+        --code-border: #1e293b;
 
-        --radius: 12px;
-      }
-      :root[data-theme='light'] {
-        color-scheme: light;
-      }
-      :root[data-theme='dark'] {
-        color-scheme: dark;
+        --radius: 16px;
       }
 
       *,
@@ -626,27 +584,18 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
       html {
         scroll-behavior: smooth;
+        scroll-padding-top: 5rem;
         -webkit-text-size-adjust: 100%;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        html {
-          scroll-behavior: auto;
-        }
-        *,
-        *::before,
-        *::after {
-          animation: none !important;
-          transition: none !important;
-        }
       }
       body {
         margin: 0;
         background: var(--bg);
-        color: var(--text);
+        color: var(--ink);
         font-family: var(--font-body);
         font-size: 1rem;
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
       }
       h1,
       h2,
@@ -659,7 +608,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         margin: 0;
       }
       a {
-        color: var(--accent);
+        color: var(--teal);
         text-underline-offset: 3px;
       }
       code,
@@ -668,21 +617,27 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
       :not(pre) > code {
         font-size: 0.86em;
-        padding: 0.1em 0.35em;
-        border-radius: 5px;
-        background: var(--accent-soft);
-        color: var(--text);
+        padding: 0.1em 0.38em;
+        border-radius: 6px;
+        background: var(--tint-2);
+        border: 1px solid #dbe9f7;
+        color: var(--ink);
       }
       :focus-visible {
-        outline: 2px solid var(--focus);
+        outline: 2.5px solid var(--blue);
         outline-offset: 3px;
-        border-radius: 4px;
+        border-radius: 6px;
       }
       .container {
         width: 100%;
-        max-width: 1180px;
+        max-width: 1200px;
         margin: 0 auto;
         padding: 0 1.5rem;
+      }
+      @media (max-width: 480px) {
+        .container {
+          padding: 0 1rem;
+        }
       }
       .skip-link {
         position: absolute;
@@ -690,12 +645,42 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         top: -3rem;
         z-index: 100;
         padding: 0.5rem 1rem;
-        background: var(--cyan-500);
-        color: var(--on-accent);
+        background: var(--ink);
+        color: #ffffff;
         border-radius: 8px;
       }
       .skip-link:focus {
         top: 1rem;
+      }
+
+      /* ---- motion ---- */
+      .js .reveal {
+        opacity: 0;
+        transform: translateY(18px);
+        transition:
+          opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms),
+          transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms);
+      }
+      .js .reveal.is-in {
+        opacity: 1;
+        transform: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+          transition-delay: 0ms !important;
+        }
+        .js .reveal {
+          opacity: 1;
+          transform: none;
+        }
       }
 
       /* ---- buttons ---- */
@@ -703,41 +688,109 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        padding: 0.75rem 1.25rem;
-        border-radius: 8px;
+        padding: 0.7rem 1.2rem;
+        border-radius: 10px;
         font-weight: 600;
-        font-size: 0.97rem;
+        font-size: 0.96rem;
         line-height: 1.2;
         text-decoration: none;
         border: 1px solid transparent;
-        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        transition:
+          transform 0.18s ease,
+          box-shadow 0.18s ease,
+          background-color 0.18s ease,
+          border-color 0.18s ease,
+          color 0.18s ease;
       }
       .button-primary {
-        background: var(--cyan-500);
-        border-color: var(--cyan-500);
-        color: var(--on-accent);
+        background: linear-gradient(120deg, #0e7490 0%, #1d6fd8 60%, #2563eb 100%);
+        color: #ffffff;
+        box-shadow: 0 8px 22px -10px rgba(37, 99, 235, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18);
       }
       .button-primary:hover {
-        background: var(--cyan);
-        border-color: var(--cyan);
+        transform: translateY(-1px);
+        box-shadow: 0 12px 28px -10px rgba(37, 99, 235, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.18);
       }
       .button-ghost {
-        background: var(--surface);
+        background: rgba(255, 255, 255, 0.85);
         border-color: var(--border-strong);
-        color: var(--text);
+        color: var(--ink);
+        box-shadow: var(--shadow-sm);
       }
       .button-ghost:hover {
-        border-color: var(--accent);
-        color: var(--accent);
+        border-color: var(--cyan-500);
+        color: var(--teal);
+        transform: translateY(-1px);
       }
       .button-sm {
         padding: 0.5rem 0.9rem;
-        font-size: 0.9rem;
+        font-size: 0.88rem;
+        border-radius: 9px;
+      }
+      .button-lg {
+        padding: 0.85rem 1.4rem;
+        font-size: 1rem;
       }
       .cta-row {
         display: flex;
         flex-wrap: wrap;
         gap: 0.75rem;
+      }
+      .chip-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.42rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        background: #ffffff;
+        color: var(--ink-2);
+        font: 600 0.82rem/1.2 var(--font-body);
+        cursor: pointer;
+        transition:
+          border-color 0.15s ease,
+          background-color 0.15s ease,
+          color 0.15s ease,
+          transform 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+      .chip-btn:hover:not(:disabled) {
+        border-color: var(--cyan-500);
+        color: var(--teal);
+      }
+      .chip-btn:active:not(:disabled) {
+        transform: scale(0.97);
+      }
+      .chip-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .chip-btn-primary {
+        border-color: transparent;
+        background: linear-gradient(120deg, #0e7490, #2563eb);
+        color: #ffffff;
+        box-shadow: 0 6px 16px -8px rgba(37, 99, 235, 0.7);
+      }
+      .chip-btn-primary:hover:not(:disabled) {
+        color: #ffffff;
+        border-color: transparent;
+        box-shadow: 0 8px 20px -8px rgba(37, 99, 235, 0.8);
+      }
+      .chip-btn-quiet {
+        background: transparent;
+      }
+      .sim-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.18rem 0.55rem;
+        border-radius: 999px;
+        background: var(--tint-2);
+        border: 1px dashed #b9d3ea;
+        color: var(--teal-800);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
       }
 
       /* ---- nav ---- */
@@ -745,15 +798,17 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         position: sticky;
         top: 0;
         z-index: 50;
-        background: var(--navy);
-        border-bottom: 1px solid var(--navy-line);
-        --focus: var(--cyan);
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: saturate(1.5) blur(12px);
+        -webkit-backdrop-filter: saturate(1.5) blur(12px);
+        border-bottom: 1px solid rgba(227, 235, 244, 0.9);
       }
       .nav-inner {
         display: flex;
         align-items: center;
         justify-content: space-between;
         height: 64px;
+        gap: 1rem;
       }
       .brand {
         display: inline-flex;
@@ -768,22 +823,27 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .nav-links {
         display: flex;
         align-items: center;
-        gap: 1.4rem;
+        gap: 1.5rem;
         list-style: none;
         margin: 0;
         padding: 0;
       }
       .nav-links a:not(.button) {
-        color: var(--navy-muted);
+        color: var(--ink-2);
         text-decoration: none;
         font-weight: 500;
-        font-size: 0.94rem;
+        font-size: 0.93rem;
       }
       .nav-links a:not(.button):hover {
-        color: var(--navy-text);
+        color: var(--teal);
       }
       .nav-icon {
         display: inline-flex;
+      }
+      @media (max-width: 900px) {
+        .nav-hide-md {
+          display: none;
+        }
       }
       @media (max-width: 640px) {
         .nav-hide-sm {
@@ -798,283 +858,187 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
 
       /* ---- hero ---- */
-      .hero,
-      .final-cta {
-        --text: var(--navy-text);
-        --muted: var(--navy-muted);
-        --surface: var(--navy-2);
-        --border: var(--navy-line);
-        --border-strong: #36557f;
-        --accent: var(--cyan);
-        --focus: var(--cyan);
-        background: var(--navy);
-        color: var(--navy-text);
-      }
       .hero {
         position: relative;
         padding: 5rem 0 4.5rem;
-        border-bottom: 1px solid var(--navy-line);
+        overflow: hidden;
+        isolation: isolate;
+        background: linear-gradient(180deg, #f5fbff 0%, #ffffff 70%);
       }
-      .hero-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
-        gap: 3.5rem;
+      .hero-bg,
+      .final-bg {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .blob {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(60px);
+        opacity: 0.9;
+        will-change: transform;
+      }
+      .hero .blob-1 {
+        width: 46rem;
+        height: 30rem;
+        left: -12rem;
+        top: -10rem;
+        background: radial-gradient(closest-side, #cff5fb, rgba(207, 245, 251, 0));
+        animation: drift-a 22s ease-in-out infinite alternate;
+      }
+      .hero .blob-2 {
+        width: 44rem;
+        height: 32rem;
+        right: -14rem;
+        top: -6rem;
+        background: radial-gradient(closest-side, #dce8ff, rgba(220, 232, 255, 0));
+        animation: drift-b 26s ease-in-out infinite alternate;
+      }
+      .hero .blob-3 {
+        width: 36rem;
+        height: 26rem;
+        left: 30%;
+        top: 22rem;
+        background: radial-gradient(closest-side, rgba(165, 243, 252, 0.55), rgba(165, 243, 252, 0));
+        animation: drift-c 30s ease-in-out infinite alternate;
+      }
+      @keyframes drift-a {
+        to {
+          transform: translate(8rem, 4rem) scale(1.1);
+        }
+      }
+      @keyframes drift-b {
+        to {
+          transform: translate(-7rem, 5rem) scale(0.92);
+        }
+      }
+      @keyframes drift-c {
+        to {
+          transform: translate(-9rem, -3rem) scale(1.15);
+        }
+      }
+      .hero-grid-lines {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(to right, rgba(14, 116, 144, 0.06) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(14, 116, 144, 0.06) 1px, transparent 1px);
+        background-size: 44px 44px;
+        mask-image: radial-gradient(ellipse 70% 55% at 50% 20%, #000 30%, transparent 75%);
+        -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 20%, #000 30%, transparent 75%);
+      }
+      .hero-inner {
+        display: flex;
+        flex-direction: column;
         align-items: center;
-      }
-      @media (max-width: 980px) {
-        .hero {
-          padding: 3.5rem 0 3.5rem;
-        }
-        .hero-grid {
-          grid-template-columns: minmax(0, 1fr);
-          gap: 2.75rem;
-        }
+        text-align: center;
       }
       .pill {
         display: inline-flex;
         align-items: center;
         gap: 0.55rem;
-        padding: 0.4rem 0.85rem;
+        padding: 0.3rem 0.85rem 0.3rem 0.3rem;
         border-radius: 999px;
-        border: 1px solid var(--border);
-        background: var(--surface);
-        color: var(--text);
-        font-size: 0.88rem;
-        font-weight: 600;
+        border: 1px solid var(--border-strong);
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--ink-2);
+        font-size: 0.86rem;
+        font-weight: 500;
         text-decoration: none;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.6rem;
+        box-shadow: var(--shadow-sm);
+        transition:
+          border-color 0.15s ease,
+          transform 0.15s ease;
       }
       .pill:hover {
-        border-color: var(--accent);
+        border-color: var(--cyan-500);
+        transform: translateY(-1px);
       }
-      .pill-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--cyan);
-        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.22);
+      .pill-tag {
+        padding: 0.12rem 0.5rem;
+        border-radius: 999px;
+        background: linear-gradient(120deg, #cff5fb, #dce8ff);
+        color: var(--teal-800);
+        font-weight: 700;
+        font-size: 0.74rem;
+        letter-spacing: 0.04em;
+      }
+      .pill-arrow {
+        color: var(--teal);
       }
       .hero-title {
-        font-size: clamp(2.5rem, 5.6vw, 4.1rem);
+        font-size: clamp(2.45rem, 6.4vw, 4.6rem);
         font-weight: 700;
-        letter-spacing: -0.04em;
-        line-height: 1.04;
+        letter-spacing: -0.045em;
+        line-height: 1.02;
         margin-bottom: 1.4rem;
+        max-width: 15ch;
         text-wrap: balance;
+        color: var(--ink);
       }
-      .hero-accent {
-        color: var(--cyan);
+      .grad-text {
+        background: linear-gradient(100deg, #0e7490 0%, #0891b2 35%, #2563eb 75%, #0e7490 100%);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        animation: grad-shift 9s ease-in-out infinite alternate;
+      }
+      @keyframes grad-shift {
+        to {
+          background-position: 100% center;
+        }
       }
       .hero-lede {
-        font-size: clamp(1.05rem, 1.6vw, 1.2rem);
+        font-size: clamp(1.05rem, 1.7vw, 1.22rem);
         color: var(--muted);
-        max-width: 36rem;
+        max-width: 40rem;
         margin-bottom: 2rem;
         text-wrap: pretty;
       }
-      .quickstart {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.75rem;
-        margin-top: 1.75rem;
-        padding: 0.35rem 0.35rem 0.35rem 0.85rem;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        max-width: 100%;
-        flex-wrap: wrap;
-      }
-      .quickstart-label {
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-      }
-      .quickstart code {
-        padding: 0.4rem 0.75rem;
-        border-radius: 7px;
-        background: var(--code-bg);
-        color: var(--code-text);
-        font-size: 0.88rem;
-        white-space: nowrap;
-        user-select: all;
-      }
-      .quickstart .prompt {
-        color: var(--code-dim);
-        user-select: none;
-        margin-right: 0.35rem;
+      .hero-inner .cta-row {
+        justify-content: center;
       }
       .hero-meta {
-        margin-top: 1.25rem;
-        font-size: 0.86rem;
-        color: var(--muted);
-      }
-
-      /* ---- code window ---- */
-      .code-window {
-        display: grid;
-        border-radius: 12px;
-        border: 1px solid var(--code-border);
-        background: var(--code-bg);
-        color: var(--code-text);
-        overflow: hidden;
-        min-width: 0;
-      }
-      .tab-input {
-        position: absolute;
-        opacity: 0;
-        pointer-events: none;
-        width: 1px;
-        height: 1px;
-      }
-      .code-bar {
         display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
         align-items: center;
-        gap: 1rem;
-        padding: 0 1rem;
-        background: var(--code-bar);
-        border-bottom: 1px solid var(--code-border);
+        gap: 0.6rem 1rem;
+        margin-top: 1.6rem;
+        font-size: 0.85rem;
+        color: var(--faint);
       }
-      .code-dots {
-        display: inline-flex;
-        gap: 6px;
+      .hero-meta .hero-cmd {
+        padding: 0.35rem 0.7rem;
+        border-radius: 8px;
+        background: #ffffff;
+        border: 1px solid var(--border-strong);
+        color: var(--ink);
+        font-size: 0.84rem;
+        user-select: all;
       }
-      .code-dots i {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: #2a4670;
-      }
-      .tab-labels {
-        display: flex;
-        gap: 0.25rem;
-      }
-      .tab-labels label {
-        cursor: pointer;
-        padding: 0.8rem 0.75rem 0.7rem;
-        font-size: 0.83rem;
-        font-weight: 500;
-        color: var(--code-dim);
-        border-bottom: 2px solid transparent;
-        margin-bottom: -1px;
+      .hero-cmd span {
+        color: var(--faint);
         user-select: none;
       }
-      .tab-labels label:hover {
-        color: var(--code-text);
+      .hero-flow {
+        margin-top: 3.5rem;
       }
-      .code-panels {
-        display: grid;
-      }
-      .code-panel {
-        grid-area: 1 / 1;
-        visibility: hidden;
-        margin: 0;
-        padding: 1.25rem 1.25rem 1.1rem;
-        overflow-x: auto;
-        font-size: 0.84rem;
-        line-height: 1.7;
-      }
-      .code-panel mark {
-        display: inline-block;
-        min-width: 100%;
-        background: rgba(34, 211, 238, 0.1);
-        color: inherit;
-        box-shadow: inset 2px 0 0 var(--cyan);
-        margin: 0 -1.25rem;
-        padding: 0 1.25rem;
-        width: calc(100% + 2.5rem);
-      }
-      #tab-python:checked ~ .code-panels [data-tab='python'],
-      #tab-typescript:checked ~ .code-panels [data-tab='typescript'],
-      #tab-curl:checked ~ .code-panels [data-tab='curl'] {
-        visibility: visible;
-      }
-      #tab-python:checked ~ .code-bar label[data-tab='python'],
-      #tab-typescript:checked ~ .code-bar label[data-tab='typescript'],
-      #tab-curl:checked ~ .code-bar label[data-tab='curl'] {
-        color: #ffffff;
-        border-bottom-color: var(--cyan);
-      }
-      #tab-python:focus-visible ~ .code-bar label[data-tab='python'],
-      #tab-typescript:focus-visible ~ .code-bar label[data-tab='typescript'],
-      #tab-curl:focus-visible ~ .code-bar label[data-tab='curl'] {
-        outline: 2px solid var(--cyan);
-        outline-offset: -4px;
-        border-radius: 6px;
-      }
-      .t-k {
-        color: #22d3ee;
-      }
-      .t-s {
-        color: #fde68a;
-      }
-      .t-f {
-        color: #93c5fd;
-      }
-      .t-dim {
-        color: var(--code-dim);
-      }
-      .t-ok {
-        color: #4ade80;
-      }
-      .code-response {
-        border-top: 1px solid var(--code-border);
-        background: #050e1d;
-        padding: 0.9rem 1.25rem 1rem;
-      }
-      .code-response-title {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--code-dim);
-        margin-bottom: 0.35rem;
-      }
-      .code-response pre {
-        margin: 0;
-        font-size: 0.82rem;
-        line-height: 1.65;
-        overflow-x: auto;
+      @media (max-width: 640px) {
+        .hero {
+          padding: 3rem 0 3rem;
+        }
+        .hero-flow {
+          margin-top: 2.5rem;
+          padding: 0 0.6rem;
+        }
       }
 
-      /* ---- providers ---- */
-      .providers {
-        border-bottom: 1px solid var(--border);
-        background: var(--surface);
-      }
-      .providers-inner {
-        display: flex;
-        align-items: center;
-        gap: 1rem 2rem;
-        padding-block: 1.75rem 1.5rem;
-        flex-wrap: wrap;
-      }
-      .providers-title {
-        font-family: var(--font-body);
-        font-size: 0.78rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--muted);
-      }
-      .provider-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem 2rem;
-        list-style: none;
-        margin: 0;
-        padding: 0;
-      }
-      .provider {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.6rem;
-        font-family: var(--font-display);
-        font-weight: 600;
-        font-size: 1.02rem;
-        color: var(--text);
-      }
-      /* Provider marks are monochrome masks painted in currentColor, so the
-         row reads as one uniform set in both colour schemes. */
+      /* ---- provider marks ---- */
       .p-icon {
         flex: none;
         display: inline-block;
@@ -1110,59 +1074,148 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         border-width: 1.25px;
         font-size: 0.47rem;
       }
-      .provider-eg,
-      .trademark-note {
-        flex-basis: 100%;
+
+      /* ---- providers marquee ---- */
+      .providers {
+        padding: 2.5rem 0 1.75rem;
+        border-block: 1px solid var(--border);
+        background: #ffffff;
+      }
+      .providers-head {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        margin-bottom: 1.4rem;
+        flex-wrap: wrap;
+      }
+      .kicker {
+        font-family: var(--font-body);
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
         color: var(--muted);
       }
-      .provider-eg {
-        font-size: 0.9rem;
-        margin-top: -0.25rem;
+      .marquee-toggle {
+        font-size: 0.74rem;
+        padding: 0.25rem 0.6rem;
       }
-      .p-example {
+      .marquee {
+        display: flex;
+        overflow: hidden;
+        mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+        -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+      }
+      .marquee-track {
+        flex: none;
+        display: flex;
+        gap: 1rem;
+        padding: 0.25rem 0.5rem;
+        margin: 0;
+        list-style: none;
+        animation: marquee 38s linear infinite;
+      }
+      .marquee:hover .marquee-track,
+      .marquee:focus-within .marquee-track,
+      .marquee[data-paused] .marquee-track {
+        animation-play-state: paused;
+      }
+      @keyframes marquee {
+        to {
+          transform: translateX(-100%);
+        }
+      }
+      .marquee-item {
         display: inline-flex;
         align-items: center;
-        gap: 0.35rem;
-        margin-left: 0.2rem;
-        color: var(--text);
-        font-weight: 500;
+        gap: 0.6rem;
+        padding: 0.7rem 1.1rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, #ffffff, var(--tint));
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: 1rem;
+        color: var(--ink-2);
         white-space: nowrap;
+        box-shadow: var(--shadow-sm);
+      }
+      .marquee-tag {
+        font-family: var(--font-mono);
+        font-size: 0.66rem;
+        font-weight: 500;
+        color: var(--teal);
+        padding: 0.1rem 0.4rem;
+        border-radius: 6px;
+        background: var(--tint-2);
       }
       .trademark-note {
-        font-size: 0.78rem;
+        margin-top: 1.2rem;
+        text-align: center;
+        font-size: 0.76rem;
+        color: var(--faint);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .marquee {
+          mask-image: none;
+          -webkit-mask-image: none;
+          justify-content: center;
+        }
+        .marquee-track {
+          flex-wrap: wrap;
+          justify-content: center;
+          flex: 1;
+        }
+        .marquee-track[aria-hidden='true'],
+        .marquee-toggle {
+          display: none;
+        }
       }
 
       /* ---- sections ---- */
       .section {
-        padding: 5.5rem 0;
+        padding: 6rem 0;
+        position: relative;
       }
-      .section-alt {
-        background: var(--bg-alt);
+      .section-tint {
+        background:
+          radial-gradient(50rem 24rem at 10% 0%, rgba(207, 245, 251, 0.45), transparent 70%),
+          radial-gradient(50rem 24rem at 90% 100%, rgba(220, 232, 255, 0.5), transparent 70%),
+          var(--tint);
         border-block: 1px solid var(--border);
       }
       @media (max-width: 640px) {
         .section {
-          padding: 4rem 0;
+          padding: 4.25rem 0;
         }
       }
       .section-head {
-        max-width: 44rem;
-        margin-bottom: 2.75rem;
+        max-width: 46rem;
+        margin-bottom: 3rem;
+      }
+      .section-head-center {
+        margin-inline: auto;
+        text-align: center;
       }
       .eyebrow {
+        display: inline-block;
         font-family: var(--font-mono);
-        font-size: 0.78rem;
+        font-size: 0.76rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: var(--accent);
-        margin-bottom: 0.75rem;
+        letter-spacing: 0.14em;
+        color: var(--teal);
+        margin-bottom: 0.85rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(207, 245, 251, 0.6);
       }
       .section-title {
-        font-size: clamp(1.85rem, 3.6vw, 2.6rem);
+        font-size: clamp(1.9rem, 4vw, 2.85rem);
         font-weight: 700;
-        letter-spacing: -0.03em;
-        margin-bottom: 0.9rem;
+        letter-spacing: -0.035em;
+        margin-bottom: 1rem;
         text-wrap: balance;
       }
       .section-lede {
@@ -1173,6 +1226,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .section-link {
         margin-top: 2rem;
         font-weight: 600;
+        text-align: center;
       }
       .section-link a {
         text-decoration: none;
@@ -1182,50 +1236,68 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
 
       /* ---- stats ---- */
-      .stats {
-        padding-top: 5rem;
-      }
       .stat-grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
         margin: 0;
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        background: var(--surface);
-        overflow: hidden;
       }
       .stat {
+        position: relative;
         display: flex;
         flex-direction: column;
-        padding: 1.75rem 1.5rem;
-        border-left: 1px solid var(--border);
+        padding: 1.75rem 1.5rem 1.6rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, #ffffff, var(--tint));
+        box-shadow: var(--shadow-sm);
+        overflow: hidden;
+        transition:
+          transform 0.25s ease,
+          box-shadow 0.25s ease,
+          opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms);
       }
-      .stat:first-child {
-        border-left: 0;
+      .stat::before {
+        content: '';
+        position: absolute;
+        inset: 0 0 auto;
+        height: 3px;
+        background: linear-gradient(90deg, #22d3ee, #2563eb);
+      }
+      .stat:hover {
+        box-shadow: var(--shadow-md);
       }
       .stat-label {
         order: 2;
         font-weight: 600;
-        font-size: 0.95rem;
-        color: var(--text);
-        margin-top: 0.6rem;
+        font-size: 0.96rem;
+        color: var(--ink);
+        margin-top: 0.75rem;
       }
       .stat-value {
         order: 1;
         margin: 0;
+        display: flex;
+        align-items: baseline;
         font-family: var(--font-display);
-        font-size: clamp(2.3rem, 4vw, 3rem);
+        font-size: clamp(2.4rem, 4.2vw, 3.2rem);
         font-weight: 700;
-        letter-spacing: -0.04em;
+        letter-spacing: -0.045em;
         line-height: 1;
-        color: var(--accent);
+        color: var(--ink);
         font-variant-numeric: tabular-nums;
       }
+      .stat-num {
+        background: linear-gradient(100deg, #0e7490, #2563eb);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
       .stat-unit {
-        font-size: 0.5em;
+        font-size: 0.45em;
         font-weight: 600;
         letter-spacing: -0.01em;
-        margin-left: 0.15em;
+        margin-left: 0.2em;
         color: var(--muted);
       }
       .stat-detail {
@@ -1234,26 +1306,14 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         font-size: 0.86rem;
         color: var(--muted);
       }
-      @media (max-width: 900px) {
+      @media (max-width: 960px) {
         .stat-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
-        .stat:nth-child(3) {
-          border-left: 0;
-        }
-        .stat:nth-child(n + 3) {
-          border-top: 1px solid var(--border);
-        }
       }
-      @media (max-width: 520px) {
+      @media (max-width: 480px) {
         .stat-grid {
           grid-template-columns: minmax(0, 1fr);
-        }
-        .stat {
-          border-left: 0;
-        }
-        .stat:nth-child(n + 2) {
-          border-top: 1px solid var(--border);
         }
       }
 
@@ -1277,23 +1337,40 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         }
       }
       .feature {
-        padding: 1.5rem;
+        position: relative;
+        padding: 1.6rem 1.5rem;
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        background: var(--surface);
-        transition: border-color 0.15s ease;
+        background: #ffffff;
+        box-shadow: var(--shadow-sm);
       }
-      .feature:hover {
-        border-color: var(--border-strong);
+      .js .feature.reveal,
+      .feature {
+        transition:
+          transform 0.25s ease,
+          box-shadow 0.25s ease,
+          border-color 0.25s ease,
+          opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms);
+      }
+      .feature:hover,
+      .js .feature.reveal.is-in:hover {
+        transform: translateY(-4px);
+        border-color: #a5e9f5;
+        box-shadow: var(--shadow-md);
       }
       .feature-icon {
-        display: block;
-        box-sizing: content-box;
-        padding: 0.55rem;
-        border-radius: 10px;
-        background: var(--accent-soft);
-        color: var(--accent);
+        display: inline-grid;
+        place-items: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #cff5fb, #dce8ff);
+        color: var(--teal-800);
         margin-bottom: 1.1rem;
+        transition: transform 0.25s ease;
+      }
+      .feature:hover .feature-icon {
+        transform: rotate(-6deg) scale(1.06);
       }
       .feature-title {
         font-size: 1.06rem;
@@ -1311,201 +1388,94 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
 
       /* ---- how it works ---- */
-      .flow {
-        display: grid;
-        gap: 1rem;
-      }
-      .flow-end {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        justify-content: center;
-        gap: 0.25rem 0.75rem;
-        padding: 0.9rem 1.25rem;
-        border-radius: var(--radius);
-        border: 1px solid var(--border-strong);
-        background: var(--surface);
-        text-align: center;
-      }
-      .flow-end-label {
-        font-family: var(--font-display);
-        font-weight: 700;
-      }
-      .flow-end-sub {
-        font-size: 0.9rem;
-        color: var(--muted);
-      }
-      .flow-provider-list {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 0.35rem 1.1rem;
+      .pipeline {
         list-style: none;
         margin: 0;
         padding: 0;
-        font-size: 0.9rem;
-        color: var(--muted);
-      }
-      .flow-provider-list li {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-      }
-      .flow-providers {
-        align-items: center;
-      }
-      .flow-client {
-        position: relative;
-      }
-      .flow-pipeline {
-        position: relative;
         display: grid;
         grid-template-columns: repeat(6, minmax(0, 1fr));
-        padding: 1.25rem;
-        border-radius: 16px;
-        background: var(--surface);
-        border: 1.5px solid var(--cyan-500);
-        column-gap: 0.75rem;
-      }
-      .flow-pipeline::before {
-        content: 'Aether Gateway';
-        position: absolute;
-        top: -0.75rem;
-        left: 1.25rem;
-        padding: 0 0.5rem;
-        background: var(--bg);
-        font-family: var(--font-mono);
-        font-size: 0.74rem;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--accent);
-      }
-      .flow-bypass {
-        grid-row: 1;
-        grid-column: 3 / 7;
-        margin: 0.5rem 8.33% 0.6rem;
-        height: 2.1rem;
-        border: 1.5px dashed var(--ok);
-        border-bottom: 0;
-        border-radius: 12px 12px 0 0;
+        gap: 0.9rem;
+        counter-reset: step;
         position: relative;
       }
-      .flow-bypass span {
+      .pipeline::before {
+        content: '';
         position: absolute;
-        left: 50%;
-        top: -0.8rem;
-        transform: translateX(-50%);
-        white-space: nowrap;
-        padding: 0.1rem 0.6rem;
-        border-radius: 999px;
-        background: var(--surface);
-        border: 1px solid var(--ok);
-        color: var(--ok);
-        font-size: 0.76rem;
-        font-weight: 600;
+        left: 2%;
+        right: 2%;
+        top: 1.55rem;
+        height: 2px;
+        background: linear-gradient(90deg, #cff5fb, #22d3ee, #2563eb, #dce8ff);
+        opacity: 0.7;
       }
-      .flow-steps {
-        grid-row: 2;
-        grid-column: 1 / -1;
-        display: grid;
-        grid-template-columns: subgrid;
-        list-style: none;
-        margin: 0;
-        padding: 0;
-      }
-      .flow-step {
+      .pipe-step {
         position: relative;
         display: flex;
         flex-direction: column;
-        padding: 1rem 0.9rem;
-        border-radius: 10px;
-        border: 1px solid var(--border);
-        background: var(--bg-alt);
+        padding: 0 0.15rem;
       }
-      .flow-step:not(:last-child)::after {
-        content: '';
-        position: absolute;
-        top: 1.6rem;
-        right: calc(-0.75rem - 1px);
-        width: 0.75rem;
-        height: 2px;
-        background: var(--border-strong);
-      }
-      .flow-num {
+      .pipe-num {
         display: inline-grid;
         place-items: center;
-        width: 1.6rem;
-        height: 1.6rem;
+        width: 3.1rem;
+        height: 3.1rem;
         border-radius: 50%;
-        background: var(--navy);
-        color: #ffffff;
+        background: #ffffff;
+        border: 2px solid #a5e9f5;
+        color: var(--teal);
         font-family: var(--font-mono);
-        font-size: 0.78rem;
+        font-size: 0.86rem;
         font-weight: 600;
-        margin-bottom: 0.7rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 0 0 6px #ffffff;
       }
-      :root[data-theme='dark'] .flow-num {
-        background: var(--cyan-500);
-        color: var(--on-accent);
+      .pipe-step:nth-child(3) .pipe-num {
+        border-color: #34d399;
+        color: var(--ok);
       }
-      @media (prefers-color-scheme: dark) {
-        :root:not([data-theme='light']) .flow-num {
-          background: var(--cyan-500);
-          color: var(--on-accent);
-        }
-      }
-      .flow-step:nth-child(3) .flow-num {
-        background: var(--cyan-500);
-        color: var(--on-accent);
-      }
-      .flow-title {
-        font-size: 0.98rem;
+      .pipe-title {
+        font-size: 1rem;
         font-weight: 600;
         margin-bottom: 0.35rem;
       }
-      .flow-body {
-        font-size: 0.85rem;
+      .pipe-body {
+        font-size: 0.88rem;
         color: var(--muted);
         line-height: 1.5;
         flex: 1;
       }
-      .flow-infra {
+      .pipe-infra {
         align-self: flex-start;
         margin-top: 0.8rem;
         padding: 0.12rem 0.5rem;
         border-radius: 6px;
-        border: 1px solid var(--border);
+        background: var(--tint-2);
         font-family: var(--font-mono);
         font-size: 0.72rem;
-        color: var(--muted);
-      }
-      .flow-note {
-        margin-top: 1.5rem;
-        color: var(--muted);
-        font-size: 0.95rem;
-        max-width: 50rem;
+        color: var(--teal-800);
       }
       @media (max-width: 980px) {
-        .flow-pipeline {
-          grid-template-columns: minmax(0, 1fr);
-          padding: 1.5rem 1rem 1rem;
+        .pipeline {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          row-gap: 2rem;
         }
-        .flow-bypass {
-          display: none;
-        }
-        .flow-steps {
-          grid-row: auto;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 0.75rem;
-        }
-        .flow-step::after {
+        .pipeline::before {
           display: none;
         }
       }
-      @media (max-width: 520px) {
-        .flow-steps {
+      @media (max-width: 560px) {
+        .pipeline {
           grid-template-columns: minmax(0, 1fr);
+          row-gap: 1.25rem;
+        }
+        .pipe-step {
+          display: grid;
+          grid-template-columns: 3.1rem minmax(0, 1fr);
+          column-gap: 1rem;
+        }
+        .pipe-num {
+          grid-row: span 3;
+          margin: 0;
         }
       }
 
@@ -1514,7 +1484,8 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         overflow-x: auto;
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        background: var(--surface);
+        background: #ffffff;
+        box-shadow: var(--shadow-sm);
       }
       .compare {
         width: 100%;
@@ -1547,12 +1518,12 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         color: var(--muted);
       }
       .compare .is-us {
-        background: var(--accent-soft);
-        color: var(--text);
+        background: linear-gradient(180deg, rgba(207, 245, 251, 0.45), rgba(220, 232, 255, 0.35));
+        color: var(--ink);
         width: 28%;
       }
       .compare thead .is-us {
-        color: var(--accent);
+        color: var(--teal);
       }
       .fit-grid {
         display: grid;
@@ -1569,7 +1540,8 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         padding: 1.5rem;
         border-radius: var(--radius);
         border: 1px solid var(--border);
-        background: var(--surface);
+        background: #ffffff;
+        box-shadow: var(--shadow-sm);
       }
       .fit h3 {
         font-size: 1.05rem;
@@ -1585,82 +1557,118 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
       .fit li {
         position: relative;
-        padding-left: 1.6rem;
+        padding-left: 1.7rem;
         color: var(--muted);
         font-size: 0.95rem;
       }
       .fit li::before {
         position: absolute;
         left: 0;
-        top: 0;
+        top: 0.1rem;
+        display: inline-grid;
+        place-items: center;
+        width: 1.15rem;
+        height: 1.15rem;
+        border-radius: 50%;
+        font-size: 0.7rem;
         font-weight: 700;
       }
       .fit-yes li::before {
         content: '✓';
         color: var(--ok);
+        background: var(--ok-soft);
       }
       .fit-no li::before {
         content: '→';
         color: var(--muted);
+        background: var(--tint-2);
       }
       .footnote {
         margin-top: 1.25rem;
         font-size: 0.82rem;
-        color: var(--muted);
+        color: var(--faint);
       }
 
       /* ---- final CTA ---- */
-      .final-cta {
-        padding: 5rem 0;
+      .final {
+        padding: 6rem 0;
       }
-      .final-cta-inner {
+      .final-card {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
         gap: 3rem;
         align-items: center;
+        padding: 3.5rem;
+        border-radius: 28px;
+        border: 1px solid #cfe6f3;
+        background: linear-gradient(135deg, #f0fbfe 0%, #eef4ff 100%);
+        box-shadow: var(--shadow-lg);
       }
-      @media (max-width: 900px) {
-        .final-cta-inner {
-          grid-template-columns: minmax(0, 1fr);
-          gap: 2rem;
-        }
+      .final .blob-1 {
+        width: 30rem;
+        height: 22rem;
+        left: -8rem;
+        bottom: -10rem;
+        background: radial-gradient(closest-side, #b9f0f8, rgba(185, 240, 248, 0));
+        animation: drift-a 20s ease-in-out infinite alternate;
       }
-      .final-cta-title {
-        font-size: clamp(1.85rem, 3.6vw, 2.6rem);
+      .final .blob-2 {
+        width: 30rem;
+        height: 22rem;
+        right: -8rem;
+        top: -10rem;
+        background: radial-gradient(closest-side, #d3e1ff, rgba(211, 225, 255, 0));
+        animation: drift-b 24s ease-in-out infinite alternate;
+      }
+      .final-title {
+        font-size: clamp(1.9rem, 4vw, 2.75rem);
         font-weight: 700;
-        letter-spacing: -0.03em;
+        letter-spacing: -0.035em;
         margin-bottom: 0.9rem;
         text-wrap: balance;
       }
-      .final-cta-lede {
+      .final-lede {
         color: var(--muted);
         font-size: 1.05rem;
         margin-bottom: 1.75rem;
         max-width: 34rem;
       }
-      .terminal {
+      .final-term {
         margin: 0;
         padding: 1.4rem 1.5rem;
-        border-radius: 12px;
-        border: 1px solid var(--code-border);
+        border-radius: 14px;
         background: var(--code-bg);
         color: var(--code-text);
-        font-size: 0.88rem;
+        font-size: 0.86rem;
         line-height: 1.85;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
+        box-shadow: var(--shadow-md);
+      }
+      .t-dim {
+        color: var(--code-dim);
+      }
+      @media (max-width: 900px) {
+        .final-card {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2rem;
+          padding: 2.25rem 1.5rem;
+        }
+      }
+      @media (max-width: 640px) {
+        .final {
+          padding: 4rem 0;
+        }
       }
 
       /* ---- footer ---- */
       .footer {
-        --text: var(--navy-text);
-        --muted: var(--navy-muted);
-        --accent: var(--cyan);
-        --focus: var(--cyan);
         padding: 3.5rem 0 3rem;
-        border-top: 1px solid var(--navy-line);
-        background: var(--navy-deep);
-        color: var(--navy-text);
+        border-top: 1px solid var(--border);
+        background: var(--tint);
         font-size: 0.93rem;
       }
       .footer-grid {
@@ -1698,12 +1706,29 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         gap: 0.5rem;
       }
       .footer ul a {
-        color: var(--text);
+        color: var(--ink-2);
         text-decoration: none;
       }
       .footer ul a:hover {
-        color: var(--accent);
+        color: var(--teal);
         text-decoration: underline;
+      }
+
+      /* ---- shared demo response pane ---- */
+      .h-key {
+        color: #7dd3fc;
+      }
+      .h-val {
+        color: #f1f5f9;
+      }
+      .h-dim {
+        color: var(--code-dim);
+      }
+      .h-ok {
+        color: #6ee7b7;
+      }
+      .h-bad {
+        color: #fca5a5;
       }
     </style>
   </body>

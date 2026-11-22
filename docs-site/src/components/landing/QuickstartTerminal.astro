@@ -1,0 +1,373 @@
+---
+const CODE_TABS: {id: string; label: string; html: string}[] = [
+  {
+    id: 'python',
+    label: 'Python',
+    html: `<span class="t-k">from</span> openai <span class="t-k">import</span> OpenAI
+
+client = <span class="t-f">OpenAI</span>(
+<mark>    base_url=<span class="t-s">"http://localhost:8080/v1"</span>,</mark>
+<mark>    api_key=<span class="t-s">"your-aether-key"</span>,</mark>
+)
+
+reply = client.chat.completions.<span class="t-f">create</span>(
+    model=<span class="t-s">"mock"</span>,
+    messages=[{<span class="t-s">"role"</span>: <span class="t-s">"user"</span>, <span class="t-s">"content"</span>: <span class="t-s">"What is 2+2?"</span>}],
+)`,
+  },
+  {
+    id: 'typescript',
+    label: 'TypeScript',
+    html: `<span class="t-k">import</span> OpenAI <span class="t-k">from</span> <span class="t-s">"openai"</span>;
+
+<span class="t-k">const</span> client = <span class="t-k">new</span> <span class="t-f">OpenAI</span>({
+<mark>  baseURL: <span class="t-s">"http://localhost:8080/v1"</span>,</mark>
+<mark>  apiKey: process.env.AETHER_API_KEY,</mark>
+});
+
+<span class="t-k">const</span> reply = <span class="t-k">await</span> client.chat.completions.<span class="t-f">create</span>({
+  model: <span class="t-s">"mock"</span>,
+  messages: [{ role: <span class="t-s">"user"</span>, content: <span class="t-s">"What is 2+2?"</span> }],
+});`,
+  },
+  {
+    id: 'curl',
+    label: 'curl',
+    html: `<span class="t-f">curl</span> http://localhost:8080/v1/chat/completions \\
+<mark>  -H <span class="t-s">"Authorization: Bearer $AETHER_API_KEY"</span> \\</mark>
+  -H <span class="t-s">"Content-Type: application/json"</span> \\
+  -d <span class="t-s">'{"model":"mock","messages":[
+        {"role":"user","content":"What is 2+2?"}]}'</span>`,
+  },
+];
+
+// Service names from docker-compose.yml (project name "aether-gateway").
+const SERVICES = ['postgres', 'redis', 'mock-primary', 'mock-fallback', 'gateway', 'prometheus', 'grafana'];
+
+type Line = {kind: 'cmd'; text: string} | {kind: 'out'; html: string};
+const LINES: Line[] = [
+  {kind: 'cmd', text: 'docker compose up -d'},
+  ...SERVICES.map((s): Line => ({kind: 'out', html: `<span class="t-ok">✔</span> Container aether-gateway-${s}-1 <span class="t-dim">Started</span>`})),
+  {kind: 'cmd', text: `curl -sS -D - localhost:8080/v1/chat/completions -d '{"model":"mock","messages":[{"role":"user","content":"What is 2+2?"}]}'`},
+  {kind: 'out', html: '<span class="t-dim">HTTP/1.1 200 OK</span>'},
+  {kind: 'out', html: '<span class="t-h">X-Aether-Cache:</span> <span class="t-v">MISS</span>'},
+  {kind: 'out', html: '<span class="t-h">X-Aether-Cost-USD:</span> <span class="t-v">0.0000195</span>'},
+  {kind: 'out', html: '<span class="t-h">X-Aether-Attempts:</span> <span class="t-v">1</span>'},
+  {kind: 'out', html: '<span class="t-h">X-Aether-Provider:</span> <span class="t-v">mock-primary</span>'},
+];
+---
+
+<div class="qs">
+  <div class="code-window" role="group" aria-label="Point an OpenAI client at Aether Gateway">
+    {CODE_TABS.map((tab, i) => <input class="tab-input" type="radio" name="code-lang" id={`tab-${tab.id}`} checked={i === 0} aria-label={tab.label} />)}
+    <div class="code-bar">
+      <span class="code-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div class="tab-labels">
+        {CODE_TABS.map((tab) => <label for={`tab-${tab.id}`} data-tab={tab.id}>{tab.label}</label>)}
+      </div>
+      <span class="code-badge">2 lines changed</span>
+    </div>
+    <div class="code-panels">
+      {CODE_TABS.map((tab) => <pre class="code-panel" data-tab={tab.id}><code set:html={tab.html} /></pre>)}
+    </div>
+  </div>
+
+  <div class="term" data-term>
+    <div class="code-bar term-bar">
+      <span class="code-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="term-title">~/aether-gateway</span>
+      <button type="button" class="term-replay" data-term-replay>
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5V5h2.5"></path></svg>
+        Replay
+      </button>
+    </div>
+    <pre class="term-body" aria-label="Terminal: start the stack and send a first request"><code>{
+      LINES.map((l) =>
+        l.kind === 'cmd' ? (
+          <span class="term-line term-cmd" data-cmd={l.text}><span class="t-p" aria-hidden="true">$ </span><span class="term-typed">{l.text}</span><span class="term-rest"></span></span>
+        ) : (
+          <span class="term-line term-out" set:html={l.html} />
+        ),
+      )
+    }</code></pre>
+  </div>
+</div>
+
+<style is:global>
+  .qs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: stretch;
+  }
+  @media (max-width: 960px) {
+    .qs {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .code-window,
+  .term {
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px;
+    border: 1px solid var(--code-border);
+    background: var(--code-bg);
+    color: var(--code-text);
+    overflow: hidden;
+    min-width: 0;
+    box-shadow: var(--shadow-lg);
+  }
+  .tab-input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    width: 1px;
+    height: 1px;
+  }
+  .code-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0 1rem;
+    min-height: 2.9rem;
+    background: var(--code-bar);
+    border-bottom: 1px solid var(--code-border);
+  }
+  .code-dots {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .code-dots i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #334155;
+  }
+  .code-dots i:nth-child(1) {
+    background: #fb7185;
+  }
+  .code-dots i:nth-child(2) {
+    background: #fbbf24;
+  }
+  .code-dots i:nth-child(3) {
+    background: #34d399;
+  }
+  .tab-labels {
+    display: flex;
+    gap: 0.25rem;
+  }
+  .tab-labels label {
+    cursor: pointer;
+    padding: 0.8rem 0.7rem 0.7rem;
+    font-size: 0.83rem;
+    font-weight: 500;
+    color: var(--code-dim);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    user-select: none;
+  }
+  .tab-labels label:hover {
+    color: var(--code-text);
+  }
+  .code-badge {
+    margin-left: auto;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    color: #67e8f9;
+    background: rgba(34, 211, 238, 0.12);
+    white-space: nowrap;
+  }
+  .code-panels {
+    display: grid;
+    flex: 1;
+  }
+  .code-panel {
+    grid-area: 1 / 1;
+    visibility: hidden;
+    margin: 0;
+    padding: 1.25rem 1.25rem 1.1rem;
+    overflow-x: auto;
+    font-size: 0.84rem;
+    line-height: 1.75;
+  }
+  .code-panel mark {
+    display: inline-block;
+    background: rgba(34, 211, 238, 0.12);
+    color: inherit;
+    box-shadow: inset 2px 0 0 #22d3ee;
+    margin: 0 -1.25rem;
+    padding: 0 1.25rem;
+    width: calc(100% + 2.5rem);
+    min-width: max-content;
+  }
+  #tab-python:checked ~ .code-panels [data-tab='python'],
+  #tab-typescript:checked ~ .code-panels [data-tab='typescript'],
+  #tab-curl:checked ~ .code-panels [data-tab='curl'] {
+    visibility: visible;
+    animation: panel-in 0.3s ease;
+  }
+  @keyframes panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  #tab-python:checked ~ .code-bar label[data-tab='python'],
+  #tab-typescript:checked ~ .code-bar label[data-tab='typescript'],
+  #tab-curl:checked ~ .code-bar label[data-tab='curl'] {
+    color: #ffffff;
+    border-bottom-color: #22d3ee;
+  }
+  #tab-python:focus-visible ~ .code-bar label[data-tab='python'],
+  #tab-typescript:focus-visible ~ .code-bar label[data-tab='typescript'],
+  #tab-curl:focus-visible ~ .code-bar label[data-tab='curl'] {
+    outline: 2px solid #22d3ee;
+    outline-offset: -4px;
+    border-radius: 6px;
+  }
+  .t-k {
+    color: #67e8f9;
+  }
+  .t-s {
+    color: #fde68a;
+  }
+  .t-f {
+    color: #93c5fd;
+  }
+  .t-ok {
+    color: #4ade80;
+  }
+  .t-h {
+    color: #7dd3fc;
+  }
+  .t-v {
+    color: #f1f5f9;
+  }
+  .t-p {
+    color: #22d3ee;
+    user-select: none;
+  }
+
+  .term-title {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--code-dim);
+  }
+  .term-replay {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid #334155;
+    background: transparent;
+    color: var(--code-text);
+    font: 600 0.74rem/1 var(--font-body);
+    cursor: pointer;
+  }
+  .term-replay:hover {
+    border-color: #22d3ee;
+    color: #67e8f9;
+  }
+  .term-replay:focus-visible {
+    outline-color: #22d3ee;
+  }
+  .term-body {
+    margin: 0;
+    padding: 1.1rem 1.25rem 1.25rem;
+    font-size: 0.8rem;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    flex: 1;
+  }
+  .term-line {
+    display: block;
+  }
+  .term-cmd + .term-out {
+    margin-top: 0.15rem;
+  }
+  .term-out + .term-cmd {
+    margin-top: 0.7rem;
+  }
+  .term-rest {
+    visibility: hidden;
+  }
+  .term-line.is-pending {
+    visibility: hidden;
+  }
+  .term-line.is-typing .term-typed::after {
+    content: '';
+    display: inline-block;
+    width: 0.55em;
+    height: 1.1em;
+    vertical-align: -0.2em;
+    background: #22d3ee;
+    animation: caret 0.9s steps(1) infinite;
+  }
+  @keyframes caret {
+    50% {
+      opacity: 0;
+    }
+  }
+</style>
+
+<script>
+  import {reducedMotion, sleep, watchVisibility} from '../../scripts/motion';
+
+  const term = document.querySelector<HTMLElement>('[data-term]');
+  const replay = document.querySelector<HTMLButtonElement>('[data-term-replay]');
+  if (term && replay) {
+    const lines = Array.from(term.querySelectorAll<HTMLElement>('.term-line'));
+    let run = 0;
+
+    const play = async () => {
+      if (reducedMotion()) return;
+      const id = ++run;
+      lines.forEach((l) => {
+        l.classList.add('is-pending');
+        l.classList.remove('is-typing');
+        const typed = l.querySelector<HTMLElement>('.term-typed');
+        const rest = l.querySelector<HTMLElement>('.term-rest');
+        if (typed && rest) {
+          typed.textContent = '';
+          rest.textContent = l.dataset.cmd ?? '';
+        }
+      });
+      for (const l of lines) {
+        if (id !== run) return;
+        l.classList.remove('is-pending');
+        const typed = l.querySelector<HTMLElement>('.term-typed');
+        const rest = l.querySelector<HTMLElement>('.term-rest');
+        const text = l.dataset.cmd;
+        if (typed && rest && text) {
+          l.classList.add('is-typing');
+          const step = text.length > 40 ? 2 : 1;
+          for (let i = 0; i <= text.length; i += step) {
+            if (id !== run) return;
+            typed.textContent = text.slice(0, i);
+            rest.textContent = text.slice(i);
+            await sleep(text.length > 40 ? 14 : 55);
+          }
+          typed.textContent = text;
+          rest.textContent = '';
+          await sleep(350);
+          l.classList.remove('is-typing');
+        } else {
+          await sleep(l.textContent?.startsWith('✔') ? 160 : 120);
+        }
+      }
+    };
+
+    let started = false;
+    watchVisibility(term, (v) => {
+      if (!v || started) return;
+      started = true;
+      void play();
+    }, 0.4);
+    replay.addEventListener('click', () => void play());
+  }
+</script>

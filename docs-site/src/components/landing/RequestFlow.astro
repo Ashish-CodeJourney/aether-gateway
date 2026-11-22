@@ -1,0 +1,698 @@
+---
+import ProviderMark from './ProviderMark.astro';
+import {PROVIDERS, base} from './providers';
+
+const STEPS = [
+  {id: 'auth', title: 'Auth', idle: 'API key → limits', icon: '<circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H21m-3 0v3m-3-3v2"/>'},
+  {id: 'quota', title: 'Quota', idle: 'token bucket', icon: '<path d="M4 16a8 8 0 1 1 16 0"/><path d="m12 16 3.5-5"/><circle cx="12" cy="16" r="1.2"/>'},
+  {id: 'cache', title: 'Cache', idle: 'exact match', icon: '<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6"/><path d="M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>'},
+  {id: 'router', title: 'Router', idle: 'chain + breakers', icon: '<circle cx="5" cy="12" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M7 12h4c2 0 2-6 6-6M11 12c2 0 2 6 6 6"/>'},
+];
+---
+
+<div class="rf" data-rf>
+  <div class="rf-bar">
+    <span class="rf-live"><span class="rf-live-dot" aria-hidden="true"></span>Live request flow</span>
+    <span class="sim-label">Simulated in your browser</span>
+    <span class="rf-actions">
+      <button type="button" class="chip-btn" data-rf-pause aria-pressed="false">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="currentColor"><path d="M4 3h3v10H4zM9 3h3v10H9z"></path></svg>
+        <span data-rf-pause-label>Pause</span>
+      </button>
+      <button type="button" class="chip-btn chip-btn-primary" data-rf-send>
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="currentColor"><path d="M2 2.5 14 8 2 13.5l2-5.5z"></path></svg>
+        Send a request
+      </button>
+    </span>
+  </div>
+
+  <div class="rf-stage" data-rf-stage>
+    <svg class="rf-wires" aria-hidden="true" data-rf-wires></svg>
+
+    <div class="rf-node rf-app" data-node="app">
+      <span class="rf-kicker">Your app</span>
+      <span class="rf-app-sdk">POST /v1/chat/completions</span>
+      <span class="rf-prompt" data-rf-prompt>&ldquo;What is 2+2?&rdquo;</span>
+    </div>
+
+    <div class="rf-gateway">
+      <div class="rf-gw-head">
+        <img src={`${base}/logo-mark.svg`} alt="" width="22" height="22" />
+        <span class="rf-gw-name">Aether Gateway</span>
+        <span class="rf-gw-url">:8080/v1</span>
+      </div>
+      <ol class="rf-steps">
+        {
+          STEPS.map((s, i) => (
+            <li class="rf-node rf-step" data-node={s.id}>
+              <span class="rf-step-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" set:html={s.icon} />
+              </span>
+              <span class="rf-step-text">
+                <span class="rf-step-title"><span class="rf-step-num">{i + 1}</span>{s.title}</span>
+                <span class="rf-step-status" data-status data-idle={s.idle}>{s.idle}</span>
+              </span>
+            </li>
+          ))
+        }
+      </ol>
+      <p class="rf-gw-foot">
+        <span aria-hidden="true">↳</span> then streams the reply and records tokens, cost and metrics off the hot path
+      </p>
+    </div>
+
+    <ul class="rf-providers" aria-label="Providers">
+      {
+        PROVIDERS.map((p) => (
+          <li class="rf-node rf-prov" data-node={`p-${p.id}`}>
+            <ProviderMark provider={p} small />
+            <span class="rf-prov-name">{p.short}</span>
+            <span class="rf-prov-note">{p.note}</span>
+          </li>
+        ))
+      }
+    </ul>
+
+    <div class="rf-response">
+      <div class="rf-response-head">
+        <span>Response</span>
+        <span class="rf-latency" data-rf-latency>200 OK</span>
+      </div>
+      <pre class="rf-headers" aria-live="polite" data-rf-headers><code><span class="h-dim">HTTP/1.1 200 OK</span>
+<span class="h-key">X-Aether-Provider:</span> <span class="h-val">groq</span>
+<span class="h-key">X-Aether-Cache:</span> <span class="h-val">MISS</span>
+<span class="h-key">X-Aether-Cost-USD:</span> <span class="h-val">0.0000195</span>
+<span class="h-key">X-Aether-Attempts:</span> <span class="h-val">1</span></code></pre>
+    </div>
+
+    <span class="rf-packet" aria-hidden="true" data-rf-packet></span>
+  </div>
+</div>
+
+<style>
+  .rf {
+    position: relative;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(207, 219, 232, 0.9);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    padding: 1rem 1.25rem 1.5rem;
+  }
+  .rf-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 0.9rem;
+    padding-bottom: 1rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px dashed var(--border-strong);
+  }
+  .rf-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+  .rf-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+    animation: live-pulse 2s infinite;
+  }
+  .rf[data-paused] .rf-live-dot {
+    animation: none;
+    background: var(--faint);
+  }
+  @keyframes live-pulse {
+    70% {
+      box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+  }
+  .rf-actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 0.5rem;
+  }
+
+  .rf-stage {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) minmax(0, 11.5rem);
+    grid-template-areas:
+      'app gw prov'
+      'resp gw prov';
+    grid-template-rows: auto 1fr;
+    gap: 1.25rem 3.25rem;
+    align-items: start;
+  }
+  .rf-wires {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .rf-wires :global(path) {
+    fill: none;
+    stroke: #c9dcef;
+    stroke-width: 1.5;
+    stroke-dasharray: 4 5;
+    transition: stroke 0.25s ease;
+  }
+  .rf-wires :global(path.is-hot) {
+    stroke: var(--cyan-500);
+    stroke-width: 2;
+    stroke-dasharray: 6 6;
+    animation: wire-flow 0.6s linear infinite;
+  }
+  .rf-wires :global(path.is-back) {
+    stroke: #10b981;
+  }
+  @keyframes wire-flow {
+    to {
+      stroke-dashoffset: -12;
+    }
+  }
+
+  .rf-node {
+    position: relative;
+    z-index: 1;
+    transition:
+      border-color 0.25s ease,
+      box-shadow 0.25s ease,
+      background-color 0.25s ease,
+      opacity 0.25s ease,
+      transform 0.25s ease;
+  }
+  .rf-app {
+    grid-area: app;
+    display: grid;
+    gap: 0.3rem;
+    padding: 1rem 1.1rem;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+  .rf-kicker {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .rf-app-sdk {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .rf-prompt {
+    justify-self: start;
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.65rem;
+    border-radius: 10px 10px 10px 3px;
+    background: var(--tint-2);
+    color: var(--ink-2);
+    font-size: 0.84rem;
+    min-height: 2.1rem;
+    max-width: 100%;
+  }
+  .rf-app.is-active,
+  .rf-prov.is-active {
+    border-color: var(--cyan-500);
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.18), var(--shadow-sm);
+  }
+
+  .rf-gateway {
+    grid-area: gw;
+    align-self: center;
+    position: relative;
+    z-index: 1;
+    padding: 1rem;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(238, 247, 255, 0.92), rgba(247, 251, 255, 0.92));
+    border: 1.5px solid rgba(6, 182, 212, 0.55);
+    box-shadow: 0 0 0 6px rgba(207, 245, 251, 0.45);
+  }
+  .rf-gw-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.9rem;
+  }
+  .rf-gw-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .rf-gw-url {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--teal);
+    padding: 0.12rem 0.45rem;
+    border-radius: 6px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+  }
+  .rf-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.1rem;
+  }
+  .rf-step {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding: 0.8rem 0.7rem;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    min-height: 7.2rem;
+  }
+  .rf-step-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9px;
+    background: var(--tint-2);
+    color: var(--teal);
+    transition:
+      background-color 0.25s ease,
+      color 0.25s ease;
+  }
+  .rf-step-text {
+    display: grid;
+    gap: 0.15rem;
+  }
+  .rf-step-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+  .rf-step-num {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--faint);
+  }
+  .rf-step-status {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    line-height: 1.35;
+    color: var(--muted);
+    min-height: 1.9em;
+  }
+  .rf-step.is-active {
+    border-color: var(--cyan-500);
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.2), var(--shadow-md);
+    transform: translateY(-2px);
+  }
+  .rf-step.is-active .rf-step-icon {
+    background: var(--cyan-500);
+    color: #ffffff;
+  }
+  .rf-step.is-done .rf-step-icon {
+    background: #e0f7fb;
+  }
+  .rf-step.is-done .rf-step-status {
+    color: var(--teal);
+  }
+  .rf-step.is-hit {
+    border-color: #34d399;
+    box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.2), var(--shadow-md);
+  }
+  .rf-step.is-hit .rf-step-icon {
+    background: #10b981;
+    color: #ffffff;
+  }
+  .rf-step.is-hit .rf-step-status {
+    color: var(--ok);
+    font-weight: 600;
+  }
+  .rf-step.is-skipped {
+    opacity: 0.45;
+  }
+  .rf-gw-foot {
+    margin-top: 0.85rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .rf-providers {
+    grid-area: prov;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.6rem;
+  }
+  .rf-prov {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    color: var(--ink-2);
+  }
+  .rf-prov-name {
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: var(--ink);
+  }
+  .rf-prov-note {
+    margin-left: auto;
+    font-size: 0.68rem;
+    font-family: var(--font-mono);
+    color: var(--faint);
+  }
+  .rf-prov.is-active {
+    color: var(--teal);
+  }
+
+  .rf-response {
+    grid-area: resp;
+    position: relative;
+    z-index: 1;
+    border-radius: 14px;
+    background: var(--code-bg);
+    color: var(--code-text);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }
+  .rf-response-head {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--code-dim);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  }
+  .rf-latency {
+    font-family: var(--font-mono);
+    letter-spacing: 0;
+    text-transform: none;
+    color: #67e8f9;
+  }
+  .rf-headers {
+    margin: 0;
+    padding: 0.7rem 0.9rem 0.85rem;
+    font-size: 0.74rem;
+    line-height: 1.75;
+    min-height: calc(5 * 1.75em + 1.55rem);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .rf-headers :global(.h-line) {
+    display: block;
+    animation: header-in 0.35s ease both;
+  }
+  @keyframes header-in {
+    from {
+      opacity: 0;
+      transform: translateX(-6px);
+    }
+  }
+
+  .rf-packet {
+    position: absolute;
+    left: -7px;
+    top: -7px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    z-index: 3;
+    background: radial-gradient(circle at 35% 35%, #ffffff, #22d3ee 45%, #0891b2);
+    box-shadow:
+      0 0 0 5px rgba(34, 211, 238, 0.22),
+      0 0 18px 4px rgba(34, 211, 238, 0.55);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+  .rf-packet.is-visible {
+    opacity: 1;
+  }
+  .rf-packet.is-back {
+    background: radial-gradient(circle at 35% 35%, #ffffff, #34d399 45%, #059669);
+    box-shadow:
+      0 0 0 5px rgba(52, 211, 153, 0.22),
+      0 0 18px 4px rgba(52, 211, 153, 0.5);
+  }
+
+  @media (max-width: 1080px) {
+    .rf-stage {
+      grid-template-columns: minmax(0, 13rem) minmax(0, 1fr) minmax(0, 10rem);
+      column-gap: 2.25rem;
+    }
+    .rf-steps {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .rf-step {
+      min-height: 0;
+    }
+  }
+  @media (max-width: 820px) {
+    .rf {
+      padding: 0.9rem 0.9rem 1.1rem;
+    }
+    .rf-stage {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: 'app' 'gw' 'prov' 'resp';
+      grid-template-rows: none;
+      row-gap: 2.25rem;
+    }
+    .rf-providers {
+      grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    }
+    .rf-prov {
+      flex-direction: column;
+      gap: 0.3rem;
+      padding: 0.6rem 0.4rem;
+      text-align: center;
+    }
+    .rf-prov-note {
+      margin-left: 0;
+    }
+    .rf-actions {
+      margin-left: 0;
+      width: 100%;
+    }
+  }
+  @media (max-width: 420px) {
+    .rf-steps {
+      gap: 0.6rem;
+    }
+    .rf-step {
+      padding: 0.65rem 0.55rem;
+    }
+  }
+</style>
+
+<script>
+  import {connectorPath, reducedMotion, sleep, travel, watchVisibility} from '../../scripts/motion';
+
+  type Scenario = {
+    prompt: string;
+    cache: 'MISS' | 'EXACT_HIT';
+    provider?: string;
+    cost: string;
+    reserved: number;
+    used: number;
+  };
+
+  // Illustrative traffic. The first request and its cached repeat mirror the
+  // README's captured headers; the rest are representative, not measured.
+  const SCENARIOS: Scenario[] = [
+    {prompt: 'What is 2+2?', cache: 'MISS', provider: 'groq', cost: '0.0000195', reserved: 512, used: 38},
+    {prompt: 'What is 2+2?', cache: 'EXACT_HIT', cost: '0', reserved: 0, used: 0},
+    {prompt: 'Summarise this support ticket', cache: 'MISS', provider: 'anthropic', cost: '0.0004120', reserved: 1024, used: 214},
+    {prompt: 'Translate “good morning” to French', cache: 'MISS', provider: 'ollama', cost: '0', reserved: 512, used: 24},
+    {prompt: 'Draft a two-line release note', cache: 'MISS', provider: 'gemini', cost: '0.0000871', reserved: 512, used: 96},
+    {prompt: 'Summarise this support ticket', cache: 'EXACT_HIT', cost: '0', reserved: 0, used: 0},
+    {prompt: 'Classify this review as positive or negative', cache: 'MISS', provider: 'openai', cost: '0.0000430', reserved: 512, used: 61},
+  ];
+
+  const root = document.querySelector<HTMLElement>('[data-rf]');
+  if (root) setup(root);
+
+  function setup(root: HTMLElement) {
+    const stage = root.querySelector<HTMLElement>('[data-rf-stage]');
+    const wires = root.querySelector<SVGSVGElement>('[data-rf-wires]');
+    const packet = root.querySelector<HTMLElement>('[data-rf-packet]');
+    const prompt = root.querySelector<HTMLElement>('[data-rf-prompt]');
+    const headers = root.querySelector<HTMLElement>('[data-rf-headers]');
+    const latency = root.querySelector<HTMLElement>('[data-rf-latency]');
+    const pauseBtn = root.querySelector<HTMLButtonElement>('[data-rf-pause]');
+    const pauseLabel = root.querySelector<HTMLElement>('[data-rf-pause-label]');
+    const sendBtn = root.querySelector<HTMLButtonElement>('[data-rf-send]');
+    if (!stage || !wires || !packet || !prompt || !headers || !latency || !pauseBtn || !pauseLabel || !sendBtn) return;
+
+    const node = (id: string) => stage.querySelector<HTMLElement>(`[data-node="${id}"]`);
+    const chain = ['app', 'auth', 'quota', 'cache', 'router'];
+    const providerIds = Array.from(stage.querySelectorAll<HTMLElement>('[data-node^="p-"]')).map((n) => n.dataset.node ?? '');
+    const paths = new Map<string, SVGPathElement>();
+
+    const drawWires = () => {
+      const links: [string, string][] = [
+        ...chain.slice(1).map((id, i): [string, string] => [chain[i], id]),
+        ...providerIds.map((p): [string, string] => ['router', p]),
+      ];
+      wires.replaceChildren();
+      paths.clear();
+      links.forEach(([a, b]) => {
+        const from = node(a);
+        const to = node(b);
+        if (!from || !to) return;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', connectorPath(from, to, stage));
+        wires.appendChild(path);
+        paths.set(`${a}>${b}`, path);
+      });
+    };
+    drawWires();
+    new ResizeObserver(drawWires).observe(stage);
+
+    const setStatus = (id: string, text: string) => {
+      const s = node(id)?.querySelector<HTMLElement>('[data-status]');
+      if (s) s.textContent = text;
+    };
+    const reset = () => {
+      stage.querySelectorAll<HTMLElement>('.rf-node').forEach((n) => n.classList.remove('is-active', 'is-done', 'is-hit', 'is-skipped'));
+      stage.querySelectorAll<HTMLElement>('[data-status]').forEach((s) => (s.textContent = s.dataset.idle ?? ''));
+      paths.forEach((p) => p.classList.remove('is-hot', 'is-back'));
+    };
+    const hop = async (from: string, to: string, back: boolean) => {
+      const forwardPath = paths.get(`${from}>${to}`);
+      const path = forwardPath ?? paths.get(`${to}>${from}`);
+      if (!path) return;
+      path.classList.add('is-hot');
+      path.classList.toggle('is-back', back);
+      await travel(packet, path, back ? 300 : 420, !forwardPath);
+      path.classList.remove('is-hot', 'is-back');
+    };
+    const line = (key: string, value: string) =>
+      `<span class="h-line"><span class="h-key">${key}:</span> <span class="h-val">${value}</span></span>`;
+
+    let index = 0;
+    let busy = false;
+
+    const run = async () => {
+      if (busy) return;
+      busy = true;
+      const s = SCENARIOS[index % SCENARIOS.length];
+      index += 1;
+      reset();
+      prompt.textContent = `“${s.prompt}”`;
+      headers.innerHTML = '<code><span class="h-line h-dim">sending…</span></code>';
+      latency.textContent = '';
+      packet.classList.remove('is-back');
+      packet.classList.add('is-visible');
+      node('app')?.classList.add('is-active');
+
+      const hit = s.cache === 'EXACT_HIT';
+      const forward = hit ? chain.slice(0, 4) : chain;
+      const status: Record<string, string> = {
+        auth: 'key verified',
+        quota: hit ? 'within limits' : `reserved ${s.reserved} tok`,
+        cache: s.cache,
+        router: `→ ${s.provider ?? ''}`,
+      };
+      for (let i = 1; i < forward.length; i++) {
+        await hop(forward[i - 1], forward[i], false);
+        node(forward[i - 1])?.classList.remove('is-active');
+        const n = node(forward[i]);
+        n?.classList.add(forward[i] === 'cache' && hit ? 'is-hit' : 'is-active');
+        setStatus(forward[i], status[forward[i]] ?? '');
+        await sleep(260);
+        n?.classList.remove('is-active');
+        n?.classList.add('is-done');
+      }
+
+      const target = `p-${s.provider}`;
+      if (hit) {
+        node('router')?.classList.add('is-skipped');
+        setStatus('router', 'skipped: $0');
+      } else {
+        await hop('router', target, false);
+        node(target)?.classList.add('is-active');
+        await sleep(520);
+        node(target)?.classList.remove('is-active');
+        packet.classList.add('is-back');
+        await hop(target, 'router', true);
+      }
+
+      packet.classList.add('is-back');
+      const back = hit ? forward.slice().reverse() : chain.slice().reverse();
+      for (let i = 1; i < back.length; i++) {
+        if (back[i - 1] === 'quota' && !hit) setStatus('quota', `reconciled ${s.used} tok`);
+        await hop(back[i - 1], back[i], true);
+      }
+      if (!hit) setStatus('quota', `reconciled ${s.used} tok`);
+      packet.classList.remove('is-visible');
+      node('app')?.classList.add('is-active');
+
+      const lines = hit
+        ? [line('X-Aether-Cache', 'EXACT_HIT'), line('X-Aether-Cost-USD', '0')]
+        : [line('X-Aether-Provider', s.provider ?? ''), line('X-Aether-Cache', 'MISS'), line('X-Aether-Cost-USD', s.cost), line('X-Aether-Attempts', '1')];
+      headers.innerHTML = '<code><span class="h-line h-dim">HTTP/1.1 200 OK</span></code>';
+      const code = headers.querySelector('code');
+      latency.textContent = hit ? 'from cache · $0' : `served by ${s.provider}`;
+      for (const l of lines) {
+        await sleep(140);
+        code?.insertAdjacentHTML('beforeend', l);
+      }
+      await sleep(200);
+      node('app')?.classList.remove('is-active');
+      busy = false;
+    };
+
+    let paused = reducedMotion();
+    let visible = false;
+    const renderPause = () => {
+      pauseBtn.setAttribute('aria-pressed', String(paused));
+      pauseLabel.textContent = paused ? 'Play' : 'Pause';
+      root.toggleAttribute('data-paused', paused);
+    };
+    renderPause();
+    pauseBtn.addEventListener('click', () => {
+      paused = !paused;
+      renderPause();
+    });
+    sendBtn.addEventListener('click', () => void run());
+    watchVisibility(root, (v) => (visible = v), 0.2);
+
+    const loop = async () => {
+      if (!paused && visible && !document.hidden && !busy) {
+        await run();
+        await sleep(1500);
+      } else {
+        await sleep(400);
+      }
+      void loop();
+    };
+    void loop();
+  }
+</script>

@@ -1,0 +1,14 @@
+---
+import {iconStyle, type Provider} from './providers';
+
+type Props = {provider: Provider; small?: boolean};
+const {provider, small = false} = Astro.props;
+---
+
+{
+  'icon' in provider ? (
+    <span class:list={['p-icon', {'p-icon-sm': small}]} role="img" aria-label={`${provider.name} logo`} style={iconStyle(provider.icon)} />
+  ) : (
+    <span class:list={['p-badge', {'p-badge-sm': small}]} aria-hidden="true">{provider.badge}</span>
+  )
+}
