@@ -24,6 +24,7 @@ import com.aether.gateway.core.domain.RouteCacheConfig;
 import com.aether.gateway.core.domain.RouteConfig;
 import com.aether.gateway.core.domain.TokenEstimator;
 import com.aether.gateway.core.domain.ToolsNotSupportedException;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ApiKeyLookupPort;
 import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
@@ -63,6 +64,7 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * ADR-002 addendum: the non-streaming path is business-logic-simple
@@ -671,16 +673,18 @@ public class ChatCompletionController {
         AtomicBoolean sawError = new AtomicBoolean(false);
         AtomicLong ttfbNanos = new AtomicLong(-1);
         AtomicBoolean sawToolCall = new AtomicBoolean(false);
+        AtomicReference<Usage> reportedUsage = new AtomicReference<>();
         String streamId = "aether-" + UUID.randomUUID();
         metricsPort.streamStarted();
 
-        // F1.5: capture partial usage (here, chunk count as a token-count
-        // proxy) when a stream is cancelled mid-way.
         Flux<ServerSentEvent<String>> body = chunks
                 .doOnNext(chunk -> {
                     chunksSent.incrementAndGet();
                     if (!chunk.toolCallDeltas().isEmpty()) {
                         sawToolCall.set(true);
+                    }
+                    if (chunk.usage() != null) {
+                        reportedUsage.set(chunk.usage());
                     }
                     accumulated.append(chunk.deltaContent());
                     ttfbNanos.compareAndSet(-1, System.nanoTime());
@@ -698,27 +702,29 @@ public class ChatCompletionController {
                     cancelled.set(true);
                     log.info("Stream for model {} cancelled by client after {} chunks", domainRequest.model(), chunksSent.get());
                 })
-                // Streaming responses don't surface actual token usage at
-                // this layer yet (Phase 08 territory for a real per-token
-                // count; F6.1/F6.2 still record what's available: an
-                // estimated token count, real timing, and the terminal
-                // status); reconcile with the original quota estimate (a
-                // no-op adjustment) so the reservation isn't left dangling
-                // until its 5-minute TTL expires, and always free the
-                // concurrency slot regardless of how the stream ended
-                // (completed, errored, or cancelled by the client).
+                // Cost, the request log, metrics and the quota
+                // reconciliation all use the usage the provider reported
+                // on its last chunk. A stream that never got that far
+                // (cancelled by the client, F1.5, or failed mid-way), or
+                // whose provider reports no usage, falls back to the
+                // pre-request estimate. Either way the reservation is
+                // settled now rather than left to its 5-minute TTL, and
+                // the concurrency slot is always freed.
                 .doFinally(signal -> {
                     metricsPort.streamEnded();
-                    releaseStreamQuota(key, allowed, estimatedTokens);
+                    StreamTokens tokens = StreamTokens.of(reportedUsage.get(), estimatedTokens);
+                    releaseStreamQuota(key, allowed, tokens.total());
                     // F4.6: never cache a cancelled stream or one that errored.
                     if (cacheLookup.decision() instanceof CacheDecision.Miss && !cancelled.get() && !sawError.get() && !sawToolCall.get() && chunksSent.get() > 0) {
-                        storeStreamedResponse(cacheLookup, domainRequest, streamId, accumulated.toString());
+                        storeStreamedResponse(cacheLookup, domainRequest, streamId, accumulated.toString(), reportedUsage.get());
                     }
                     String status = cancelled.get() ? "CANCELLED" : sawError.get() ? "FAILED" : "OK";
                     long totalMs = elapsedMillis(requestStartNanos);
                     long ttfbMs = ttfbNanos.get() < 0 ? totalMs : (ttfbNanos.get() - requestStartNanos) / 1_000_000;
+                    // The serving provider is not known on this path; a
+                    // null prices the stream at the route's primary member.
                     recordObservability(domainRequest, key, null, cacheLookup.decision().headerValue(), false, null,
-                            0, estimatedTokens, ttfbMs, totalMs, 1, List.of(), status, null);
+                            tokens.input(), tokens.output(), ttfbMs, totalMs, 1, List.of(), status, null);
                 });
 
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
@@ -728,15 +734,34 @@ public class ChatCompletionController {
         return builder.body((Object) body);
     }
 
-    private void storeStreamedResponse(CacheLookup cacheLookup, ChatCompletionRequest domainRequest, String streamId, String fullContent) {
+    /**
+     * A stream's token counts: the provider's own when it reported them,
+     * otherwise the pre-request estimate, all of it counted as output as
+     * it always has been (the estimate is not split by direction).
+     */
+    private record StreamTokens(long input, long output) {
+        static StreamTokens of(Usage reported, long estimatedTokens) {
+            return reported != null
+                    ? new StreamTokens(reported.promptTokens(), reported.completionTokens())
+                    : new StreamTokens(0, estimatedTokens);
+        }
+
+        long total() {
+            return input + output;
+        }
+    }
+
+    private void storeStreamedResponse(
+            CacheLookup cacheLookup, ChatCompletionRequest domainRequest, String streamId, String fullContent, Usage reportedUsage) {
         var message = new ChatMessageDto("assistant", fullContent);
         var choice = new ChoiceDto(0, message, "stop");
-        // Streaming responses don't surface actual token usage at this
-        // layer (Phase 08 territory); a zero Usage is an accepted
-        // simplification here since the cache subsystem only needs the
-        // response body content and doesn't compute cost from this path.
+        // A later hit's savings are valued at this usage, so a provider
+        // that reported none is stored as zero rather than an estimate.
+        var usage = reportedUsage != null
+                ? new UsageDto(reportedUsage.promptTokens(), reportedUsage.completionTokens(), reportedUsage.totalTokens())
+                : new UsageDto(0, 0, 0);
         var dto = new ChatCompletionResponseDto(
-                streamId, "chat.completion", Instant.now().getEpochSecond(), domainRequest.model(), List.of(choice), new UsageDto(0, 0, 0));
+                streamId, "chat.completion", Instant.now().getEpochSecond(), domainRequest.model(), List.of(choice), usage);
         cachePort.store(cacheLookup.namespace(), domainRequest, mapper.toJson(dto), cacheLookup.routeCache().ttl(), cacheLookup.matching());
     }
 

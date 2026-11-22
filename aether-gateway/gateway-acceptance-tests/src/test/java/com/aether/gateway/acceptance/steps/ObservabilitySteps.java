@@ -7,6 +7,7 @@ import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,6 +28,7 @@ public class ObservabilitySteps {
 
     private final GatewayClient client = new GatewayClient();
     private Map<String, Object> lastLogEntry;
+    private Instant streamSentAt;
 
     @Given("the cost model prices the {string} model's input tokens at {string} and output tokens at {string} per million")
     public void theCostModelPricesTheModel(String model, String inputPrice, String outputPrice) {
@@ -47,6 +49,33 @@ public class ObservabilitySteps {
                 AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions", body, null,
                 Map.of("X-Aether-No-Cache", "true"));
         assertThat(response.statusCode()).isEqualTo(200);
+    }
+
+    @Given("the mock provider reports {int} completion tokens for every reply")
+    public void theMockProviderReportsCompletionTokens(int tokens) throws Exception {
+        client.postJson(AcceptanceEnvironment.mockProviderBaseUrl() + "/_mock/config", "{\"tokens\": %d}".formatted(tokens));
+    }
+
+    @When("a client streams {string} to completion bypassing the cache")
+    public void aClientStreamsToCompletionBypassingTheCache(String prompt) throws Exception {
+        streamSentAt = Instant.now();
+        String body = "{\"model\": \"mock\", \"stream\": true, \"messages\": [{\"role\": \"user\", \"content\": \"" + prompt + "\"}]}";
+        var response = client.postJson(
+                AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions", body, null,
+                Map.of("X-Aether-No-Cache", "true"));
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("[DONE]");
+    }
+
+    @Then("a request log entry exists for that streamed request")
+    public void aRequestLogEntryExistsForThatStreamedRequest() {
+        lastLogEntry = AcceptanceEnvironment.mostRecentRequestLogEntryCreatedAfter(streamSentAt);
+        assertThat(lastLogEntry.get("streamed")).isEqualTo(true);
+    }
+
+    @Then("that entry's {string} is {int}")
+    public void thatEntrysIs(String columnName, int expected) {
+        assertThat(((Number) lastLogEntry.get(columnName)).intValue()).as("column %s in %s", columnName, lastLogEntry).isEqualTo(expected);
     }
 
     @Then("a request log entry exists for this request")

@@ -60,14 +60,22 @@ response path:
   `prompt_tokens`/`completion_tokens` the provider reported
   (`ChatCompletionResponse.usage()`), the same usage figures already
   used for quota reconciliation (Phase 06/M3).
-- **Streaming, served by a real provider call**: this codebase does not
-  yet surface real per-token usage on the streaming path (a Phase 08
-  limitation carried over from Phase 06's quota reconciliation, which
-  has the identical gap and reconciles against the pessimistic estimate
-  instead); `cost_usd` for a streamed response therefore also uses the
-  request's estimated token count, not a measured one. Closing this gap
-  requires providers to report usage incrementally or in a final
-  streaming frame, which is out of scope here.
+- **Streaming, served by a real provider call**: the usage the provider
+  reports at the end of the stream, which each adapter puts on the
+  stream's last chunk (`ProviderResponse.StreamChunk.usage()`):
+  Anthropic's `message_start` input and `message_delta` output counts,
+  the OpenAI-compatible final `usage` chunk (requested with
+  `stream_options: {"include_usage": true}`), Gemini's
+  `usageMetadata`, and Ollama's `prompt_eval_count`/`eval_count`. The
+  same figures go to the request log, the metrics, and the quota
+  reconciliation, so a streamed request is billed exactly like a
+  non-streaming one. When no usage arrives - the client cancelled the
+  stream (F1.5), it failed mid-way, or the provider simply reports
+  none - the request's pessimistic pre-request estimate is used
+  instead, all of it counted as output tokens, as before.
+  The controller does not yet know which chain member served a stream,
+  so a streamed request is priced at the route's primary member, the
+  same stand-in a cache hit uses (below).
 - **A cache hit (exact or semantic)**: `cost_usd` is always exactly
   `0` - nothing was paid, because no provider call happened. This is
   what makes `cache_savings_usd` meaningful as a genuine cost
@@ -79,7 +87,9 @@ Same `CostCalculator.costUsd(...)` function, applied to the cached
 response's own recorded `usage` (prompt/completion tokens from when it
 was originally generated and stored, per Phase 07/M4's cache write
 path), for a cache hit specifically. It answers "what would this exact
-response have cost if it had gone to the provider instead."
+response have cost if it had gone to the provider instead." A response
+cached from a stream records the usage the provider reported for that
+stream, or zero if it reported none.
 
 **Attribution for a cache hit.** A cache hit, by definition, did not
 call any provider, so there is no `servedByProvider` value the way a
@@ -120,9 +130,12 @@ metrics values, so the three surfaces never disagree with each other.
 
 ## Known limitations
 
-- Streaming responses use estimated, not measured, token counts for
-  cost purposes (see above) - a real number requires provider-reported
-  streaming usage, which no adapter in this project currently surfaces.
+- A streamed response that is cancelled, fails mid-way, or comes from
+  a provider that reports no streaming usage is costed at the
+  pre-request estimate rather than a measured count (see above).
+- A streamed response is priced at the route's primary member, not
+  necessarily the provider that served it, since that is not yet
+  known for streams.
 - A cache hit's cost/savings estimate is attributed to the route's
   primary provider's price, not the provider that actually generated
   the originally-cached response (not tracked). If a route's providers
