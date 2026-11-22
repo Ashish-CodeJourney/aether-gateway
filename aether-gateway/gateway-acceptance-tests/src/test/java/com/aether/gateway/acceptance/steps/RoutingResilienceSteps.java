@@ -61,6 +61,29 @@ public class RoutingResilienceSteps {
         assertThat(response.statusCode()).isEqualTo(200);
     }
 
+    @When("a client sends a streaming chat completion request through the gateway")
+    public void aClientSendsAStreamingChatCompletionRequestThroughTheGateway() throws Exception {
+        String body = """
+                {"model": "mock", "messages": [{"role": "user", "content": "hello, streamed"}], "stream": true}
+                """;
+        lastResponse = client.postJson(AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions", body, null,
+                java.util.Map.of("X-Aether-No-Cache", "true"));
+    }
+
+    @Then("the stream is delivered in full")
+    public void theStreamIsDeliveredInFull() {
+        assertThat(lastResponse.statusCode()).isEqualTo(200);
+        assertThat(lastResponse.headers().firstValue("Content-Type"))
+                .hasValueSatisfying(contentType -> assertThat(contentType).startsWith("text/event-stream"));
+        assertThat(lastResponse.body()).contains("\"content\":\"Mock").contains("[DONE]");
+    }
+
+    @Then("the stream was served by {string} after {int} attempt(s)")
+    public void theStreamWasServedByAfterAttempts(String provider, int attempts) {
+        assertThat(lastResponse.headers().firstValue("X-Aether-Provider")).hasValue(provider);
+        assertThat(lastResponse.headers().firstValue("X-Aether-Attempts")).hasValue(String.valueOf(attempts));
+    }
+
     @Then("the response is successful")
     public void theResponseIsSuccessful() {
         assertThat(lastResponse.statusCode()).isEqualTo(200);

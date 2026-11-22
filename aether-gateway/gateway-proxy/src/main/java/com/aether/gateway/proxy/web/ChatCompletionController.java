@@ -1,6 +1,7 @@
 package com.aether.gateway.proxy.web;
 
 import com.aether.gateway.core.domain.ApiKeyContext;
+import com.aether.gateway.core.domain.AttributedStream;
 import com.aether.gateway.core.domain.CacheDecision;
 import com.aether.gateway.core.domain.CacheMatching;
 import com.aether.gateway.core.domain.CacheThresholdGate;
@@ -22,6 +23,7 @@ import com.aether.gateway.core.domain.RequestLogEntry;
 import com.aether.gateway.core.domain.RequestMetrics;
 import com.aether.gateway.core.domain.RouteCacheConfig;
 import com.aether.gateway.core.domain.RouteConfig;
+import com.aether.gateway.core.domain.StreamAttribution;
 import com.aether.gateway.core.domain.TokenEstimator;
 import com.aether.gateway.core.domain.ToolsNotSupportedException;
 import com.aether.gateway.core.port.ApiKeyLookupPort;
@@ -95,6 +97,7 @@ public class ChatCompletionController {
     private static final String PROVIDER_HEADER = "X-Aether-Provider";
     private static final String ATTEMPTS_HEADER = "X-Aether-Attempts";
     private static final String COST_HEADER = "X-Aether-Cost-USD";
+    private static final StreamAttribution UNATTRIBUTED_STREAM = new StreamAttribution(null, 1, List.of());
     private static final String ANONYMOUS_NAMESPACE = "anonymous";
     // Phase 08 (M5): request_log.api_key_id is NOT NULL; this is the
     // well-known, disabled placeholder row seeded by
@@ -631,24 +634,35 @@ public class ChatCompletionController {
         // the response Mono completes - the body subscribes to it later.
         return JdkFlowAdapter.flowPublisherToFlux(upstream)
                 .switchOnFirst((first, chunks) -> {
+                    StreamAttribution attribution = attributionOf(upstream);
                     if (first.isOnError() && first.getThrowable() instanceof ProviderStreamException failure) {
                         return Mono.just(streamFailedBeforeFirstChunk(
-                                failure, domainRequest, key, allowed, cacheLookup, requestStartNanos));
+                                failure, attribution, domainRequest, key, allowed, cacheLookup, requestStartNanos));
                     }
                     return Mono.just(streamingBody(
-                            chunks, domainRequest, key, allowed, estimatedTokens, cacheLookup, requestStartNanos));
+                            chunks, attribution, domainRequest, key, allowed, estimatedTokens, cacheLookup, requestStartNanos));
                 }, false)
                 .single();
     }
 
+    /**
+     * Read once the stream's first signal has arrived, by which point a
+     * routed stream has settled on its provider (see AttributedStream).
+     */
+    private static StreamAttribution attributionOf(Flow.Publisher<ProviderResponse.StreamChunk> upstream) {
+        return upstream instanceof AttributedStream routed
+                ? routed.attribution().orElse(UNATTRIBUTED_STREAM)
+                : UNATTRIBUTED_STREAM;
+    }
+
     private ResponseEntity<Object> streamFailedBeforeFirstChunk(
-            ProviderStreamException failure, ChatCompletionRequest domainRequest, ApiKeyContext key,
+            ProviderStreamException failure, StreamAttribution attribution, ChatCompletionRequest domainRequest, ApiKeyContext key,
             QuotaDecision.Allowed allowed, CacheLookup cacheLookup, long requestStartNanos) {
         reconcileAndReleaseOnFailure(key, allowed);
         long totalMs = elapsedMillis(requestStartNanos);
         String cacheHeaderValue = cacheLookup.decision().headerValue();
         recordObservability(domainRequest, key, null, cacheHeaderValue, false, null,
-                0, 0, totalMs, totalMs, 1, List.of(), "FAILED", failure.errorCode());
+                0, 0, totalMs, totalMs, attribution.attemptCount(), attribution.failoverChain(), "FAILED", failure.errorCode());
         var body = new ErrorEnvelopeDto(
                 "https://aether.dev/problems/" + failure.errorCode(),
                 failure.errorCode(),
@@ -657,13 +671,14 @@ public class ChatCompletionController {
                 "/v1/chat/completions");
         var builder = ResponseEntity.status(failure.httpStatus())
                 .header(CACHE_HEADER, cacheHeaderValue)
+                .header(ATTEMPTS_HEADER, String.valueOf(attribution.attemptCount()))
                 .contentType(MediaType.APPLICATION_JSON);
         quotaHeader(builder, allowed);
         return builder.body((Object) body);
     }
 
     private ResponseEntity<Object> streamingBody(
-            Flux<ProviderResponse.StreamChunk> chunks, ChatCompletionRequest domainRequest, ApiKeyContext key,
+            Flux<ProviderResponse.StreamChunk> chunks, StreamAttribution attribution, ChatCompletionRequest domainRequest, ApiKeyContext key,
             QuotaDecision.Allowed allowed, long estimatedTokens, CacheLookup cacheLookup, long requestStartNanos) {
         AtomicInteger chunksSent = new AtomicInteger(0);
         StringBuilder accumulated = new StringBuilder();
@@ -717,13 +732,17 @@ public class ChatCompletionController {
                     String status = cancelled.get() ? "CANCELLED" : sawError.get() ? "FAILED" : "OK";
                     long totalMs = elapsedMillis(requestStartNanos);
                     long ttfbMs = ttfbNanos.get() < 0 ? totalMs : (ttfbNanos.get() - requestStartNanos) / 1_000_000;
-                    recordObservability(domainRequest, key, null, cacheLookup.decision().headerValue(), false, null,
-                            0, estimatedTokens, ttfbMs, totalMs, 1, List.of(), status, null);
+                    recordObservability(domainRequest, key, attribution.servedByProvider(), cacheLookup.decision().headerValue(), false, null,
+                            0, estimatedTokens, ttfbMs, totalMs, attribution.attemptCount(), attribution.failoverChain(), status, null);
                 });
 
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .header(CACHE_HEADER, cacheLookup.decision().headerValue())
+                .header(ATTEMPTS_HEADER, String.valueOf(attribution.attemptCount()))
                 .contentType(MediaType.TEXT_EVENT_STREAM);
+        if (attribution.servedByProvider() != null) {
+            builder.header(PROVIDER_HEADER, attribution.servedByProvider());
+        }
         quotaHeader(builder, allowed);
         return builder.body((Object) body);
     }

@@ -121,6 +121,16 @@ one candidate); if `mock-primary`'s breaker is open or its calls exhaust
 their retry budget, the request fails over to `mock-fallback` next, per
 F3.2.
 
+Streaming requests (`"stream": true`) walk the chain the same way, with
+the same breakers, bulkheads, retries and timeout budget, but only up to
+the stream's first chunk. A retryable failure before then (429, 5xx, or
+an unreachable provider) moves on to the next member; a terminal one
+(any other 4xx) is returned immediately. Once a chunk has been sent to
+the client the stream is committed to that provider: a later failure
+ends the stream with an `error` event rather than switching providers,
+which would duplicate or corrupt output the client already has. A
+provider's bulkhead slot is held for as long as its stream runs.
+
 ## Reload
 
 `POST /admin/routes/reload` calls `RoutingPolicyRepository.reload()`,

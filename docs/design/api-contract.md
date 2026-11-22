@@ -34,6 +34,15 @@ standard sampling parameters) plus two gateway-specific optional fields:
 intermediate buffering (F1.3, Phase 04). `stream: false` (or omitted)
 returns a single JSON response (Phase 03).
 
+A stream fails over like a non-streaming request until its first chunk
+(see [Routing policy](./routing-policy.md)), so its response status and
+`X-Aether-Provider` / `X-Aether-Attempts` headers are only sent once a
+provider has produced a chunk or every attempt has failed. A failure
+before the first chunk is answered with the usual error envelope (`502
+no_healthy_provider` when every chain member failed); a failure after
+it ends the stream with a final `data: {"error": {...}}` event and no
+`[DONE]`.
+
 Introduced by phase: non-streaming happy path and basic error envelope,
 Phase 03 (M0). Streaming, cancellation, per-chunk relay, Phase 04 (M1).
 Routing headers and failover, Phase 05 (M2). Quota headers and 429s,

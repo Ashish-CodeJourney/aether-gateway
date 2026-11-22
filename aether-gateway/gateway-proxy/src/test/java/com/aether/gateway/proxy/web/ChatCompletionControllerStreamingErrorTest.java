@@ -1,5 +1,6 @@
 package com.aether.gateway.proxy.web;
 
+import com.aether.gateway.core.domain.AttributedStream;
 import com.aether.gateway.core.domain.CacheDecision;
 import com.aether.gateway.core.domain.ChainMember;
 import com.aether.gateway.core.domain.ChatCompletionChoice;
@@ -11,6 +12,8 @@ import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.ProviderStreamException;
 import com.aether.gateway.core.domain.RouteCacheConfig;
 import com.aether.gateway.core.domain.RouteConfig;
+import com.aether.gateway.core.domain.RequestLogEntry;
+import com.aether.gateway.core.domain.StreamAttribution;
 import com.aether.gateway.core.domain.TokenEstimator;
 import com.aether.gateway.core.domain.ToolCall;
 import com.aether.gateway.core.domain.ToolsNotSupportedException;
@@ -41,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.concurrent.Flow;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -62,6 +66,7 @@ class ChatCompletionControllerStreamingErrorTest {
     private final RoutingSource routingSource = mock(RoutingSource.class);
     private final MetricsPort metricsPort = mock(MetricsPort.class);
     private final PromptRegistryPort promptRegistryPort = mock(PromptRegistryPort.class);
+    private final RequestLogPort requestLogPort = mock(RequestLogPort.class);
 
     private WebTestClient anonymousClient() {
         when(ipRateLimitPort.tryConsume(anyString())).thenReturn(true);
@@ -79,7 +84,7 @@ class ChatCompletionControllerStreamingErrorTest {
                 cachePort,
                 routingSource,
                 metricsPort,
-                mock(RequestLogPort.class),
+                requestLogPort,
                 mock(CostModelPort.class),
                 promptRegistryPort,
                 new ChatCompletionDtoMapper(),
@@ -134,5 +139,69 @@ class ChatCompletionControllerStreamingErrorTest {
         assertThat(body).contains("Hel");
         assertThat(body).contains("\"error\":{\"message\":\"upstream overloaded\",\"type\":\"provider_error\",\"code\":503}");
         assertThat(body).doesNotContain("[DONE]");
+    }
+
+    private static Flow.Publisher<ProviderResponse.StreamChunk> attributed(
+            reactor.core.publisher.Flux<ProviderResponse.StreamChunk> chunks, StreamAttribution attribution) {
+        var publisher = reactor.adapter.JdkFlowAdapter.publisherToFlowPublisher(chunks);
+        return new AttributedStream() {
+            @Override
+            public void subscribe(Flow.Subscriber<? super ProviderResponse.StreamChunk> subscriber) {
+                publisher.subscribe(subscriber);
+            }
+
+            @Override
+            public Optional<StreamAttribution> attribution() {
+                return Optional.of(attribution);
+            }
+        };
+    }
+
+    @Test
+    void reportsWhichProviderServedAFailedOverStreamAndHowManyAttemptsItTook() {
+        var chunks = reactor.core.publisher.Flux.just(new ProviderResponse.StreamChunk("s", 0, "Hel", true, List.of(), null));
+        when(chatStreamUseCase.stream(any())).thenReturn(attributed(chunks,
+                new StreamAttribution("mock-fallback", 1, List.of("mock-primary", "mock-fallback"))));
+
+        anonymousClient().post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(streamingRequest())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("X-Aether-Provider", "mock-fallback")
+                .expectHeader().valueEquals("X-Aether-Attempts", "1")
+                .returnResult(String.class)
+                .getResponseBody()
+                .blockLast(Duration.ofSeconds(5));
+
+        var entry = ArgumentCaptor.forClass(RequestLogEntry.class);
+        verify(requestLogPort).log(entry.capture());
+        assertThat(entry.getValue().provider()).isEqualTo("mock-fallback");
+        assertThat(entry.getValue().failoverChain()).containsExactly("mock-primary", "mock-fallback");
+    }
+
+    @Test
+    void reportsTheAttemptsMadeWhenEveryProviderFailedBeforeTheFirstChunk() {
+        var failing = reactor.core.publisher.Flux.<ProviderResponse.StreamChunk>error(new ProviderStreamException(
+                502, "no_healthy_provider", "All providers unavailable for model mock (attempted: [mock-primary, mock-fallback])", false));
+        when(chatStreamUseCase.stream(any())).thenReturn(attributed(failing,
+                new StreamAttribution(null, 2, List.of("mock-primary", "mock-fallback"))));
+
+        anonymousClient().post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(streamingRequest())
+                .exchange()
+                .expectStatus().isEqualTo(502)
+                .expectHeader().valueEquals("X-Aether-Attempts", "2")
+                .expectHeader().doesNotExist("X-Aether-Provider")
+                .expectBody()
+                .jsonPath("$.title").isEqualTo("no_healthy_provider");
+
+        var entry = ArgumentCaptor.forClass(RequestLogEntry.class);
+        verify(requestLogPort).log(entry.capture());
+        assertThat(entry.getValue().attemptCount()).isEqualTo(2);
+        assertThat(entry.getValue().failoverChain()).containsExactly("mock-primary", "mock-fallback");
     }
 }
