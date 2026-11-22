@@ -5,49 +5,145 @@
 [![Docs site](https://img.shields.io/badge/docs-ashish--codejourney.github.io%2Faether-gateway-blue)](https://ashish-codejourney.github.io/aether-gateway/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**A self-hosted LLM gateway — streaming proxy, multi-provider failover, and vector-based semantic caching in Java 25 / Spring Boot 4.1 — measured to cut cached-request latency to 8.9ms p95 and fail over to a healthy provider in 67.92ms p99, both against a reproducible load-test harness, not estimates.**
+**One self-hosted, OpenAI-compatible endpoint in front of all your LLM providers, with failover, caching, quotas and per-request cost tracking built in.**
 
-📚 **[Full documentation](https://ashish-codejourney.github.io/aether-gateway/)** — setup guide, usage guide, architecture decision records, and design docs, all rendered and searchable.
+Free and open source (MIT). Java 25 / Spring Boot 4.1.
 
-Point your existing OpenAI-compatible SDK at Aether instead of at a provider directly. It handles routing, failover, semantic caching, quota enforcement, cost accounting, and observability transparently.
+**[Documentation](https://ashish-codejourney.github.io/aether-gateway/)**: setup guide, usage guide, architecture decision records and design docs.
 
-## Demo: failover and a cache hit, live
+## Who it's for
 
-No recorded GIF ships in this repo (no live public deployment exists to record against — see [Status](#status--what-this-is) below) — instead, this is the *exact* reproducible sequence, run against `docker compose up` on this machine, with real captured output:
+- Teams that want **one OpenAI-compatible endpoint** across Ollama, Groq, Gemini, Anthropic, OpenAI and any other OpenAI-compatible provider, without changing application code when a provider changes or goes down.
+- Teams that need to **self-host** the gateway, keeping prompts, keys and the request log on their own infrastructure.
+- **JVM and Spring shops** in particular, who want a gateway they can read, debug, extend and run with tooling they already know.
+
+## Quickstart
+
+```bash
+docker compose up -d
+# First run builds the images and downloads the embedding model; give it a minute, then:
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"mock","messages":[{"role":"user","content":"hello"}]}'
+```
+
+That brings up the gateway, Postgres + pgvector, Redis, two mock providers (so you can test failover without a real outage), Prometheus, and Grafana with a pre-built dashboard at `http://localhost:3000`. You don't need any provider keys to try it.
+
+Then point any OpenAI SDK at `http://localhost:8080/v1`.
+
+**Python**
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8080/v1", api_key="local-dev")
+reply = client.chat.completions.create(
+    model="mock",
+    messages=[{"role": "user", "content": "What is 2+2?"}],
+)
+print(reply.choices[0].message.content)
+```
+
+**TypeScript**
+
+```ts
+import OpenAI from "openai";
+
+const client = new OpenAI({ baseURL: "http://localhost:8080/v1", apiKey: "local-dev" });
+const reply = await client.chat.completions.create({
+  model: "mock",
+  messages: [{ role: "user", content: "What is 2+2?" }],
+});
+console.log(reply.choices[0].message.content);
+```
+
+The Compose stack allows anonymous requests so the quickstart works without creating a key first. Outside local development, create real API keys through the admin API. Anonymous access is off by default and in the Kubernetes manifests. To use real providers, set their keys (for example `OPENAI_API_KEY` or `GEMINI_API_KEY`) in your shell or a root `.env` file and use the `gpt` or `gemini` model aliases from [`routing.docker.yaml`](routing.docker.yaml).
+
+### What you get back
+
+Every response includes headers that show what the gateway did. This output was captured from the Compose stack:
 
 ```console
-$ curl -sS -X POST http://localhost:8080/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d '{"model":"mock","messages":[{"role":"user","content":"What is 2+2?"}]}' -D -
+$ curl -sS -D - http://localhost:8080/v1/chat/completions -H "Content-Type: application/json" \
+    -d '{"model":"mock","messages":[{"role":"user","content":"What is 2+2?"}]}'
 HTTP/1.1 200 OK
 X-Aether-Cache: MISS
 X-Aether-Cost-USD: 0.0000195
 X-Aether-Attempts: 1
 X-Aether-Provider: mock-primary
-...
 
-# Same prompt again — served from cache, zero cost, zero attempts:
-$ curl -sS -X POST http://localhost:8080/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d '{"model":"mock","messages":[{"role":"user","content":"What is 2+2?"}]}' -D -
-HTTP/1.1 200 OK
+# Same prompt again: served from the exact-match cache, no provider call, no cost
 X-Aether-Cache: EXACT_HIT
 X-Aether-Cost-USD: 0
-...
 
-# Force the primary provider to fail, then send a new prompt — the gateway
-# fails over to mock-fallback transparently, same request, no client change:
+# Make the primary provider fail, then send a new prompt.
+# The gateway fails over to the fallback. The client changes nothing.
 $ curl -sS -X POST http://localhost:8082/_mock/config \
     -H "Content-Type: application/json" -d '{"fail_mode":"503","fail_rate":1.0}'
-$ curl -sS -X POST http://localhost:8080/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d '{"model":"mock","messages":[{"role":"user","content":"failover demo"}]}' -D -
-HTTP/1.1 200 OK
 X-Aether-Cache: MISS
 X-Aether-Attempts: 1
 X-Aether-Provider: mock-fallback
-...
 ```
+
+## Features
+
+- **Multi-provider failover.** Each model alias maps to an ordered chain of providers. Circuit breakers, retries and bulkheads (resilience4j) move traffic to the next healthy provider. Failover took 67.92 ms at p99 over 100 independent injected outages.
+- **Exact-match response caching.** Repeated identical requests are answered from Redis, with Postgres behind it, and cost nothing. Each API key has its own cache namespace, and caching is skipped for requests with `temperature > 0.3`, requests with tools, and any request that sends `X-Aether-No-Cache`. If the cache fails, requests go straight to the provider (fail-open).
+- **Quotas and rate limits per API key.** Monthly token budgets, rate limits and concurrency caps, enforced atomically in Redis. Tokens are reserved before the request and reconciled to the real count afterwards. If quota enforcement fails, requests are rejected rather than let through unmetered (fail-closed).
+- **Cost on every response.** `X-Aether-Cost-USD`, `X-Aether-Provider`, `X-Aether-Attempts` and `X-Aether-Quota-Remaining` headers. Prices come from a hot-reloadable [`cost-model.yaml`](aether-gateway/cost-model.yaml).
+- **Streaming with cancellation.** SSE in the same format as OpenAI's. When a client disconnects, the gateway cancels the upstream request, so you stop paying for tokens nobody will read.
+- **Observability.** Micrometer/Prometheus metrics and a pre-built Grafana dashboard covering latency by provider, cache hit rate, spend and spend avoided, breaker state, in-flight streams, top keys by cost, and errors. There is also a per-request log you can query.
+- **Operator console and admin API.** Manage API keys (stored as salted hashes), a versioned prompt registry, cache stats and the request explorer. See [`console/README.md`](console/README.md).
+- **Kubernetes-ready.** Plain manifests in [`k8s/`](k8s/) with a PodDisruptionBudget, a NetworkPolicy and graceful SSE draining. In two real rolling updates, all 1,000 in-flight streams (500 per rollout) finished without a break.
+- **Hot-reloadable routing.** Edit `routing.yaml` and `POST /admin/routes/reload` applies it without a restart. Provider credentials are referenced by environment variable *name*, so the config file is safe to commit. Provider base URLs are checked against private network ranges (SSRF protection).
+- **Provider adapters.** Ollama, Groq, Gemini, Anthropic, OpenAI, and a generic adapter for anything that speaks the OpenAI format (LiteLLM, vLLM, TGI, and so on).
+
+### Semantic cache (experimental)
+
+The gateway can also return a cached answer for a prompt that is *similar* to an earlier one. It embeds the prompt (all-MiniLM-L6-v2, running in-process), searches pgvector for near neighbours, and then applies a guard that rejects a match when the numbers, dates or named entities differ.
+
+It is not yet accurate enough to recommend for answers that need to be correct. On a 502-prompt hand-labelled corpus at the default 0.94 threshold with the guard on:
+
+| | Measured |
+|---|---|
+| Hit rate | 13.16% |
+| False-hit rate (a wrong cached answer served) | **8.0%** (4 of 50 adversarial pairs) |
+
+The guard cannot detect negation ("open" vs "closed"), spelled-out numbers ("two doses" vs "three doses") or common nouns that change the meaning ("weekdays" vs "weekends"). [Semantic cache correctness](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) covers the full analysis.
+
+**Current limitation:** today, enabling `cache` on a route turns on exact *and* semantic matching together. A route-level switch for exact-only caching is on the roadmap. Until then, you have two options:
+
+- Bypass the cache for sensitive requests with `X-Aether-No-Cache`.
+- Set `AETHER_CACHE_DEFAULT_THRESHOLD` above `1.0` so that no semantic match can qualify. Clients can still lower the threshold per request with the `X-Aether-Cache-Threshold` header.
+
+## How it compares
+
+LiteLLM and Portkey are mature, widely used gateways with much broader provider coverage. If you want the widest set of integrations today, start there. Aether is aimed at teams that want a small, readable JVM codebase with published, reproducible measurements of its own behaviour.
+
+| | Aether Gateway | LiteLLM Proxy | Portkey AI Gateway |
+|---|---|---|---|
+| Self-hosted | Yes | Yes | Yes (managed service also available) |
+| Language / runtime | Java 25, JVM | Python | TypeScript, Node.js |
+| License | MIT | MIT for the open-source core; enterprise features licensed separately | MIT |
+| Provider coverage | 5 native adapters + any OpenAI-compatible API | Very broad | Very broad |
+| Reproducible benchmarks committed in the repo | Yes: [`BENCHMARKS.md`](BENCHMARKS.md), raw CSVs, `make bench` | Not assessed here | Not assessed here |
+
+Competitor details may change. Check their own docs before you decide.
+
+## Benchmarks
+
+Every number below comes from a committed run. The full tables, methodology, caveats and raw CSVs are in **[`BENCHMARKS.md`](BENCHMARKS.md)**, and you can reproduce them with `make bench`.
+
+| Metric | Result | Target |
+|---|---|---|
+| Gateway overhead on a cache miss, p95 | 6.24 ms | < 15 ms |
+| Cache-hit end-to-end latency, p95 | 8.9 ms | < 50 ms |
+| Failover latency, p99 (100 independent trials) | 67.92 ms | < 500 ms |
+| Quota accuracy, 100 concurrent requests | 0 over-issue | 0 |
+| Broken streams during rolling K8s update | 0 of 1,000 | 0 |
+| Semantic cache hit rate (0.94 threshold, guard on) | 13.16% | ≥ 35% (not met) |
+| Semantic cache false-hit rate | 8.0% | ≤ 5% (not met) |
+| Concurrent streams on 2 vCPU / 4 GB | 37.1% failures at 2,000 | ≥ 2,000 (not met) |
 
 ## Architecture
 
@@ -88,91 +184,59 @@ flowchart TB
     Accounting --> Micrometer["Micrometer / OTel"]
 ```
 
-Full diagram, module layout, and the hexagonal-boundary rules (`gateway-core` depends on nothing but the JDK): **[Architecture diagram](https://ashish-codejourney.github.io/aether-gateway/docs/design/architecture-diagram)** · **[Module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries)**.
+The core follows a hexagonal (ports and adapters) layout. `gateway-core` depends only on the JDK, and ArchUnit tests enforce that. See the [architecture diagram](https://ashish-codejourney.github.io/aether-gateway/docs/design/architecture-diagram) and [module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries).
 
-## Quickstart
-
-```bash
-docker compose up -d
-# wait ~30s on first run (ONNX embedding model download), then:
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"mock","messages":[{"role":"user","content":"hello"}]}'
-```
-
-That's the whole stack — gateway, Postgres+pgvector, Redis, two mock providers (standing in for real ones so failover is demonstrable without live provider outages), Prometheus, and Grafana (`http://localhost:3000`, dashboard pre-provisioned) — seeded and ready with no manual setup steps.
-
-Point a real client at it by setting `baseUrl` to `http://localhost:8080/v1` — any OpenAI-compatible SDK works unmodified.
-
-Admin API and console (prompt registry, API keys, cache stats, request explorer): `AETHER_ADMIN_API_KEY` is `dev-admin-key-do-not-use-in-production` in `docker-compose.yml`; see [`console/README.md`](console/README.md) to run the operator console against it.
-
-## Benchmark results
-
-Full tables, methodology, and raw data: **[`BENCHMARKS.md`](BENCHMARKS.md)**, reproducible via `make bench`.
-
-| Metric | Result | Target |
-|---|---|---|
-| Semantic cache hit rate (502-prompt labelled corpus, entity guard active) | 13.16% | 35% (not met — see below) |
-| Semantic cache false-hit rate | 8.0% | 5% (not met — see below) |
-| Cache-hit latency, p95 | 8.9ms | 50ms |
-| Failover latency, p99 (100 trials) | 67.92ms | 500ms |
-| Line coverage (4 core modules) | 76.8% | — |
-
-The hit-rate/false-hit-rate gap is disclosed, not hidden: [Semantic cache correctness](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) explains why (negation and spelled-out-number gaps in the entity guard's defined scope), and the AC scorecard in `BENCHMARKS.md` documents every acceptance criterion measured, met or not.
-
-## Design decisions and tradeoffs
-
-Full reasoning for each lives in the linked ADR/design doc — this is the one-line version:
+## Design decisions
 
 | Decision | Why |
 |---|---|
-| [WebFlux for streaming, virtual threads elsewhere](https://ashish-codejourney.github.io/aether-gateway/docs/adr/webflux-streaming-mvc-virtual-threads-elsewhere) | Cancellation propagation (closing a tab must stop paying for tokens) needs Reactor's operator chain; nothing else on the request path needs non-blocking I/O badly enough to justify it. |
-| [Circuit breaker state: local per replica + Redis hint, not shared](https://ashish-codejourney.github.io/aether-gateway/docs/adr/circuit-breaker-state-local-with-redis-advisory-hint) | A genuinely shared breaker is a distributed-consensus problem this project doesn't need to solve; a hint that nudges replicas without requiring consensus is a deliberate compromise. |
-| [Fail-open cache, fail-closed quota](https://ashish-codejourney.github.io/aether-gateway/docs/adr/fail-open-cache-fail-closed-quota) | A cache outage should degrade to "always call the real provider," never block traffic; a quota outage must never silently let unmetered spend through. Same infra, opposite posture, on purpose. |
-| [Semantic threshold (0.94) + entity/numeric guard](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) | Similarity alone can't tell "what is 2+2" from "what is 2+3"; the guard is a no-network heuristic layered on top, not a replacement for the threshold. |
-| [Reservation-and-reconciliation for token quotas](https://ashish-codejourney.github.io/aether-gateway/docs/adr/reservation-and-reconciliation-for-token-quotas) | Output tokens aren't known until a response completes, so quota is reserved pessimistically up front and reconciled to the real count after. |
-| Provider credentials via env var *names*, never values (F9.2) | `apiKeyEnvVar: GROQ_API_KEY` in `routing.yaml`, resolved from the real environment only where adapters are wired up — the config file is safe to commit even with real providers active. |
-| SSRF protection on real provider base URLs (F9.3) | The requirement named Spring Boot 4.1's `InetAddressFilter`; that class doesn't exist in Spring Framework 7.0.8/Boot 4.1 (checked against the actual jars), so this is built on `java.net.InetAddress`'s private-range predicates instead. Proven at unit, integration, *and* acceptance level. |
-| [Graceful SSE drain under a K8s rolling update](https://ashish-codejourney.github.io/aether-gateway/docs/design/kubernetes-deployment) | Readiness flips before liveness, `preStop` gives the Service time to stop routing before SIGTERM, in-flight streams finish naturally. Proven live: 500/500 concurrent streams survived a real rolling update, twice, zero broken. |
-| Autoscaling on in-flight stream count, not CPU | These pods are I/O-bound waiting on providers; CPU sits idle while genuinely saturated. Disclosed gap: the Prometheus Adapter needed to serve that custom metric wasn't deployed in this session's cluster, so the scale-out itself wasn't exercised live. |
+| [WebFlux for streaming, virtual threads elsewhere](https://ashish-codejourney.github.io/aether-gateway/docs/adr/webflux-streaming-mvc-virtual-threads-elsewhere) | Passing a client's cancellation through to the provider needs Reactor's operator chain. Nothing else on the request path needs non-blocking I/O. |
+| [Local circuit breakers + Redis advisory hint](https://ashish-codejourney.github.io/aether-gateway/docs/adr/circuit-breaker-state-local-with-redis-advisory-hint) | Replicas share a hint about provider health without needing distributed consensus. |
+| [Fail-open cache, fail-closed quota](https://ashish-codejourney.github.io/aether-gateway/docs/adr/fail-open-cache-fail-closed-quota) | A cache outage should only lose savings. A quota outage must never let unmetered spend through. |
+| [Reserve-then-reconcile token quotas](https://ashish-codejourney.github.io/aether-gateway/docs/adr/reservation-and-reconciliation-for-token-quotas) | Output tokens are unknown until the response finishes, so tokens are reserved up front and corrected afterwards. |
+| [Similarity threshold + entity/numeric guard](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) | Similarity alone can't tell "what is 2+2" from "what is 2+3". |
+| [Graceful SSE drain on Kubernetes](https://ashish-codejourney.github.io/aether-gateway/docs/design/kubernetes-deployment) | Readiness fails before liveness, and `preStop` gives the Service time to stop sending new traffic, so in-flight streams finish. |
 
-## What was deliberately not built, and why
+All ADRs are on the [docs site](https://ashish-codejourney.github.io/aether-gateway/).
 
-Named as non-goals from the outset — being able to name what you chose *not* to build is itself the point, not an oversight:
+## Roadmap
 
-- Training, fine-tuning, or hosting models — this is infrastructure *around* model calls, not a model-serving project.
-- A chat UI for end users — the operator console (`console/`) is an internal tool for API keys, prompts, cache stats, and the request log, not a product surface.
-- Multi-tenant billing, invoicing, or payments.
-- Agent frameworks, tool-calling orchestration, or RAG pipelines.
+In progress or planned. None of these ship yet:
+
+- **Tool-calling passthrough** across providers.
+- **`/v1/embeddings`** endpoint.
+- **Lightweight single-container mode** for trying the gateway without the full Compose stack.
+- **Spring Boot starter** for embedding the gateway in an existing Spring application.
+- **Exact-only cache mode** as a per-route switch, with semantic matching as an explicit opt-in.
+- **Entity guard improvements** for negation and spelled-out numbers.
+
+## Non-goals
+
+- Training, fine-tuning or serving models.
+- An end-user chat UI. The console is an operator tool.
+- Billing, invoicing or payments.
+- Agent frameworks or RAG pipelines.
 - Fine-grained RBAC beyond API-key scopes.
-- Horizontal DB sharding or global multi-region.
-- Helm, a service mesh, Kubernetes operators/CRDs, or ArgoCD — ruled out up front as "unjustified complexity you would have to defend" at this scale; plain manifests plus `kubectl` cover everything actually needed.
+- Multi-region deployment or database sharding.
 
-## Local development
+## Development
 
 ```bash
 cd aether-gateway
-./gradlew test integrationTest            # unit + Testcontainers-backed integration tests
-./gradlew :gateway-acceptance-tests:test  # full Cucumber acceptance suite (@m0-@m9)
+./gradlew test integrationTest            # unit + Testcontainers integration tests
+./gradlew :gateway-acceptance-tests:test  # Cucumber acceptance suite
 ```
 
-```bash
-cd docs-site
-npm start   # docs site, live-reloading, at http://localhost:3000
-```
-
-Where a new provider adapter or route type belongs: [Module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries) and [ADR-001](https://ashish-codejourney.github.io/aether-gateway/docs/adr/hexagonal-module-layout).
+To find where a new provider adapter or route type belongs, see [module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries).
 
 ## Contributing
 
-Contributions are welcome - see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow, testing expectations (tests are written first, against real infrastructure via Testcontainers, not mocks), and how this codebase's hexagonal boundaries are enforced by ArchUnit rather than just convention. Please report security vulnerabilities privately per [`SECURITY.md`](SECURITY.md) rather than as a public issue. This project follows a [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow and testing expectations: tests come first and run against real infrastructure through Testcontainers. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please report vulnerabilities privately, as described in [`SECURITY.md`](SECURITY.md), rather than in a public issue.
 
 ## License
 
 [MIT](LICENSE) © Ashish Vaghela.
-
-## Status — what this is
-
-Built through the last of its nine milestones ([requirements index](https://ashish-codejourney.github.io/aether-gateway/docs/design/requirements/)): real provider adapters (Ollama, Groq, Gemini, and a generic OpenAI-compatible adapter — all conforming to the identical `ProviderAdapter` port the mock provider does, with zero changes to `gateway-core` or `gateway-router`), the security hardening in F9.1–F9.5, and a Kubernetes deployment with a live-proven zero-downtime rolling update.
-
-**Not deployed to a live public URL.** That specific piece of M9's exit criterion needs real provider API keys and cloud infrastructure access this build environment doesn't have — a deliberate scope decision, not an oversight. `docker compose up` brings up the complete, real, fully-functional stack locally, which is what every command and result on this page was actually run against.
