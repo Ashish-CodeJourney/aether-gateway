@@ -1,19 +1,14 @@
 package com.aether.gateway.providers.openai;
 
-import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
-import com.aether.gateway.core.domain.ChatCompletionResponse;
-import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
-import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
-import com.aether.gateway.providers.openai.wire.WireChatCompletionRequest;
 import com.aether.gateway.providers.openai.wire.WireChatCompletionResponse;
-import com.aether.gateway.providers.openai.wire.WireChatMessage;
 import com.aether.gateway.providers.openai.wire.WireStreamChunkResponse;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.codec.json.JacksonJsonEncoder;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
@@ -24,7 +19,6 @@ import reactor.core.publisher.Flux;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.util.List;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -36,11 +30,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * with one real addition real providers need and the mock never did: an
  * optional {@code Authorization: Bearer <apiKey>} header (F9.2 - the key
  * is only ever held in memory and attached to outbound requests, never
- * logged). Wire DTOs are duplicated from {@code providers.mock.wire}
- * rather than shared, a deliberate choice to avoid touching that
- * package's extensively-covered existing behaviour this late; both sides
- * model the same public OpenAI wire shape and are expected to drift
- * identically, if at all.
+ * logged). The wire mapping itself, tool calling included, lives in
+ * {@link OpenAiWireMapping} and is shared with the mock provider's
+ * adapter, since both speak exactly the same public OpenAI wire shape.
  */
 public class OpenAiCompatibleAdapter implements ProviderAdapter {
 
@@ -62,7 +54,11 @@ public class OpenAiCompatibleAdapter implements ProviderAdapter {
                     converters.removeIf(c -> c instanceof JacksonJsonHttpMessageConverter);
                     converters.add(new JacksonJsonHttpMessageConverter(snakeCaseMapper));
                 });
-        var webBuilderWithAuth = webBuilder.baseUrl(baseUrl);
+        // The streaming request body must be snake_case too (tool_calls,
+        // tool_call_id, tool_choice); WebClient's default encoder is not.
+        var webBuilderWithAuth = webBuilder
+                .baseUrl(baseUrl)
+                .codecs(codecs -> codecs.defaultCodecs().jacksonJsonEncoder(new JacksonJsonEncoder(snakeCaseMapper)));
         if (apiKey != null && !apiKey.isBlank()) {
             restBuilderWithAuth = restBuilderWithAuth.defaultHeader("Authorization", "Bearer " + apiKey);
             webBuilderWithAuth = webBuilderWithAuth.defaultHeader("Authorization", "Bearer " + apiKey);
@@ -78,7 +74,7 @@ public class OpenAiCompatibleAdapter implements ProviderAdapter {
 
     @Override
     public ProviderResponse invoke(ChatCompletionRequest request) {
-        var wireRequest = toWireRequest(request, false);
+        var wireRequest = OpenAiWireMapping.toWireRequest(request, false);
         try {
             // "/chat/completions", not "/v1/chat/completions": unlike
             // mock-provider's fixed baseUrl (bare host, no version
@@ -92,7 +88,7 @@ public class OpenAiCompatibleAdapter implements ProviderAdapter {
                     .body(wireRequest)
                     .retrieve()
                     .body(WireChatCompletionResponse.class);
-            return new ProviderResponse.Completion(toDomainResponse(wireResponse));
+            return new ProviderResponse.Completion(OpenAiWireMapping.toDomainResponse(wireResponse));
         } catch (HttpStatusCodeException e) {
             int status = e.getStatusCode().value();
             boolean retryable = status == 429 || status == 503 || status == 504;
@@ -113,37 +109,14 @@ public class OpenAiCompatibleAdapter implements ProviderAdapter {
         Flux<ProviderResponse.StreamChunk> flux = webClient.post()
                 .uri("/chat/completions")
                 .accept(MediaType.TEXT_EVENT_STREAM)
-                .bodyValue(toWireRequest(request, true))
+                .bodyValue(OpenAiWireMapping.toWireRequest(request, true))
                 .retrieve()
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
                 })
                 .takeWhile(sse -> !"[DONE]".equals(sse.data()))
-                .map(sse -> {
-                    WireStreamChunkResponse chunk = snakeCaseMapper.readValue(sse.data(), WireStreamChunkResponse.class);
-                    var choice = chunk.choices().get(0);
-                    boolean last = choice.finishReason() != null;
-                    String content = choice.delta() != null && choice.delta().content() != null ? choice.delta().content() : "";
-                    return new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), content, last);
-                });
+                .map(sse -> OpenAiWireMapping.toStreamChunk(
+                        snakeCaseMapper.readValue(sse.data(), WireStreamChunkResponse.class), responseId, index.getAndIncrement()));
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux);
-    }
-
-    private WireChatCompletionRequest toWireRequest(ChatCompletionRequest request, boolean stream) {
-        List<WireChatMessage> messages = request.messages().stream()
-                .map(m -> new WireChatMessage(m.role(), m.content()))
-                .toList();
-        return new WireChatCompletionRequest(request.model(), messages, stream);
-    }
-
-    private ChatCompletionResponse toDomainResponse(WireChatCompletionResponse wire) {
-        List<ChatCompletionChoice> choices = wire.choices().stream()
-                .map(c -> new ChatCompletionChoice(
-                        c.index(),
-                        new ChatMessage(c.message().role(), c.message().content()),
-                        c.finishReason()))
-                .toList();
-        Usage usage = Usage.of(wire.usage().promptTokens(), wire.usage().completionTokens());
-        return new ChatCompletionResponse(wire.id(), wire.object(), wire.created(), wire.model(), choices, usage);
     }
 }

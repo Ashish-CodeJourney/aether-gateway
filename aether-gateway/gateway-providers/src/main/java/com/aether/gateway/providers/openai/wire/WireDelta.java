@@ -1,4 +1,6 @@
 package com.aether.gateway.providers.openai.wire;
 
-public record WireDelta(String content) {
+import java.util.List;
+
+public record WireDelta(String content, List<WireToolCall> toolCalls) {
 }
