@@ -299,6 +299,33 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
         </div>
       </section>
 
+      <section id="watch" class="section" aria-labelledby="watch-title">
+        <div class="container">
+          <div class="section-head section-head-center reveal">
+            <p class="eyebrow">Watch the demo</p>
+            <h2 id="watch-title" class="section-title">90 seconds, real requests.</h2>
+            <p class="section-lede">
+              Recorded against a running gateway: a real Claude call with its cost header, the same request served
+              from cache for $0, failover when a provider goes down, streaming, tool calling, Grafana and the console.
+            </p>
+          </div>
+          <div class="watch-frame reveal">
+            <video
+              controls
+              playsinline
+              preload="none"
+              width="1920"
+              height="1080"
+              poster={`${base}/demo/aether-demo-poster.png`}
+              aria-label="Aether Gateway product demo"
+            >
+              <source src={`${base}/demo/aether-demo.mp4`} type="video/mp4" />
+              <a href={`${base}/demo/aether-demo.mp4`}>Download the demo video (MP4)</a>
+            </video>
+          </div>
+        </div>
+      </section>
+
       <section id="demos" class="section section-tint" aria-labelledby="demos-title">
         <div class="container">
           <div class="section-head section-head-center reveal">
@@ -1207,6 +1234,22 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
         .section {
           padding: 4.25rem 0;
         }
+      }
+      .watch-frame {
+        max-width: 1040px;
+        margin: 0 auto;
+        border-radius: 18px;
+        overflow: hidden;
+        border: 1px solid #e3ebf4;
+        background: #0b1220;
+        box-shadow: 0 30px 60px -30px rgba(14, 116, 144, 0.35), 0 12px 24px -12px rgba(15, 23, 42, 0.18);
+        aspect-ratio: 16 / 9;
+      }
+      .watch-frame video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
       }
       .section-head {
         max-width: 46rem;
