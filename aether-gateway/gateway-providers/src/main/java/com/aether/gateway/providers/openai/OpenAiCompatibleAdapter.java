@@ -4,12 +4,18 @@ import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
 import com.aether.gateway.core.domain.ChatMessage;
+import com.aether.gateway.core.domain.Embedding;
+import com.aether.gateway.core.domain.EmbeddingOutcome;
+import com.aether.gateway.core.domain.EmbeddingRequest;
+import com.aether.gateway.core.domain.EmbeddingResponse;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.openai.wire.WireChatCompletionRequest;
 import com.aether.gateway.providers.openai.wire.WireChatCompletionResponse;
 import com.aether.gateway.providers.openai.wire.WireChatMessage;
+import com.aether.gateway.providers.openai.wire.WireEmbeddingRequest;
+import com.aether.gateway.providers.openai.wire.WireEmbeddingResponse;
 import com.aether.gateway.providers.openai.wire.WireStreamChunkResponse;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -127,6 +133,34 @@ public class OpenAiCompatibleAdapter implements ProviderAdapter {
                 });
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux);
+    }
+
+    @Override
+    public EmbeddingOutcome embed(EmbeddingRequest request) {
+        var wireRequest = new WireEmbeddingRequest(request.model(), request.inputs(), "float", request.dimensions());
+        try {
+            WireEmbeddingResponse wireResponse = restClient.post()
+                    .uri("/embeddings")
+                    .body(wireRequest)
+                    .retrieve()
+                    .body(WireEmbeddingResponse.class);
+            return new EmbeddingOutcome.Success(toDomainEmbeddings(request, wireResponse));
+        } catch (HttpStatusCodeException e) {
+            int status = e.getStatusCode().value();
+            boolean retryable = status == 429 || status == 503 || status == 504;
+            return new EmbeddingOutcome.Failure(new ProviderResponse.ProviderError("provider_error", e.getMessage(), status, retryable));
+        } catch (RestClientException e) {
+            return new EmbeddingOutcome.Failure(new ProviderResponse.ProviderError("provider_unreachable", e.getMessage(), 502, true));
+        }
+    }
+
+    private EmbeddingResponse toDomainEmbeddings(EmbeddingRequest request, WireEmbeddingResponse wire) {
+        List<Embedding> data = wire.data().stream()
+                .map(d -> new Embedding(d.index(), d.embedding()))
+                .toList();
+        int promptTokens = wire.usage() != null && wire.usage().promptTokens() != null
+                ? wire.usage().promptTokens() : request.estimatedPromptTokens();
+        return new EmbeddingResponse(wire.model() != null ? wire.model() : request.model(), data, promptTokens);
     }
 
     private WireChatCompletionRequest toWireRequest(ChatCompletionRequest request, boolean stream) {
