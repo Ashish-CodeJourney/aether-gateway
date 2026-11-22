@@ -15,8 +15,10 @@ export default defineConfig({
         'A self-hosted LLM gateway - streaming proxy, multi-provider failover, and vector-based semantic caching',
       favicon: '/favicon.svg',
       logo: {
-        src: './public/img/logo.svg',
-        replacesTitle: false,
+        light: './public/logo.svg',
+        dark: './public/logo-dark.svg',
+        alt: 'Aether Gateway',
+        replacesTitle: true,
       },
       social: [
         {icon: 'github', label: 'GitHub', href: 'https://github.com/Ashish-CodeJourney/aether-gateway'},
@@ -26,6 +28,18 @@ export default defineConfig({
       },
       customCss: ['./src/styles/custom.css'],
       head: [
+        {
+          tag: 'link',
+          attrs: {rel: 'icon', href: '/aether-gateway/favicon.ico', sizes: '32x32'},
+        },
+        {
+          tag: 'link',
+          attrs: {rel: 'apple-touch-icon', href: '/aether-gateway/apple-touch-icon.png'},
+        },
+        {
+          tag: 'meta',
+          attrs: {name: 'theme-color', content: '#0B1B34'},
+        },
         {
           tag: 'meta',
           attrs: {property: 'og:image', content: 'https://ashish-codejourney.github.io/aether-gateway/img/social-card.jpg'},

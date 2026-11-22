@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs-site/public/logo.svg" alt="Aether Gateway" width="320">
+</p>
+
 # Aether Gateway
 
 [![CI](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml)
