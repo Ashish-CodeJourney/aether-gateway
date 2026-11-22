@@ -14,7 +14,9 @@ import com.aether.gateway.core.domain.PromptReference;
 import com.aether.gateway.core.domain.PromptTemplateRenderer;
 import com.aether.gateway.core.domain.PromptVariableValidationException;
 import com.aether.gateway.core.domain.PromptVersion;
+import com.aether.gateway.core.domain.ChainMember;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ProviderStreamException;
 import com.aether.gateway.core.domain.QuotaDecision;
 import com.aether.gateway.core.domain.RequestLogEntry;
 import com.aether.gateway.core.domain.RequestMetrics;
@@ -55,6 +57,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -610,15 +613,6 @@ public class ChatCompletionController {
     private Mono<ResponseEntity<Object>> streamingResponse(
             ChatCompletionRequest domainRequest, ApiKeyContext key, QuotaDecision.Allowed allowed, long estimatedTokens,
             CacheLookup cacheLookup, long requestStartNanos) {
-        // F1.5: capture partial usage (here, chunk count as a token-count
-        // proxy) when a stream is cancelled mid-way.
-        AtomicInteger chunksSent = new AtomicInteger(0);
-        StringBuilder accumulated = new StringBuilder();
-        AtomicBoolean cancelled = new AtomicBoolean(false);
-        AtomicBoolean sawError = new AtomicBoolean(false);
-        AtomicLong ttfbNanos = new AtomicLong(-1);
-        AtomicBoolean sawToolCall = new AtomicBoolean(false);
-        String streamId = "aether-" + UUID.randomUUID();
         Flow.Publisher<ProviderResponse.StreamChunk> upstream;
         try {
             // Resolved before streamStarted() and before any response
@@ -629,10 +623,60 @@ public class ChatCompletionController {
             reconcileAndReleaseOnFailure(key, allowed);
             throw e;
         }
+        // The response is held until the provider's first signal: a
+        // provider that rejects or fails the request before sending
+        // anything is answered with its real status as a plain JSON
+        // error (as a non-streaming request would be), not a 200 stream
+        // or a generic 500. switchOnFirst must not cancel the source when
+        // the response Mono completes - the body subscribes to it later.
+        return JdkFlowAdapter.flowPublisherToFlux(upstream)
+                .switchOnFirst((first, chunks) -> {
+                    if (first.isOnError() && first.getThrowable() instanceof ProviderStreamException failure) {
+                        return Mono.just(streamFailedBeforeFirstChunk(
+                                failure, domainRequest, key, allowed, cacheLookup, requestStartNanos));
+                    }
+                    return Mono.just(streamingBody(
+                            chunks, domainRequest, key, allowed, estimatedTokens, cacheLookup, requestStartNanos));
+                }, false)
+                .single();
+    }
+
+    private ResponseEntity<Object> streamFailedBeforeFirstChunk(
+            ProviderStreamException failure, ChatCompletionRequest domainRequest, ApiKeyContext key,
+            QuotaDecision.Allowed allowed, CacheLookup cacheLookup, long requestStartNanos) {
+        reconcileAndReleaseOnFailure(key, allowed);
+        long totalMs = elapsedMillis(requestStartNanos);
+        String cacheHeaderValue = cacheLookup.decision().headerValue();
+        recordObservability(domainRequest, key, null, cacheHeaderValue, false, null,
+                0, 0, totalMs, totalMs, 1, List.of(), "FAILED", failure.errorCode());
+        var body = new ErrorEnvelopeDto(
+                "https://aether.dev/problems/" + failure.errorCode(),
+                failure.errorCode(),
+                failure.httpStatus(),
+                failure.getMessage(),
+                "/v1/chat/completions");
+        var builder = ResponseEntity.status(failure.httpStatus())
+                .header(CACHE_HEADER, cacheHeaderValue)
+                .contentType(MediaType.APPLICATION_JSON);
+        quotaHeader(builder, allowed);
+        return builder.body((Object) body);
+    }
+
+    private ResponseEntity<Object> streamingBody(
+            Flux<ProviderResponse.StreamChunk> chunks, ChatCompletionRequest domainRequest, ApiKeyContext key,
+            QuotaDecision.Allowed allowed, long estimatedTokens, CacheLookup cacheLookup, long requestStartNanos) {
+        AtomicInteger chunksSent = new AtomicInteger(0);
+        StringBuilder accumulated = new StringBuilder();
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        AtomicBoolean sawError = new AtomicBoolean(false);
+        AtomicLong ttfbNanos = new AtomicLong(-1);
+        AtomicBoolean sawToolCall = new AtomicBoolean(false);
+        String streamId = "aether-" + UUID.randomUUID();
         metricsPort.streamStarted();
 
-        Flux<ServerSentEvent<String>> body = JdkFlowAdapter
-                .flowPublisherToFlux(upstream)
+        // F1.5: capture partial usage (here, chunk count as a token-count
+        // proxy) when a stream is cancelled mid-way.
+        Flux<ServerSentEvent<String>> body = chunks
                 .doOnNext(chunk -> {
                     chunksSent.incrementAndGet();
                     if (!chunk.toolCallDeltas().isEmpty()) {
@@ -644,6 +688,12 @@ public class ChatCompletionController {
                 .doOnError(e -> sawError.set(true))
                 .map(this::toSseEvent)
                 .concatWith(Mono.just(ServerSentEvent.<String>builder("[DONE]").build()))
+                // Headers are already sent mid-stream, so the failure is
+                // reported the way OpenAI's SDKs expect: a final data
+                // event carrying an "error" object, and no [DONE].
+                .onErrorResume(ProviderStreamException.class, failure -> Mono.just(ServerSentEvent.builder(mapper.toJson(
+                        new StreamErrorEventDto(new StreamErrorEventDto.Error(failure.getMessage(), failure.errorCode(), failure.httpStatus()))))
+                        .build()))
                 .doOnCancel(() -> {
                     cancelled.set(true);
                     log.info("Stream for model {} cancelled by client after {} chunks", domainRequest.model(), chunksSent.get());
@@ -675,7 +725,7 @@ public class ChatCompletionController {
                 .header(CACHE_HEADER, cacheLookup.decision().headerValue())
                 .contentType(MediaType.TEXT_EVENT_STREAM);
         quotaHeader(builder, allowed);
-        return Mono.just(builder.body((Object) body));
+        return builder.body((Object) body);
     }
 
     private void storeStreamedResponse(CacheLookup cacheLookup, ChatCompletionRequest domainRequest, String streamId, String fullContent) {
@@ -713,7 +763,9 @@ public class ChatCompletionController {
             long inputTokens, long outputTokens, long ttfbMs, long totalMs,
             int attemptCount, List<String> failoverChain, String status, String errorCode) {
 
-        ModelPricing pricing = resolvePricing(servedByProvider, domainRequest.model());
+        Optional<ChainMember> pricedMember = pricedChainMember(servedByProvider, domainRequest.model());
+        String upstreamModel = pricedMember.map(ChainMember::model).orElse(domainRequest.model());
+        ModelPricing pricing = resolvePricing(servedByProvider, pricedMember, domainRequest.model());
         BigDecimal amount = pricing != null ? CostCalculator.costUsd(pricing, inputTokens, outputTokens) : BigDecimal.ZERO;
         BigDecimal costUsd = isCacheHit ? BigDecimal.ZERO : amount;
         BigDecimal savedUsd = isCacheHit ? amount : BigDecimal.ZERO;
@@ -728,35 +780,45 @@ public class ChatCompletionController {
         String apiKeyTag = key != null ? key.keyId() : ANONYMOUS_NAMESPACE;
 
         requestLogPort.log(new RequestLogEntry(
-                UUID.randomUUID(), apiKeyId, null, domainRequest.model(), attributedProvider, domainRequest.model(),
+                UUID.randomUUID(), apiKeyId, null, domainRequest.model(), attributedProvider, upstreamModel,
                 null, null, domainRequest.stream(), cacheOutcomeLabel, similarity,
                 (int) inputTokens, (int) outputTokens, costUsd, savedUsd,
                 (int) ttfbMs, (int) totalMs, attemptCount, failoverChain,
                 status, errorCode, Instant.now()));
 
         metricsPort.recordRequest(new RequestMetrics(
-                attributedProvider, domainRequest.model(), domainRequest.model(), apiKeyTag,
+                attributedProvider, upstreamModel, domainRequest.model(), apiKeyTag,
                 cacheOutcomeLabel, status, totalMs, inputTokens, outputTokens, costUsd.doubleValue(), savedUsd.doubleValue()));
 
         return new CostOutcome(costUsd, savedUsd);
     }
 
     /**
-     * A real provider call already knows exactly which provider served
-     * it. A cache hit does not (the stored response DTO carries no
-     * provider attribution), so its cost/savings estimate instead uses
-     * the route's primary (first chain member) provider's price for the
-     * same model - a defensible stand-in for "what this would have cost
-     * had it gone to the provider," which is F4.9/F6.4's requirement,
-     * versus reporting no savings number at all.
+     * The route chain member whose price applies: the one that served
+     * the request, or - for a cache hit, where no provider call happened
+     * and the stored response carries no attribution - the route's
+     * primary (first) member, as a defensible stand-in for "what this
+     * would have cost had it gone to the provider" (F4.9/F6.4).
      */
-    private ModelPricing resolvePricing(String provider, String model) {
-        if (provider != null) {
-            return costModelPort.pricingFor(provider, model).orElse(null);
+    private Optional<ChainMember> pricedChainMember(String servedByProvider, String routeAlias) {
+        return routingSource.routeFor(routeAlias)
+                .flatMap(route -> route.chain().stream()
+                        .filter(member -> servedByProvider == null || member.provider().equals(servedByProvider))
+                        .findFirst());
+    }
+
+    /**
+     * Prices are configured per (provider, upstream model), and a route
+     * alias need not be a model name ("claude" -> claude-haiku-5-5), so
+     * the upstream model is tried first and the alias only as a fallback.
+     */
+    private ModelPricing resolvePricing(String servedByProvider, Optional<ChainMember> pricedMember, String routeAlias) {
+        String provider = servedByProvider != null ? servedByProvider : pricedMember.map(ChainMember::provider).orElse(null);
+        if (provider == null) {
+            return null;
         }
-        return routingSource.routeFor(model)
-                .flatMap(route -> route.chain().stream().findFirst())
-                .flatMap(member -> costModelPort.pricingFor(member.provider(), model))
+        return pricedMember.flatMap(member -> costModelPort.pricingFor(provider, member.model()))
+                .or(() -> costModelPort.pricingFor(provider, routeAlias))
                 .orElse(null);
     }
 
