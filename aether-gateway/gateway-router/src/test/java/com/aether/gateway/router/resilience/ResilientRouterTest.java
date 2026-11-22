@@ -38,6 +38,7 @@ class ResilientRouterTest {
         private final Supplier<ProviderResponse> responseSupplier;
         private final AtomicInteger invocationCount = new AtomicInteger();
         private final AtomicReference<String> lastReceivedModel = new AtomicReference<>();
+        private final AtomicReference<ChatCompletionRequest> lastReceivedRequest = new AtomicReference<>();
 
         FakeAdapter(String name, ProviderResponse fixedResponse) {
             this(name, () -> fixedResponse);
@@ -57,12 +58,14 @@ class ResilientRouterTest {
         public ProviderResponse invoke(ChatCompletionRequest request) {
             invocationCount.incrementAndGet();
             lastReceivedModel.set(request.model());
+            lastReceivedRequest.set(request);
             return responseSupplier.get();
         }
 
         @Override
         public Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request) {
             lastReceivedModel.set(request.model());
+            lastReceivedRequest.set(request);
             var publisher = new java.util.concurrent.SubmissionPublisher<ProviderResponse.StreamChunk>();
             publisher.close();
             return publisher;
@@ -301,6 +304,39 @@ class ResilientRouterTest {
         router.stream(request);
 
         assertThat(primary.lastReceivedModel.get()).isEqualTo("gemini-flash-latest");
+    }
+
+    private static ChatCompletionRequest toolCallingRequest(boolean stream) {
+        var call = new com.aether.gateway.core.domain.ToolCall("call_1", "function", "get_weather", "{\"city\":\"Paris\"}");
+        return new ChatCompletionRequest("gemini", List.of(
+                new ChatMessage("user", "weather?"),
+                new ChatMessage("assistant", "", List.of(call), null),
+                new ChatMessage("tool", "18C", List.of(), "call_1")),
+                stream, null, List.of("{\"type\":\"function\",\"function\":{\"name\":\"get_weather\"}}"), "\"auto\"");
+    }
+
+    @Test
+    void forwardsToolDefinitionsToolChoiceAndToolTurnsUnchangedToTheAdapter() {
+        var primary = new FakeAdapter("gemini-main", new ProviderResponse.Completion(fakeSuccess("primary")));
+        var route = new RouteConfig("gemini", List.of(new ChainMember("gemini-main", "gemini-flash-latest", 100)));
+        var router = buildRouter(Map.of("gemini-main", primary), route);
+        var request = toolCallingRequest(false);
+
+        router.complete(request);
+
+        assertThat(primary.lastReceivedRequest.get()).isEqualTo(request.withModel("gemini-flash-latest"));
+    }
+
+    @Test
+    void streamingForwardsToolDefinitionsToolChoiceAndToolTurnsUnchangedToTheAdapter() {
+        var primary = new FakeAdapter("gemini-main", new ProviderResponse.Completion(fakeSuccess("primary")));
+        var route = new RouteConfig("gemini", List.of(new ChainMember("gemini-main", "gemini-flash-latest", 100)));
+        var router = buildRouter(Map.of("gemini-main", primary), route);
+        var request = toolCallingRequest(true);
+
+        router.stream(request);
+
+        assertThat(primary.lastReceivedRequest.get()).isEqualTo(request.withModel("gemini-flash-latest"));
     }
 
     @Test
