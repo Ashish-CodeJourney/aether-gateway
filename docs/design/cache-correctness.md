@@ -128,11 +128,15 @@ this phase's plan, which only requires the numbers to be measured and
 the choice justified, with the full 0.80-0.99-step sweep and further
 tuning left to Phase 09.
 
-Routing config (`routing.yaml`, `routing.docker.yaml`) sets this same
-0.94 as the `mock` route's default `cache.threshold`, with a per-request
-override available via the `X-Aether-Cache-Threshold` header (PRD
-section 13.1) for callers who want a different point on the same
-measured curve.
+0.94 is also the global default (`aether.cache.default-threshold`). A
+route can set its own `cache.threshold` in routing.yaml, and a request
+can ask for a stricter point on the same measured curve via the
+`X-Aether-Cache-Threshold` header (PRD section 13.1) - never a looser
+one, since anonymous callers share a cache namespace (see [Routing
+policy](./routing-policy.md)). Given the false-hit numbers above, the
+shipped example configs (`routing.yaml`, `routing.docker.yaml`) set
+`cache.semantic: false`, so their routes cache exact matches only;
+semantic matching is an explicit per-route opt-in.
 
 ## Fail-open (ADR-005)
 

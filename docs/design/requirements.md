@@ -152,7 +152,7 @@ file in `gateway-acceptance-tests/src/test/resources/features/`.
 
 | ID | Requirement | Where |
 |---|---|---|
-| F13.1 | `X-Aether-Cache-Threshold` overrides the similarity threshold for one request | `ChatCompletionController` |
+| F13.1 | `X-Aether-Cache-Threshold` makes the similarity threshold stricter (never looser) for one request | `ChatCompletionController` |
 
 ## Known gaps
 

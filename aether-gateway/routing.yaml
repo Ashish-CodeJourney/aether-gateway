@@ -65,5 +65,9 @@ routes:
         model: mock
     cache:
       enabled: true
+      # Exact-match only. Semantic matching (similar-but-not-identical
+      # prompts served from cache) is opt-in: set semantic: true, and see
+      # docs/design/cache-correctness.md for its measured false-hit rate.
+      semantic: false
       threshold: 0.94
       ttl: 6h
