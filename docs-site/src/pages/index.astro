@@ -179,9 +179,10 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
     <title>{TITLE}</title>
     <meta name="description" content={DESCRIPTION} />
     <link rel="canonical" href={`${SITE}/`} />
+    <link rel="icon" href={`${base}/favicon.ico`} sizes="32x32" />
     <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
-    <meta name="theme-color" content="#0c0a14" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#fbfaff" media="(prefers-color-scheme: light)" />
+    <link rel="apple-touch-icon" href={`${base}/apple-touch-icon.png`} />
+    <meta name="theme-color" content="#0B1B34" />
     <meta property="og:title" content={TITLE} />
     <meta property="og:description" content={DESCRIPTION} />
     <meta property="og:type" content="website" />
@@ -211,9 +212,8 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
 
     <header class="nav">
       <div class="container nav-inner">
-        <a class="brand" href={`${base}/`} aria-label="Aether Gateway home">
-          <img src={`${base}/img/logo.svg`} alt="" width="28" height="28" />
-          <span>Aether Gateway</span>
+        <a class="brand" href={`${base}/`}>
+          <img src={`${base}/logo-dark.svg`} alt="Aether Gateway home" width="177" height="30" />
         </a>
         <nav aria-label="Primary">
           <ul class="nav-links">
@@ -244,7 +244,7 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
               Free &amp; open source <span aria-hidden="true">·</span> MIT licensed
             </a>
             <h1 id="hero-title" class="hero-title">
-              One endpoint for <span class="grad">every LLM provider.</span>
+              One endpoint for <span class="hero-accent">every LLM provider.</span>
             </h1>
             <p class="hero-lede">
               Aether is a self-hosted gateway that speaks the OpenAI API. Point the SDK you already use at it and get
@@ -345,7 +345,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         </div>
       </section>
 
-      <section class="section" aria-labelledby="features-title">
+      <section class="section section-alt" aria-labelledby="features-title">
         <div class="container">
           <div class="section-head">
             <p class="eyebrow">Features</p>
@@ -381,7 +381,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         </div>
       </section>
 
-      <section class="section section-alt" aria-labelledby="flow-title">
+      <section class="section" aria-labelledby="flow-title">
         <div class="container">
           <div class="section-head">
             <p class="eyebrow">How it works</p>
@@ -419,13 +419,13 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
           </div>
           <p class="flow-note">
             On a cache hit, steps 4 and 5 are skipped entirely &ndash; the response comes back with
-            <code>X-Aether-Cache: EXACT_HIT</code> or <code>SEMANTIC_HIT</code> and <code>X-Aether-Cost-USD: 0</code>.
+            <code>X-Aether-Cache: EXACT_HIT</code> or <code>SEMANTIC_HIT</code> and <code>X-Aether-Cost-USD: 0</code>.{' '}
             <a href={LINKS.architecture}>See the full architecture</a>.
           </p>
         </div>
       </section>
 
-      <section id="compare" class="section" aria-labelledby="compare-title">
+      <section id="compare" class="section section-alt" aria-labelledby="compare-title">
         <div class="container">
           <div class="section-head">
             <p class="eyebrow">Compare</p>
@@ -510,8 +510,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       <div class="container footer-grid">
         <div class="footer-brand">
           <a class="brand" href={`${base}/`}>
-            <img src={`${base}/img/logo.svg`} alt="" width="24" height="24" />
-            <span>Aether Gateway</span>
+            <img src={`${base}/logo-dark.svg`} alt="Aether Gateway home" width="165" height="28" />
           </a>
           <p>A free, open-source, self-hosted LLM gateway. Released under the MIT License.</p>
         </div>
@@ -551,25 +550,36 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-        --bg: light-dark(#fbfaff, #0c0a14);
-        --bg-alt: light-dark(#f3f0fb, #110e1c);
-        --surface: light-dark(#ffffff, #16121f);
-        --text: light-dark(#17132a, #f2effb);
-        --muted: light-dark(#575170, #a9a2c4);
-        --border: light-dark(#e4dff3, #2a2440);
-        --border-strong: light-dark(#cfc7ea, #3b3359);
-        --accent: light-dark(#5b43c4, #b1a5f6);
-        --accent-soft: light-dark(#ece7fb, #231c3d);
-        --on-accent: light-dark(#ffffff, #120d24);
-        --amber: light-dark(#b45309, #fbbf24);
-        --teal: light-dark(#0f766e, #2dd4bf);
-        --shadow: light-dark(0 24px 48px -28px rgba(63, 41, 148, 0.35), 0 24px 48px -24px rgba(0, 0, 0, 0.7));
+        /* Brand: navy + cyan. Navy bands look the same in both schemes. */
+        --navy: #0b1b34;
+        --navy-2: #12284a;
+        --navy-deep: #07111f;
+        --navy-line: #24426e;
+        --navy-text: #ffffff;
+        --navy-muted: #b4c3da;
+        --cyan: #22d3ee;
+        --cyan-500: #06b6d4;
 
-        --code-bg: #0f0c1a;
-        --code-bar: #17132a;
-        --code-text: #e6e1f7;
-        --code-dim: #8d86a8;
-        --code-border: #2a2440;
+        /* Light / dark surfaces. Every text pair here is >= 4.5:1. */
+        --bg: light-dark(#ffffff, #07111f);
+        --bg-alt: light-dark(#f4f7fb, #0a1830);
+        --surface: light-dark(#ffffff, #0f2240);
+        --text: light-dark(#0b1b34, #e8eef7);
+        --muted: light-dark(#475569, #a3b3cb);
+        --border: light-dark(#e2e8f0, #1a3257);
+        --border-strong: light-dark(#cbd5e1, #2a4670);
+        --accent: light-dark(#0e7490, #22d3ee);
+        --accent-soft: light-dark(#e0f7fb, #0c3045);
+        --on-accent: #0b1b34;
+        --ok: light-dark(#047857, #34d399);
+        --focus: light-dark(#0e7490, #22d3ee);
+        --shadow: 0 1px 2px rgba(11, 27, 52, 0.06), 0 12px 32px -18px rgba(11, 27, 52, 0.35);
+
+        --code-bg: #071326;
+        --code-bar: #0d1e3a;
+        --code-text: #e2e8f0;
+        --code-dim: #94a3b8;
+        --code-border: #1e3a5f;
 
         --radius: 12px;
       }
@@ -635,7 +645,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         color: var(--text);
       }
       :focus-visible {
-        outline: 2px solid var(--accent);
+        outline: 2px solid var(--focus);
         outline-offset: 3px;
         border-radius: 4px;
       }
@@ -651,7 +661,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         top: -3rem;
         z-index: 100;
         padding: 0.5rem 1rem;
-        background: var(--accent);
+        background: var(--cyan-500);
         color: var(--on-accent);
         border-radius: 8px;
       }
@@ -665,23 +675,22 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         align-items: center;
         gap: 0.5rem;
         padding: 0.75rem 1.25rem;
-        border-radius: 10px;
+        border-radius: 8px;
         font-weight: 600;
         font-size: 0.97rem;
         line-height: 1.2;
         text-decoration: none;
         border: 1px solid transparent;
-        transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
-      }
-      .button:hover {
-        transform: translateY(-1px);
+        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
       }
       .button-primary {
-        background: var(--accent);
+        background: var(--cyan-500);
+        border-color: var(--cyan-500);
         color: var(--on-accent);
       }
       .button-primary:hover {
-        background: color-mix(in oklab, var(--accent) 88%, var(--text));
+        background: var(--cyan);
+        border-color: var(--cyan);
       }
       .button-ghost {
         background: var(--surface);
@@ -690,6 +699,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
       .button-ghost:hover {
         border-color: var(--accent);
+        color: var(--accent);
       }
       .button-sm {
         padding: 0.5rem 0.9rem;
@@ -706,10 +716,9 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         position: sticky;
         top: 0;
         z-index: 50;
-        background: color-mix(in srgb, var(--bg) 82%, transparent);
-        backdrop-filter: saturate(160%) blur(12px);
-        -webkit-backdrop-filter: saturate(160%) blur(12px);
-        border-bottom: 1px solid var(--border);
+        background: var(--navy);
+        border-bottom: 1px solid var(--navy-line);
+        --focus: var(--cyan);
       }
       .nav-inner {
         display: flex;
@@ -720,16 +729,12 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .brand {
         display: inline-flex;
         align-items: center;
-        gap: 0.6rem;
-        color: var(--text);
         text-decoration: none;
-        font-family: var(--font-display);
-        font-weight: 700;
-        font-size: 1.08rem;
-        letter-spacing: -0.01em;
       }
       .brand img {
         display: block;
+        height: auto;
+        max-width: 100%;
       }
       .nav-links {
         display: flex;
@@ -740,13 +745,13 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         padding: 0;
       }
       .nav-links a:not(.button) {
-        color: var(--muted);
+        color: var(--navy-muted);
         text-decoration: none;
         font-weight: 500;
         font-size: 0.94rem;
       }
       .nav-links a:not(.button):hover {
-        color: var(--text);
+        color: var(--navy-text);
       }
       .nav-icon {
         display: inline-flex;
@@ -758,28 +763,28 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         .nav-links {
           gap: 1rem;
         }
+        .nav .brand img {
+          width: 150px;
+        }
       }
 
       /* ---- hero ---- */
+      .hero,
+      .final-cta {
+        --text: var(--navy-text);
+        --muted: var(--navy-muted);
+        --surface: var(--navy-2);
+        --border: var(--navy-line);
+        --border-strong: #36557f;
+        --accent: var(--cyan);
+        --focus: var(--cyan);
+        background: var(--navy);
+        color: var(--navy-text);
+      }
       .hero {
         position: relative;
         padding: 5rem 0 4.5rem;
-        overflow: hidden;
-        isolation: isolate;
-      }
-      .hero::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        background:
-          radial-gradient(ellipse 55% 50% at 12% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
-          radial-gradient(ellipse 40% 40% at 95% 30%, color-mix(in srgb, var(--amber) 12%, transparent), transparent 70%),
-          linear-gradient(var(--border) 1px, transparent 1px) 0 0 / 48px 48px,
-          linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0 / 48px 48px;
-        mask-image: linear-gradient(to bottom, #000 30%, transparent 95%);
-        -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent 95%);
-        opacity: 0.9;
+        border-bottom: 1px solid var(--navy-line);
       }
       .hero-grid {
         display: grid;
@@ -802,7 +807,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         gap: 0.55rem;
         padding: 0.4rem 0.85rem;
         border-radius: 999px;
-        border: 1px solid var(--border-strong);
+        border: 1px solid var(--border);
         background: var(--surface);
         color: var(--text);
         font-size: 0.88rem;
@@ -817,8 +822,8 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: var(--teal);
-        box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 25%, transparent);
+        background: var(--cyan);
+        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.22);
       }
       .hero-title {
         font-size: clamp(2.5rem, 5.6vw, 4.1rem);
@@ -828,11 +833,8 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         margin-bottom: 1.4rem;
         text-wrap: balance;
       }
-      .grad {
-        background: linear-gradient(100deg, var(--accent) 10%, var(--amber) 95%);
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
+      .hero-accent {
+        color: var(--cyan);
       }
       .hero-lede {
         font-size: clamp(1.05rem, 1.6vw, 1.2rem);
@@ -847,7 +849,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         gap: 0.75rem;
         margin-top: 1.75rem;
         padding: 0.35rem 0.35rem 0.35rem 0.85rem;
-        border: 1px dashed var(--border-strong);
+        border: 1px solid var(--border);
         border-radius: 10px;
         max-width: 100%;
         flex-wrap: wrap;
@@ -882,11 +884,10 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       /* ---- code window ---- */
       .code-window {
         display: grid;
-        border-radius: 14px;
+        border-radius: 12px;
         border: 1px solid var(--code-border);
         background: var(--code-bg);
         color: var(--code-text);
-        box-shadow: var(--shadow);
         overflow: hidden;
         min-width: 0;
       }
@@ -913,7 +914,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         width: 10px;
         height: 10px;
         border-radius: 50%;
-        background: #3b3359;
+        background: #2a4670;
       }
       .tab-labels {
         display: flex;
@@ -947,9 +948,9 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .code-panel mark {
         display: inline-block;
         min-width: 100%;
-        background: rgba(177, 165, 246, 0.12);
+        background: rgba(34, 211, 238, 0.1);
         color: inherit;
-        box-shadow: inset 2px 0 0 #b1a5f6;
+        box-shadow: inset 2px 0 0 var(--cyan);
         margin: 0 -1.25rem;
         padding: 0 1.25rem;
         width: calc(100% + 2.5rem);
@@ -963,33 +964,33 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       #tab-typescript:checked ~ .code-bar label[data-tab='typescript'],
       #tab-curl:checked ~ .code-bar label[data-tab='curl'] {
         color: #ffffff;
-        border-bottom-color: #b1a5f6;
+        border-bottom-color: var(--cyan);
       }
       #tab-python:focus-visible ~ .code-bar label[data-tab='python'],
       #tab-typescript:focus-visible ~ .code-bar label[data-tab='typescript'],
       #tab-curl:focus-visible ~ .code-bar label[data-tab='curl'] {
-        outline: 2px solid #b1a5f6;
+        outline: 2px solid var(--cyan);
         outline-offset: -4px;
         border-radius: 6px;
       }
       .t-k {
-        color: #c4b5fd;
+        color: #22d3ee;
       }
       .t-s {
-        color: #fcd34d;
+        color: #fde68a;
       }
       .t-f {
-        color: #5eead4;
+        color: #93c5fd;
       }
       .t-dim {
         color: var(--code-dim);
       }
       .t-ok {
-        color: #5eead4;
+        color: #4ade80;
       }
       .code-response {
         border-top: 1px solid var(--code-border);
-        background: #0b0914;
+        background: #050e1d;
         padding: 0.9rem 1.25rem 1rem;
       }
       .code-response-title {
@@ -1008,14 +1009,14 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
 
       /* ---- providers ---- */
       .providers {
-        border-block: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
         background: var(--surface);
       }
       .providers-inner {
         display: flex;
         align-items: center;
-        gap: 1.5rem 2rem;
-        padding-block: 1.4rem;
+        gap: 1rem 2rem;
+        padding-block: 1.75rem 1.5rem;
         flex-wrap: wrap;
       }
       .providers-title {
@@ -1205,11 +1206,10 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         border: 1px solid var(--border);
         border-radius: var(--radius);
         background: var(--surface);
-        transition: border-color 0.15s ease, transform 0.15s ease;
+        transition: border-color 0.15s ease;
       }
       .feature:hover {
         border-color: var(--border-strong);
-        transform: translateY(-2px);
       }
       .feature-icon {
         display: block;
@@ -1269,10 +1269,8 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         grid-template-columns: repeat(6, minmax(0, 1fr));
         padding: 1.25rem;
         border-radius: 16px;
-        background:
-          linear-gradient(var(--surface), var(--surface)) padding-box,
-          linear-gradient(120deg, var(--accent), var(--amber)) border-box;
-        border: 1.5px solid transparent;
+        background: var(--surface);
+        border: 1.5px solid var(--cyan-500);
         column-gap: 0.75rem;
       }
       .flow-pipeline::before {
@@ -1281,7 +1279,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         top: -0.75rem;
         left: 1.25rem;
         padding: 0 0.5rem;
-        background: var(--bg-alt);
+        background: var(--bg);
         font-family: var(--font-mono);
         font-size: 0.74rem;
         font-weight: 600;
@@ -1294,7 +1292,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         grid-column: 3 / 7;
         margin: 0.5rem 8.33% 0.6rem;
         height: 2.1rem;
-        border: 1.5px dashed var(--teal);
+        border: 1.5px dashed var(--ok);
         border-bottom: 0;
         border-radius: 12px 12px 0 0;
         position: relative;
@@ -1308,8 +1306,8 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         padding: 0.1rem 0.6rem;
         border-radius: 999px;
         background: var(--surface);
-        border: 1px solid var(--teal);
-        color: var(--teal);
+        border: 1px solid var(--ok);
+        color: var(--ok);
         font-size: 0.76rem;
         font-weight: 600;
       }
@@ -1329,7 +1327,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         padding: 1rem 0.9rem;
         border-radius: 10px;
         border: 1px solid var(--border);
-        background: var(--bg);
+        background: var(--bg-alt);
       }
       .flow-step:not(:last-child)::after {
         content: '';
@@ -1346,15 +1344,25 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         width: 1.6rem;
         height: 1.6rem;
         border-radius: 50%;
-        background: var(--accent);
-        color: var(--on-accent);
+        background: var(--navy);
+        color: #ffffff;
         font-family: var(--font-mono);
         font-size: 0.78rem;
         font-weight: 600;
         margin-bottom: 0.7rem;
       }
+      :root[data-theme='dark'] .flow-num {
+        background: var(--cyan-500);
+        color: var(--on-accent);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) .flow-num {
+          background: var(--cyan-500);
+          color: var(--on-accent);
+        }
+      }
       .flow-step:nth-child(3) .flow-num {
-        background: var(--teal);
+        background: var(--cyan-500);
         color: var(--on-accent);
       }
       .flow-title {
@@ -1495,11 +1503,11 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       }
       .fit-yes li::before {
         content: '✓';
-        color: var(--teal);
+        color: var(--ok);
       }
       .fit-no li::before {
         content: '→';
-        color: var(--amber);
+        color: var(--muted);
       }
       .footnote {
         margin-top: 1.25rem;
@@ -1510,11 +1518,6 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       /* ---- final CTA ---- */
       .final-cta {
         padding: 5rem 0;
-        background:
-          radial-gradient(ellipse 60% 80% at 0% 100%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
-          radial-gradient(ellipse 50% 70% at 100% 0%, color-mix(in srgb, var(--amber) 14%, transparent), transparent 70%),
-          var(--bg-alt);
-        border-top: 1px solid var(--border);
       }
       .final-cta-inner {
         display: grid;
@@ -1544,7 +1547,7 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
       .terminal {
         margin: 0;
         padding: 1.4rem 1.5rem;
-        border-radius: 14px;
+        border-radius: 12px;
         border: 1px solid var(--code-border);
         background: var(--code-bg);
         color: var(--code-text);
@@ -1552,14 +1555,18 @@ X-Aether-Cost-USD: <span class="t-ok">0.0000195</span></code></pre>
         line-height: 1.85;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
-        box-shadow: var(--shadow);
       }
 
       /* ---- footer ---- */
       .footer {
+        --text: var(--navy-text);
+        --muted: var(--navy-muted);
+        --accent: var(--cyan);
+        --focus: var(--cyan);
         padding: 3.5rem 0 3rem;
-        border-top: 1px solid var(--border);
-        background: var(--bg);
+        border-top: 1px solid var(--navy-line);
+        background: var(--navy-deep);
+        color: var(--navy-text);
         font-size: 0.93rem;
       }
       .footer-grid {
