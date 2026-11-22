@@ -27,6 +27,9 @@ export default defineConfig({
         baseUrl: 'https://github.com/Ashish-CodeJourney/aether-gateway/edit/trunk/docs/',
       },
       customCss: ['./src/styles/custom.css'],
+      components: {
+        ThemeProvider: './src/components/ThemeProvider.astro',
+      },
       head: [
         {
           tag: 'link',
@@ -38,7 +41,7 @@ export default defineConfig({
         },
         {
           tag: 'meta',
-          attrs: {name: 'theme-color', content: '#0B1B34'},
+          attrs: {name: 'theme-color', content: '#FFFFFF'},
         },
         {
           tag: 'meta',

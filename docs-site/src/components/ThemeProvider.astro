@@ -1,0 +1,18 @@
+---
+import Default from '@astrojs/starlight/components/ThemeProvider.astro';
+---
+
+{/*
+  Light-first docs: on a visitor's first page view, store "light" so Starlight
+  starts in the light theme instead of following the OS. Any later choice in
+  the theme toggle (light, dark or auto) is respected.
+*/}
+<script is:inline>
+  try {
+    if (!localStorage.getItem('aether-theme-init')) {
+      localStorage.setItem('aether-theme-init', '1');
+      if (!localStorage.getItem('starlight-theme')) localStorage.setItem('starlight-theme', 'light');
+    }
+  } catch {}
+</script>
+<Default />

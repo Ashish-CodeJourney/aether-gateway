@@ -1,13 +1,16 @@
 /**
- * Aether Gateway docs theme - "navy + cyan", the same palette as the
- * homepage. One brand colour (cyan) on navy/white surfaces, flat fills and
- * hairline borders, in the spirit of CNCF project sites.
+ * Aether Gateway docs theme - "light sky", the same palette as the homepage.
+ * Light is the default (see src/components/ThemeProvider.astro); a soft slate
+ * dark mode stays available from the theme toggle.
  *
- *   navy        #0B1B34   headings, dark bands
- *   navy-2      #12284A   cards on navy
- *   cyan        #22D3EE   accent on dark
- *   cyan-500    #06B6D4   buttons / fills (navy text on top)
- *   cyan-700    #0E7490   links and accent text on light (AA on white)
+ *   ink         #0F172A   headings and body text
+ *   slate       #334155   secondary text
+ *   tint        #F7FBFF   sidebar and soft surfaces
+ *   tint-2      #EEF7FF   accent-low fills
+ *   cyan-400    #22D3EE   logo cyan, decoration only
+ *   cyan-500    #06B6D4   rules, markers, decoration
+ *   teal-700    #0E7490   links and accent text (5.4:1 on white, AA)
+ *   blue-600    #2563EB   secondary accent (5.2:1 on white, AA)
  *
  * Space Grotesk for headings, Inter for body, JetBrains Mono for code -
  * loaded via astro.config.mjs's Starlight `head` option.
@@ -17,57 +20,70 @@
   --sl-font: 'Inter', var(--sl-font-system);
   --sl-font-mono: 'JetBrains Mono', var(--sl-font-system-mono);
 
-  --aether-navy: #0b1b34;
-  --aether-navy-2: #12284a;
+  --aether-ink: #0f172a;
   --aether-cyan: #22d3ee;
   --aether-cyan-500: #06b6d4;
+  --aether-teal: #0e7490;
+  --aether-blue: #2563eb;
 
-  /* Dark mode (Starlight's default scheme) */
+  /* Dark mode (opt-in from the theme toggle): soft slate, cyan accent. */
   --sl-color-white: #ffffff;
-  --sl-color-gray-1: #e8eef7;
-  --sl-color-gray-2: #c3cedf;
-  --sl-color-gray-3: #93a5c0;
-  --sl-color-gray-4: #4f6687;
-  --sl-color-gray-5: #24406a;
-  --sl-color-gray-6: #0f2240;
-  --sl-color-black: #07111f;
+  --sl-color-gray-1: #e2e8f0;
+  --sl-color-gray-2: #cbd5e1;
+  --sl-color-gray-3: #94a3b8;
+  --sl-color-gray-4: #64748b;
+  --sl-color-gray-5: #334155;
+  --sl-color-gray-6: #1a2436;
+  --sl-color-black: #0e1524;
 
-  --sl-color-accent-low: #0c3045;
+  --sl-color-accent-low: #0c3442;
   --sl-color-accent: #22d3ee;
   --sl-color-accent-high: #a5f3fc;
 
-  --sl-color-bg-nav: #0b1b34;
-  --sl-color-bg-sidebar: #0b1b34;
-  --sl-color-hairline: #1a3257;
-  --sl-color-hairline-light: #24406a;
+  --sl-color-bg-nav: #0e1524;
+  --sl-color-bg-sidebar: #0e1524;
+  --sl-color-hairline: #1f2a3d;
+  --sl-color-hairline-light: #2a374d;
 
   --sl-nav-height: 3.75rem;
   --sl-content-width: 52rem;
 }
 
 :root[data-theme='light'] {
-  --sl-color-white: #0b1b34;
-  --sl-color-gray-1: #172a47;
-  --sl-color-gray-2: #2a3b55;
+  --sl-color-white: #0f172a;
+  --sl-color-gray-1: #1e293b;
+  --sl-color-gray-2: #334155;
   --sl-color-gray-3: #475569;
-  --sl-color-gray-4: #7a8aa3;
-  --sl-color-gray-5: #cbd5e1;
-  --sl-color-gray-6: #e6ecf4;
-  --sl-color-gray-7: #f4f7fb;
+  --sl-color-gray-4: #7b8ba1;
+  --sl-color-gray-5: #cfdbe8;
+  --sl-color-gray-6: #e7f0f9;
+  --sl-color-gray-7: #f3f8fd;
   --sl-color-black: #ffffff;
 
-  --sl-color-accent-low: #e0f7fb;
+  --sl-color-accent-low: #e3f6fb;
   --sl-color-accent: #0e7490;
-  --sl-color-accent-high: #155e75;
+  --sl-color-accent-high: #164e63;
 
-  --sl-color-bg-nav: #ffffff;
-  --sl-color-bg-sidebar: #f4f7fb;
-  --sl-color-hairline: #e2e8f0;
-  --sl-color-hairline-light: #e2e8f0;
-  --sl-color-hairline-shade: #e2e8f0;
+  --sl-color-bg-nav: rgba(255, 255, 255, 0.86);
+  --sl-color-bg-sidebar: #f7fbff;
+  --sl-color-hairline: #e3ebf4;
+  --sl-color-hairline-light: #e3ebf4;
+  --sl-color-hairline-shade: #e3ebf4;
 }
 
-/* Headings use the display face in solid navy (white in dark mode). */
+/* Frosted top bar in light mode, with a faint sky wash under the page. */
+:root[data-theme='light'] .header {
+  backdrop-filter: saturate(1.4) blur(10px);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+}
+:root[data-theme='light'] body {
+  background:
+    radial-gradient(60rem 22rem at 85% -6rem, rgba(207, 245, 251, 0.55), transparent 70%),
+    radial-gradient(50rem 20rem at 30% -8rem, rgba(220, 232, 255, 0.5), transparent 70%),
+    #ffffff;
+  background-repeat: no-repeat;
+}
+
 h1,
 h2,
 h3,
@@ -81,7 +97,7 @@ h6 {
 .content h1:first-of-type,
 h1#_top {
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--sl-color-white);
 }
 
@@ -89,48 +105,60 @@ h1#_top {
   height: 1.9rem;
 }
 
-/* Sidebar: current page gets a tint + cyan rule, not a solid fill. */
+/* Sidebar: current page gets a soft tint + cyan rule, not a solid fill. */
 .sidebar-content a[aria-current='page'],
 .sidebar-content a[aria-current='page']:hover,
 .sidebar-content a[aria-current='page']:focus {
   color: var(--sl-color-white);
   background-color: var(--sl-color-accent-low);
   box-shadow: inset 3px 0 0 var(--aether-cyan-500);
-  border-radius: 0 0.25rem 0.25rem 0;
+  border-radius: 0 0.4rem 0.4rem 0;
+  font-weight: 600;
 }
 
-/* Links: underline on hover, visible focus everywhere. */
 .sl-markdown-content a:not(:where(.not-content *)) {
   text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  text-decoration-thickness: 2px;
 }
 :focus-visible {
   outline: 2px solid var(--sl-color-accent);
   outline-offset: 2px;
 }
 
-/* Primary call-to-action buttons: cyan fill with navy text (7:1). */
+/* Primary buttons: teal-to-blue with white text (>= 5:1 at both ends). */
 .sl-link-button.primary,
 .action.primary {
-  background: var(--aether-cyan-500);
-  border-color: var(--aether-cyan-500);
-  color: var(--aether-navy);
+  background: linear-gradient(120deg, #0e7490, #2563eb);
+  border-color: transparent;
+  color: #ffffff;
 }
 .sl-link-button.primary:hover,
 .action.primary:hover {
-  background: var(--aether-cyan);
-  border-color: var(--aether-cyan);
-  color: var(--aether-navy);
+  background: linear-gradient(120deg, #155e75, #1d4ed8);
+  color: #ffffff;
 }
 
-/* Code blocks: flat frame with a hairline border. */
+/* Code blocks: soft frame with a hairline border. */
 .expressive-code {
-  --ec-brdRad: 8px;
+  --ec-brdRad: 10px;
 }
 .expressive-code .frame {
   border-color: var(--sl-color-hairline) !important;
 }
+:root[data-theme='light'] .expressive-code .frame {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -16px rgba(14, 116, 144, 0.25);
+}
 
-/* Tables: flat tinted header, a touch more breathing room. */
+/* Inline code: pale sky chip in light mode. */
+:root[data-theme='light'] .sl-markdown-content :not(pre) > code {
+  background: #eef7ff;
+  border: 1px solid #dbe9f7;
+  color: #0f172a;
+}
+
 table thead tr {
   background: var(--sl-color-gray-7, var(--sl-color-gray-6));
 }
@@ -142,11 +170,10 @@ table th {
   padding: 0.65rem 0.9rem;
 }
 
-/* Note asides follow the brand colour instead of Starlight's blue. */
 starlight-aside.note,
 .starlight-aside--note {
   --sl-color-asides-text-accent: var(--sl-color-accent);
-  --sl-color-asides-border: var(--sl-color-accent);
+  --sl-color-asides-border: var(--aether-cyan-500);
   background-color: var(--sl-color-accent-low);
 }
 
