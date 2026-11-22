@@ -1,19 +1,15 @@
 package com.aether.gateway.providers.mock;
 
-import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
-import com.aether.gateway.core.domain.ChatCompletionResponse;
-import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
-import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
-import com.aether.gateway.providers.mock.wire.WireChatCompletionRequest;
-import com.aether.gateway.providers.mock.wire.WireChatCompletionResponse;
-import com.aether.gateway.providers.mock.wire.WireChatMessage;
-import com.aether.gateway.providers.mock.wire.WireStreamChunkResponse;
+import com.aether.gateway.providers.openai.OpenAiWireMapping;
+import com.aether.gateway.providers.openai.wire.WireChatCompletionResponse;
+import com.aether.gateway.providers.openai.wire.WireStreamChunkResponse;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.http.codec.json.JacksonJsonEncoder;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
@@ -24,7 +20,6 @@ import reactor.core.publisher.Flux;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.util.List;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -37,6 +32,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * first). Real providers (Ollama, Groq, Gemini) get sibling adapters in
  * Phase 12, conforming to the same {@link ProviderAdapter} contract,
  * with zero changes to gateway-router (the hexagonal boundary's payoff).
+ * mock-provider speaks the OpenAI wire shape, so the mapping (tool calling
+ * included) is {@link OpenAiWireMapping}, shared with the generic
+ * OpenAI-compatible adapter.
  */
 public class MockProviderAdapter implements ProviderAdapter {
 
@@ -56,7 +54,10 @@ public class MockProviderAdapter implements ProviderAdapter {
                     converters.add(new JacksonJsonHttpMessageConverter(snakeCaseMapper));
                 })
                 .build();
-        this.webClient = webBuilder.baseUrl(baseUrl).build();
+        this.webClient = webBuilder
+                .baseUrl(baseUrl)
+                .codecs(codecs -> codecs.defaultCodecs().jacksonJsonEncoder(new JacksonJsonEncoder(snakeCaseMapper)))
+                .build();
     }
 
     @Override
@@ -66,14 +67,14 @@ public class MockProviderAdapter implements ProviderAdapter {
 
     @Override
     public ProviderResponse invoke(ChatCompletionRequest request) {
-        var wireRequest = toWireRequest(request, false);
+        var wireRequest = OpenAiWireMapping.toWireRequest(request, false);
         try {
             WireChatCompletionResponse wireResponse = restClient.post()
                     .uri("/v1/chat/completions")
                     .body(wireRequest)
                     .retrieve()
                     .body(WireChatCompletionResponse.class);
-            return new ProviderResponse.Completion(toDomainResponse(wireResponse));
+            return new ProviderResponse.Completion(OpenAiWireMapping.toDomainResponse(wireResponse));
         } catch (HttpStatusCodeException e) {
             int status = e.getStatusCode().value();
             boolean retryable = status == 429 || status == 503 || status == 504;
@@ -94,37 +95,14 @@ public class MockProviderAdapter implements ProviderAdapter {
         Flux<ProviderResponse.StreamChunk> flux = webClient.post()
                 .uri("/v1/chat/completions")
                 .accept(MediaType.TEXT_EVENT_STREAM)
-                .bodyValue(toWireRequest(request, true))
+                .bodyValue(OpenAiWireMapping.toWireRequest(request, true))
                 .retrieve()
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
                 })
                 .takeWhile(sse -> !"[DONE]".equals(sse.data()))
-                .map(sse -> {
-                    WireStreamChunkResponse chunk = snakeCaseMapper.readValue(sse.data(), WireStreamChunkResponse.class);
-                    var choice = chunk.choices().get(0);
-                    boolean last = choice.finishReason() != null;
-                    String content = choice.delta() != null && choice.delta().content() != null ? choice.delta().content() : "";
-                    return new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), content, last);
-                });
+                .map(sse -> OpenAiWireMapping.toStreamChunk(
+                        snakeCaseMapper.readValue(sse.data(), WireStreamChunkResponse.class), responseId, index.getAndIncrement()));
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux);
-    }
-
-    private WireChatCompletionRequest toWireRequest(ChatCompletionRequest request, boolean stream) {
-        List<WireChatMessage> messages = request.messages().stream()
-                .map(m -> new WireChatMessage(m.role(), m.content()))
-                .toList();
-        return new WireChatCompletionRequest(request.model(), messages, stream);
-    }
-
-    private ChatCompletionResponse toDomainResponse(WireChatCompletionResponse wire) {
-        List<ChatCompletionChoice> choices = wire.choices().stream()
-                .map(c -> new ChatCompletionChoice(
-                        c.index(),
-                        new ChatMessage(c.message().role(), c.message().content()),
-                        c.finishReason()))
-                .toList();
-        Usage usage = Usage.of(wire.usage().promptTokens(), wire.usage().completionTokens());
-        return new ChatCompletionResponse(wire.id(), wire.object(), wire.created(), wire.model(), choices, usage);
     }
 }
