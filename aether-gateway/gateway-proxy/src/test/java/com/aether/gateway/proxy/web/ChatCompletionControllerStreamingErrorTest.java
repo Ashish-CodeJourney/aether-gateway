@@ -171,6 +171,7 @@ class ChatCompletionControllerStreamingErrorTest {
                 .expectStatus().isOk()
                 .expectHeader().valueEquals("X-Aether-Provider", "mock-fallback")
                 .expectHeader().valueEquals("X-Aether-Attempts", "1")
+                .expectHeader().valueEquals("X-Aether-Failover-Chain", "mock-primary,mock-fallback")
                 .returnResult(String.class)
                 .getResponseBody()
                 .blockLast(Duration.ofSeconds(5));

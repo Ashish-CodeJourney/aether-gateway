@@ -98,6 +98,7 @@ public class ChatCompletionController {
     private static final String SIMILARITY_HEADER = "X-Aether-Similarity";
     private static final String PROVIDER_HEADER = "X-Aether-Provider";
     private static final String ATTEMPTS_HEADER = "X-Aether-Attempts";
+    private static final String FAILOVER_CHAIN_HEADER = "X-Aether-Failover-Chain";
     private static final String COST_HEADER = "X-Aether-Cost-USD";
     private static final StreamAttribution UNATTRIBUTED_STREAM = new StreamAttribution(null, 1, List.of());
     private static final String ANONYMOUS_NAMESPACE = "anonymous";
@@ -580,7 +581,8 @@ public class ChatCompletionController {
                 var builder = ResponseEntity.ok()
                         .header(CACHE_HEADER, cacheHeaderValue)
                         .header(COST_HEADER, cost.costUsd().toPlainString())
-                        .header(ATTEMPTS_HEADER, String.valueOf(completion.attemptCount()));
+                        .header(ATTEMPTS_HEADER, String.valueOf(completion.attemptCount()))
+                .header(FAILOVER_CHAIN_HEADER, failoverChainHeader(completion.failoverChain()));
                 if (completion.servedByProvider() != null) {
                     builder.header(PROVIDER_HEADER, completion.servedByProvider());
                 }
@@ -599,13 +601,23 @@ public class ChatCompletionController {
                         0, 0, totalMs, totalMs, error.attemptCount(), error.failoverChain(), "FAILED", error.errorCode());
                 var builder = ResponseEntity.status(status)
                         .header(CACHE_HEADER, cacheHeaderValue)
-                        .header(ATTEMPTS_HEADER, String.valueOf(error.attemptCount()));
+                        .header(ATTEMPTS_HEADER, String.valueOf(error.attemptCount()))
+                .header(FAILOVER_CHAIN_HEADER, failoverChainHeader(error.failoverChain()));
                 quotaHeader(builder, allowed);
                 yield builder.body((Object) body);
             }
             case ProviderResponse.StreamChunk chunk ->
                     throw new IllegalStateException("Unexpected stream chunk on the non-streaming response path");
         };
+    }
+
+    /**
+     * Every provider tried, in order - unlike X-Aether-Attempts, which
+     * counts tries on the provider that finally answered. Spring drops a
+     * header whose values array is empty, so no chain sends no header.
+     */
+    private static String[] failoverChainHeader(List<String> failoverChain) {
+        return failoverChain.isEmpty() ? new String[0] : new String[] {String.join(",", failoverChain)};
     }
 
     private ResponseEntity.BodyBuilder quotaHeader(ResponseEntity.BodyBuilder builder, QuotaDecision.Allowed allowed) {
@@ -674,6 +686,7 @@ public class ChatCompletionController {
         var builder = ResponseEntity.status(failure.httpStatus())
                 .header(CACHE_HEADER, cacheHeaderValue)
                 .header(ATTEMPTS_HEADER, String.valueOf(attribution.attemptCount()))
+                .header(FAILOVER_CHAIN_HEADER, failoverChainHeader(attribution.failoverChain()))
                 .contentType(MediaType.APPLICATION_JSON);
         quotaHeader(builder, allowed);
         return builder.body((Object) body);
@@ -746,6 +759,7 @@ public class ChatCompletionController {
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .header(CACHE_HEADER, cacheLookup.decision().headerValue())
                 .header(ATTEMPTS_HEADER, String.valueOf(attribution.attemptCount()))
+                .header(FAILOVER_CHAIN_HEADER, failoverChainHeader(attribution.failoverChain()))
                 .contentType(MediaType.TEXT_EVENT_STREAM);
         if (attribution.servedByProvider() != null) {
             builder.header(PROVIDER_HEADER, attribution.servedByProvider());

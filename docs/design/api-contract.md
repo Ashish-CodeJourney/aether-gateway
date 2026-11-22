@@ -80,7 +80,8 @@ Present on every gateway response once the corresponding phase lands:
 | `X-Aether-Cache` | `MISS` \| `EXACT_HIT` \| `SEMANTIC_HIT` \| `BYPASS` | Phase 07 |
 | `X-Aether-Similarity` | Cosine score when semantically hit | Phase 07 |
 | `X-Aether-Provider` | Provider that actually served the request | Phase 05 |
-| `X-Aether-Attempts` | Failover attempts made | Phase 05 |
+| `X-Aether-Attempts` | Tries made on the provider that answered (retries included) | Phase 05 |
+| `X-Aether-Failover-Chain` | Every provider tried, in order, comma-separated (absent when there is nothing to report) | v1.2 |
 | `X-Aether-Cost-USD` | Estimated cost of this request | Phase 08 |
 | `X-Aether-Quota-Remaining` | Tokens remaining this budget period | Phase 06 |
 

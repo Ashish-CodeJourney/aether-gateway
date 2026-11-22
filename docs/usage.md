@@ -76,7 +76,8 @@ Every response carries headers describing exactly what happened, useful for debu
 | `X-Aether-Cache` | `MISS`, `EXACT_HIT`, or `SEMANTIC_HIT` |
 | `X-Aether-Cost-USD` | Real cost for a miss, `0` for any cache hit; absent on a streamed miss, whose cost is only known once the stream ends |
 | `X-Aether-Provider` | Which provider actually served this (useful for confirming failover happened) |
-| `X-Aether-Attempts` | How many providers were tried before success |
+| `X-Aether-Attempts` | Tries made on the provider that answered (retries included) |
+| `X-Aether-Failover-Chain` | Every provider tried, in order, e.g. `mock-primary,anthropic-main` |
 | `X-Aether-Quota-Remaining` | Remaining monthly token budget for the attached API key |
 | `X-Aether-Prompt-Version` | Present only when the request referenced a prompt (see below) - which version actually served it |
 

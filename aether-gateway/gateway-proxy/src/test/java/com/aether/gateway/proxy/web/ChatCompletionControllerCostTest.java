@@ -163,4 +163,32 @@ class ChatCompletionControllerCostTest {
         assertThat(body).doesNotContain("\"model\":null");
         assertThat(body.split("\"model\":\"claude-haiku-5-5\"", -1)).hasSize(3);
     }
+
+    @Test
+    void listsEveryProviderTriedWhenARequestFailedOver() {
+        when(chatCompletionUseCase.complete(any())).thenReturn(
+                new ProviderResponse.Completion(claudeResponse(), "anthropic-main", 1, List.of("mock-primary", "anthropic-main")));
+
+        clientWithClaudeRoute(new CacheDecision.Miss()).post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(claudeRequest())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("X-Aether-Provider", "anthropic-main")
+                .expectHeader().valueEquals("X-Aether-Failover-Chain", "mock-primary,anthropic-main");
+    }
+
+    @Test
+    void sendsNoFailoverChainHeaderWhenThereIsNoChainToReport() {
+        when(chatCompletionUseCase.complete(any())).thenReturn(new ProviderResponse.Completion(claudeResponse()));
+
+        clientWithClaudeRoute(new CacheDecision.Miss()).post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(claudeRequest())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().doesNotExist("X-Aether-Failover-Chain");
+    }
 }
