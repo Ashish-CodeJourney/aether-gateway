@@ -98,7 +98,7 @@ public class CacheAdapter implements CachePort {
 
         List<CacheEntryRow> candidates = pgStore.findNearest(namespace, embedding, CANDIDATE_LIMIT);
         for (CacheEntryRow candidate : candidates) {
-            if (!CacheThresholdGate.isHit(candidate.similarity(), similarityThreshold, null)) {
+            if (!CacheThresholdGate.isHit(candidate.similarity(), similarityThreshold)) {
                 break; // sorted most-similar first; no later candidate can pass either
             }
             if (!candidateFingerprint.equals(parseFingerprint(candidate.entityFingerprint()))) {

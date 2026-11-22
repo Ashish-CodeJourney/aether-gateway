@@ -1,6 +1,6 @@
 package com.aether.gateway.core.domain;
 
-/** F4.2 threshold gate; PRD section 13.1's X-Aether-Cache-Threshold supplies the optional per-request override. */
+/** F4.2 threshold gate, and the precedence that picks the threshold it applies (PRD section 13.1's X-Aether-Cache-Threshold included). */
 public final class CacheThresholdGate {
 
     private static final double MAXIMUM_THRESHOLD = 1.0;
@@ -8,8 +8,7 @@ public final class CacheThresholdGate {
     private CacheThresholdGate() {
     }
 
-    public static boolean isHit(double similarity, double configuredThreshold, Double perRequestOverride) {
-        double threshold = perRequestOverride != null ? perRequestOverride : configuredThreshold;
+    public static boolean isHit(double similarity, double threshold) {
         return similarity >= threshold;
     }
 
