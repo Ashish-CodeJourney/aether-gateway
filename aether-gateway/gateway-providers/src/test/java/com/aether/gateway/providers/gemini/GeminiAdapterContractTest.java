@@ -1,5 +1,9 @@
 package com.aether.gateway.providers.gemini;
 
+import com.aether.gateway.core.domain.ChatCompletionRequest;
+import com.aether.gateway.core.domain.ChatMessage;
+import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ToolsNotSupportedException;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ProviderAdapterContractTest;
 import okhttp3.mockwebserver.MockResponse;
@@ -7,7 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GeminiAdapterContractTest extends ProviderAdapterContractTest {
 
@@ -85,5 +92,43 @@ class GeminiAdapterContractTest extends ProviderAdapterContractTest {
         assertThat(recorded.getPath()).contains("key=test-api-key");
         assertThat(recorded.getPath()).contains("gemini-1.5-flash:generateContent");
         assertThat(recorded.getHeader("Authorization")).isNull();
+    }
+
+    private static ChatCompletionRequest requestWithTools(boolean stream) {
+        return new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "weather?")), stream, null,
+                List.of("{\"type\":\"function\",\"function\":{\"name\":\"get_weather\"}}"), null);
+    }
+
+    @Test
+    void refusesToolDefinitionsWithAClearTerminalErrorInsteadOfSilentlyDroppingThem() {
+        var result = adapter.invoke(requestWithTools(false));
+
+        assertThat(result).isInstanceOf(ProviderResponse.ProviderError.class);
+        var error = (ProviderResponse.ProviderError) result;
+        assertThat(error.errorCode()).isEqualTo("tools_not_supported");
+        assertThat(error.httpStatus()).isEqualTo(400);
+        assertThat(error.retryable()).isFalse();
+        assertThat(error.message()).contains(adapter.providerName());
+        assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
+    void refusesAConversationCarryingToolResultsEvenWithoutToolDefinitions() {
+        var request = new ChatCompletionRequest("test-model", List.of(
+                new ChatMessage("user", "weather?"),
+                new ChatMessage("tool", "18C", List.of(), "call_1")), false);
+
+        var result = adapter.invoke(request);
+
+        assertThat(result).isInstanceOf(ProviderResponse.ProviderError.class);
+        assertThat(((ProviderResponse.ProviderError) result).errorCode()).isEqualTo("tools_not_supported");
+    }
+
+    @Test
+    void refusesToolsOnTheStreamingPathBeforeAnyStreamStarts() {
+        assertThatThrownBy(() -> adapter.invokeStreaming(requestWithTools(true)))
+                .isInstanceOf(ToolsNotSupportedException.class)
+                .hasMessageContaining(adapter.providerName());
+        assertThat(server.getRequestCount()).isZero();
     }
 }
