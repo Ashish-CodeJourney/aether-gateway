@@ -1,5 +1,6 @@
 package com.aether.gateway.providers.gemini;
 
+import com.aether.gateway.providers.StreamFailures;
 import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
@@ -150,7 +151,7 @@ public class GeminiAdapter implements ProviderAdapter {
                     return new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), content, last);
                 });
 
-        return JdkFlowAdapter.publisherToFlowPublisher(flux);
+        return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
     }
 
     /**

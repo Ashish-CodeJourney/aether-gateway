@@ -1,5 +1,6 @@
 package com.aether.gateway.providers.anthropic;
 
+import com.aether.gateway.providers.StreamFailures;
 import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
@@ -193,7 +194,7 @@ public class AnthropicAdapter implements ProviderAdapter {
                     default -> null;
                 });
 
-        return JdkFlowAdapter.publisherToFlowPublisher(flux);
+        return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
     }
 
     /** Tool calls are numbered among tool_use blocks only, as OpenAI clients expect, not by Anthropic's block index. */

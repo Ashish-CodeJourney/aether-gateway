@@ -1,5 +1,6 @@
 package com.aether.gateway.providers.mock;
 
+import com.aether.gateway.providers.StreamFailures;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.Embedding;
 import com.aether.gateway.core.domain.EmbeddingOutcome;
@@ -110,7 +111,7 @@ public class MockProviderAdapter implements ProviderAdapter {
                 .map(sse -> OpenAiWireMapping.toStreamChunk(
                         snakeCaseMapper.readValue(sse.data(), WireStreamChunkResponse.class), responseId, index.getAndIncrement()));
 
-        return JdkFlowAdapter.publisherToFlowPublisher(flux);
+        return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
     }
 
     @Override

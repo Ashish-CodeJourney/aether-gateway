@@ -1,5 +1,6 @@
 package com.aether.gateway.providers.ollama;
 
+import com.aether.gateway.providers.StreamFailures;
 import com.aether.gateway.core.domain.ChatCompletionChoice;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatCompletionResponse;
@@ -129,7 +130,7 @@ public class OllamaAdapter implements ProviderAdapter {
                         chunk.message() != null && chunk.message().content() != null ? chunk.message().content() : "",
                         chunk.done()));
 
-        return JdkFlowAdapter.publisherToFlowPublisher(flux);
+        return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
     }
 
     /** {@code /api/embed} (batch, Ollama 0.3+), not the legacy single-prompt {@code /api/embeddings}. */

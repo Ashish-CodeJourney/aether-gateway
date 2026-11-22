@@ -3,6 +3,7 @@ package com.aether.gateway.providers;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
+import com.aether.gateway.core.domain.ProviderStreamException;
 import com.aether.gateway.core.port.ProviderAdapter;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -163,6 +164,65 @@ public abstract class ProviderAdapterContractTest {
     }
 
     /** Helper for concrete subclasses building canned JSON response bodies. */
+    private Throwable streamingFailure(ProviderAdapter target) {
+        var request = new ChatCompletionRequest("test-model", List.of(new ChatMessage("user", "hello")), true);
+        return JdkFlowAdapter.flowPublisherToFlux(target.invokeStreaming(request))
+                .then()
+                .map(ignored -> (Throwable) new AssertionError("stream completed without an error"))
+                .onErrorResume(error -> reactor.core.publisher.Mono.just(error))
+                .block(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void invokeStreamingReportsARejectedRequestAsATerminalProviderStreamExceptionWithTheRealStatus() {
+        server.enqueue(jsonResponse(400, """
+                {"error": {"message": "bad request", "type": "invalid_request_error"}}
+                """));
+
+        Throwable failure = streamingFailure(adapter);
+
+        assertThat(failure).isInstanceOf(ProviderStreamException.class);
+        var error = (ProviderStreamException) failure;
+        assertThat(error.httpStatus()).isEqualTo(400);
+        assertThat(error.errorCode()).isEqualTo("provider_error");
+        assertThat(error.retryable()).isFalse();
+    }
+
+    @Test
+    void invokeStreamingReportsAServerErrorAsARetryableProviderStreamException() {
+        server.enqueue(serverErrorResponse());
+
+        Throwable failure = streamingFailure(adapter);
+
+        assertThat(failure).isInstanceOf(ProviderStreamException.class);
+        var error = (ProviderStreamException) failure;
+        assertThat(error.httpStatus()).isGreaterThanOrEqualTo(500);
+        assertThat(error.retryable()).isTrue();
+    }
+
+    @Test
+    void invokeStreamingReportsARateLimitAsARetryableProviderStreamException() {
+        server.enqueue(rateLimitResponse());
+
+        Throwable failure = streamingFailure(adapter);
+
+        assertThat(failure).isInstanceOf(ProviderStreamException.class);
+        var error = (ProviderStreamException) failure;
+        assertThat(error.httpStatus()).isEqualTo(429);
+        assertThat(error.retryable()).isTrue();
+    }
+
+    @Test
+    void invokeStreamingReportsAnUnreachableServerAsARetryableBadGateway() {
+        Throwable failure = streamingFailure(createAdapter("http://127.0.0.1:1"));
+
+        assertThat(failure).isInstanceOf(ProviderStreamException.class);
+        var error = (ProviderStreamException) failure;
+        assertThat(error.httpStatus()).isEqualTo(502);
+        assertThat(error.errorCode()).isEqualTo("provider_unreachable");
+        assertThat(error.retryable()).isTrue();
+    }
+
     protected static MockResponse jsonResponse(int status, String body) {
         return new MockResponse()
                 .setResponseCode(status)
