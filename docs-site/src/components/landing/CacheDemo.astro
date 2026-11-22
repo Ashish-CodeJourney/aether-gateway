@@ -1,0 +1,456 @@
+---
+const PRESETS = ['What is 2+2?', 'Name three uses for Redis', 'Explain a circuit breaker in one line'];
+---
+
+<div class="demo ca" data-ca>
+  <div class="demo-stage">
+    <div class="demo-head">
+      <h3 class="demo-title">Ask the same thing twice</h3>
+      <span class="sim-label">Simulated in your browser</span>
+    </div>
+    <p class="demo-desc">
+      The first request goes to a provider and is billed. An identical repeat is answered from the exact-match cache
+      with <code>X-Aether-Cost-USD: 0</code> &ndash; no provider call at all.
+    </p>
+
+    <form class="ca-form" data-ca-form>
+      <label class="ca-label" for="ca-prompt">Prompt</label>
+      <div class="ca-row">
+        <input id="ca-prompt" class="ca-input" type="text" value={PRESETS[0]} maxlength="120" autocomplete="off" spellcheck="false" />
+        <button type="submit" class="chip-btn chip-btn-primary ca-send">
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="currentColor"><path d="M2 2.5 14 8 2 13.5l2-5.5z"></path></svg>
+          Send
+        </button>
+      </div>
+      <div class="ca-presets" aria-label="Example prompts">
+        {PRESETS.map((p) => <button type="button" class="chip-btn chip-btn-quiet ca-preset" data-ca-preset={p}>{p}</button>)}
+      </div>
+      <label class="ca-switch">
+        <input type="checkbox" data-ca-temp />
+        <span class="ca-switch-ui" aria-hidden="true"></span>
+        <span>Use <code>temperature: 0.7</code> <span class="ca-switch-note">(above 0.3, caching is skipped)</span></span>
+      </label>
+    </form>
+
+    <div class="ca-lane" data-ca-lane>
+      <div class="ca-node" data-ca-node="app"><span class="ca-node-title">Your app</span></div>
+      <div class="ca-node ca-node-cache" data-ca-node="cache">
+        <span class="ca-node-title">Cache</span>
+        <span class="ca-node-sub" data-ca-cache-state>Redis · per key</span>
+      </div>
+      <div class="ca-node" data-ca-node="provider">
+        <span class="ca-node-title">Provider</span>
+        <span class="ca-node-sub">billed per token</span>
+      </div>
+      <span class="ca-wire ca-wire-1" aria-hidden="true"></span>
+      <span class="ca-wire ca-wire-2" aria-hidden="true"></span>
+      <span class="ca-packet" aria-hidden="true" data-ca-packet></span>
+    </div>
+    <div class="ca-latency">
+      <div class="ca-latency-bar"><span data-ca-bar></span></div>
+      <span class="ca-latency-text" data-ca-latency>Send a prompt to compare latency.</span>
+    </div>
+  </div>
+
+  <div class="demo-side">
+    <div class="resp">
+      <div class="resp-head">
+        <span>Response</span>
+        <span class="resp-status" data-tone="idle" data-ca-status>waiting</span>
+      </div>
+      <pre aria-live="polite" data-ca-headers><code><span class="h-line h-dim">Send a prompt to see the headers.</span></code></pre>
+    </div>
+    <dl class="ca-stats">
+      <div><dt>Requests</dt><dd data-ca-requests>0</dd></div>
+      <div><dt>Cache hits</dt><dd data-ca-hits>0</dd></div>
+      <div><dt>Provider calls avoided</dt><dd data-ca-avoided>0</dd></div>
+      <div class="ca-saved"><dt>Spend avoided</dt><dd data-ca-saved>$0.0000000</dd></div>
+    </dl>
+    <div class="measured">
+      <div>
+        <span class="measured-tag">Measured</span>
+        <p><strong>8.9 ms</strong> p95 end-to-end latency for a cache hit, over 100 requests confirmed as <code>EXACT_HIT</code>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  .ca-label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin-bottom: 0.35rem;
+  }
+  .ca-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .ca-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.6rem 0.8rem;
+    border-radius: 11px;
+    border: 1px solid var(--border-strong);
+    background: #ffffff;
+    font: 500 0.92rem/1.3 var(--font-body);
+    color: var(--ink);
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+  .ca-input:focus-visible {
+    outline: 2.5px solid var(--blue);
+    outline-offset: 1px;
+  }
+  .ca-send {
+    border-radius: 11px;
+    padding-inline: 1rem;
+  }
+  .ca-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+  }
+  .ca-preset {
+    font-weight: 500;
+    font-size: 0.76rem;
+    padding: 0.3rem 0.65rem;
+    background: rgba(255, 255, 255, 0.7);
+  }
+  .ca-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.85rem;
+    font-size: 0.84rem;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .ca-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+  }
+  .ca-switch-ui {
+    flex: none;
+    position: relative;
+    width: 2.2rem;
+    height: 1.25rem;
+    border-radius: 999px;
+    background: #cbd5e1;
+    transition: background-color 0.2s ease;
+  }
+  .ca-switch-ui::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(1.25rem - 4px);
+    height: calc(1.25rem - 4px);
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+    transition: transform 0.2s ease;
+  }
+  .ca-switch input:checked + .ca-switch-ui {
+    background: var(--teal);
+  }
+  .ca-switch input:checked + .ca-switch-ui::after {
+    transform: translateX(0.95rem);
+  }
+  .ca-switch input:focus-visible + .ca-switch-ui {
+    outline: 2.5px solid var(--blue);
+    outline-offset: 2px;
+  }
+  .ca-switch-note {
+    color: var(--faint);
+  }
+
+  .ca-lane {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2.5rem;
+    margin-top: 1.5rem;
+  }
+  .ca-node {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    justify-items: center;
+    gap: 0.1rem;
+    padding: 0.75rem 0.5rem;
+    border-radius: 13px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease,
+      opacity 0.2s ease;
+  }
+  .ca-node-title {
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: var(--ink);
+  }
+  .ca-node-sub {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    color: var(--muted);
+  }
+  .ca-node.is-active {
+    border-color: var(--cyan-500);
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.2), var(--shadow-md);
+  }
+  .ca-node.is-hit {
+    border-color: #34d399;
+    box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.22), var(--shadow-md);
+  }
+  .ca-node.is-hit .ca-node-sub {
+    color: var(--ok);
+    font-weight: 600;
+  }
+  .ca-node.is-idle {
+    opacity: 0.4;
+  }
+  .ca-wire {
+    position: absolute;
+    top: 50%;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, #9fd8e6 0 5px, transparent 5px 10px);
+    z-index: 0;
+  }
+  .ca-wire-1 {
+    left: 16%;
+    right: 50%;
+  }
+  .ca-wire-2 {
+    left: 50%;
+    right: 16%;
+  }
+  .ca-packet {
+    position: absolute;
+    top: calc(50% - 7px);
+    left: calc(16.66% - 7px);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    z-index: 2;
+    background: radial-gradient(circle at 35% 35%, #ffffff, #22d3ee 45%, #0891b2);
+    box-shadow: 0 0 0 5px rgba(34, 211, 238, 0.22), 0 0 16px 3px rgba(34, 211, 238, 0.5);
+    opacity: 0;
+    transition:
+      left var(--ca-dur, 400ms) cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.2s ease;
+  }
+  .ca-packet.is-visible {
+    opacity: 1;
+  }
+  .ca-packet.is-ok {
+    background: radial-gradient(circle at 35% 35%, #ffffff, #34d399 45%, #059669);
+    box-shadow: 0 0 0 5px rgba(52, 211, 153, 0.22), 0 0 16px 3px rgba(52, 211, 153, 0.5);
+  }
+  .ca-latency {
+    margin-top: 1.25rem;
+    display: grid;
+    gap: 0.4rem;
+  }
+  .ca-latency-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: #e2edf7;
+    overflow: hidden;
+  }
+  .ca-latency-bar span {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #22d3ee, #2563eb);
+    transition: width var(--ca-dur, 400ms) linear;
+  }
+  .ca-latency-bar span.is-hit {
+    background: #10b981;
+  }
+  .ca-latency-text {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .ca-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin: 0;
+  }
+  .ca-stats > div {
+    padding: 0.75rem 0.9rem;
+    border-radius: 13px;
+    border: 1px solid var(--border);
+    background: #ffffff;
+  }
+  .ca-stats dt {
+    font-size: 0.74rem;
+    color: var(--muted);
+  }
+  .ca-stats dd {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.35rem;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .ca-stats .ca-saved {
+    background: linear-gradient(135deg, #ecfdf5, #f0fbfe);
+    border-color: #b7ebd3;
+  }
+  .ca-stats .ca-saved dd {
+    color: var(--ok);
+  }
+  @media (max-width: 420px) {
+    .ca-lane {
+      gap: 1.25rem;
+    }
+    .ca-row {
+      flex-direction: column;
+    }
+    .ca-send {
+      justify-content: center;
+    }
+  }
+</style>
+
+<script>
+  import {countTo, reducedMotion, sleep} from '../../scripts/motion';
+
+  const root = document.querySelector<HTMLElement>('[data-ca]');
+  if (root) setup(root);
+
+  function setup(root: HTMLElement) {
+    const q = <T extends Element>(sel: string) => root.querySelector<T>(sel);
+    const form = q<HTMLFormElement>('[data-ca-form]');
+    const input = q<HTMLInputElement>('#ca-prompt');
+    const temp = q<HTMLInputElement>('[data-ca-temp]');
+    const packet = q<HTMLElement>('[data-ca-packet]');
+    const bar = q<HTMLElement>('[data-ca-bar]');
+    const latency = q<HTMLElement>('[data-ca-latency]');
+    const status = q<HTMLElement>('[data-ca-status]');
+    const headers = q<HTMLElement>('[data-ca-headers]');
+    const cacheState = q<HTMLElement>('[data-ca-cache-state]');
+    const nodes = {
+      app: q<HTMLElement>('[data-ca-node="app"]'),
+      cache: q<HTMLElement>('[data-ca-node="cache"]'),
+      provider: q<HTMLElement>('[data-ca-node="provider"]'),
+    };
+    const out = {
+      requests: q<HTMLElement>('[data-ca-requests]'),
+      hits: q<HTMLElement>('[data-ca-hits]'),
+      avoided: q<HTMLElement>('[data-ca-avoided]'),
+      saved: q<HTMLElement>('[data-ca-saved]'),
+    };
+    if (!form || !input || !temp || !packet || !bar || !latency || !status || !headers || !cacheState) return;
+    if (!nodes.app || !nodes.cache || !nodes.provider || !out.requests || !out.hits || !out.avoided || !out.saved) return;
+    const {app, cache, provider} = nodes;
+    const {requests, hits, avoided, saved} = out;
+
+    // Illustrative pricing: "What is 2+2?" matches the README's captured
+    // $0.0000195; other prompts scale with their length.
+    const costOf = (prompt: string): number =>
+      prompt === 'What is 2+2?' ? 0.0000195 : Math.round((0.0000195 + prompt.length * 0.00000035) * 1e7) / 1e7;
+
+    const store = new Map<string, number>();
+    const totals = {requests: 0, hits: 0, saved: 0};
+    const hl = (k: string, v: string, cls = 'h-val') => `<span class="h-line"><span class="h-key">${k}:</span> <span class="${cls}">${v}</span></span>`;
+    const at = (pct: number, ms: number) => {
+      packet.style.setProperty('--ca-dur', `${ms}ms`);
+      packet.style.left = `calc(${pct}% - 7px)`;
+      return sleep(ms + 20);
+    };
+
+    let busy = false;
+    const send = async () => {
+      const prompt = input.value.trim();
+      if (busy || !prompt) return;
+      busy = true;
+      const bypass = temp.checked;
+      const cached = bypass ? undefined : store.get(prompt);
+      Object.values(nodes).forEach((n) => n?.classList.remove('is-active', 'is-hit', 'is-idle'));
+      cacheState.textContent = 'Redis · per key';
+      status.dataset.tone = 'idle';
+      status.textContent = 'in flight…';
+      bar.classList.toggle('is-hit', cached !== undefined);
+      bar.style.setProperty('--ca-dur', '0ms');
+      bar.style.width = '0';
+      packet.classList.remove('is-ok');
+      packet.style.setProperty('--ca-dur', '0ms');
+      packet.style.left = 'calc(16.66% - 7px)';
+      await sleep(30);
+      packet.classList.add('is-visible');
+      app.classList.add('is-active');
+
+      totals.requests += 1;
+      requests.textContent = String(totals.requests);
+
+      if (cached !== undefined) {
+        bar.style.setProperty('--ca-dur', '160ms');
+        bar.style.width = '1.5%';
+        await at(50, 160);
+        cache.classList.add('is-hit');
+        cacheState.textContent = 'EXACT_HIT';
+        provider.classList.add('is-idle');
+        packet.classList.add('is-ok');
+        await at(16.66, 160);
+        totals.hits += 1;
+        totals.saved += cached;
+        hits.textContent = String(totals.hits);
+        avoided.textContent = String(totals.hits);
+        countTo(saved, totals.saved, 7, 900, '$');
+        status.dataset.tone = 'ok';
+        status.textContent = '200 OK';
+        headers.innerHTML = `<code>${hl('X-Aether-Cache', 'EXACT_HIT', 'h-ok')}${hl('X-Aether-Cost-USD', '0', 'h-ok')}</code>`;
+        latency.textContent = 'Served from cache, no provider call (measured p95: 8.9 ms).';
+      } else {
+        const ms = 520 + Math.round(Math.random() * 380);
+        const anim = reducedMotion() ? 0 : Math.min(ms, 900);
+        bar.style.setProperty('--ca-dur', `${anim}ms`);
+        bar.style.width = `${Math.min(100, (ms / 900) * 100)}%`;
+        await at(50, anim * 0.25);
+        cache.classList.add('is-active');
+        cacheState.textContent = bypass ? 'BYPASS' : 'MISS';
+        await at(83.33, anim * 0.25);
+        provider.classList.add('is-active');
+        await sleep(anim * 0.2);
+        packet.classList.add('is-ok');
+        await at(16.66, anim * 0.3);
+        const cost = costOf(prompt);
+        if (!bypass) store.set(prompt, cost);
+        status.dataset.tone = 'ok';
+        status.textContent = '200 OK';
+        headers.innerHTML = `<code>${hl('X-Aether-Provider', 'mock-primary')}${hl('X-Aether-Cache', bypass ? 'BYPASS' : 'MISS')}${hl('X-Aether-Cost-USD', cost.toFixed(7))}${hl('X-Aether-Attempts', '1')}</code>`;
+        latency.textContent = bypass
+          ? `~${ms} ms via the provider (simulated). temperature > 0.3 is never cached.`
+          : `~${ms} ms via the provider (simulated). Send it again to hit the cache.`;
+      }
+      packet.classList.remove('is-visible');
+      headers.classList.remove('flash');
+      void headers.offsetWidth;
+      headers.classList.add('flash');
+      busy = false;
+    };
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void send();
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-ca-preset]').forEach((b) =>
+      b.addEventListener('click', () => {
+        input.value = b.dataset.caPreset ?? '';
+        void send();
+      }),
+    );
+  }
+</script>

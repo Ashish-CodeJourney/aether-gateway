@@ -1,5 +1,6 @@
 ---
 import RequestFlow from '../components/landing/RequestFlow.astro';
+import DemoTabs from '../components/landing/DemoTabs.astro';
 import QuickstartTerminal from '../components/landing/QuickstartTerminal.astro';
 import {PROVIDERS, iconStyle} from '../components/landing/providers';
 
@@ -172,6 +173,7 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
         <nav aria-label="Primary">
           <ul class="nav-links">
             <li class="nav-hide-sm"><a href={LINKS.docs}>Docs</a></li>
+            <li class="nav-hide-sm"><a href="#demos">See it work</a></li>
             <li class="nav-hide-md"><a href="#benchmarks">Benchmarks</a></li>
             <li class="nav-hide-md"><a href="#compare">Compare</a></li>
             <li>
@@ -294,6 +296,22 @@ const COMPARE_ROWS: {label: string; cells: string[]}[] = [
           <p class="section-link reveal">
             <a href={LINKS.benchmarks}>Read the full benchmark report <span aria-hidden="true">&rarr;</span></a>
           </p>
+        </div>
+      </section>
+
+      <section id="demos" class="section section-tint" aria-labelledby="demos-title">
+        <div class="container">
+          <div class="section-head section-head-center reveal">
+            <p class="eyebrow">See it work</p>
+            <h2 id="demos-title" class="section-title">Break things. Watch Aether handle it.</h2>
+            <p class="section-lede">
+              Four interactive walkthroughs of what the gateway does on every request. They run in your browser and
+              mirror the real behaviour and headers; only numbers marked <em>measured</em> come from benchmarks.
+            </p>
+          </div>
+          <div class="reveal">
+            <DemoTabs benchmarksHref={LINKS.benchmarks} />
+          </div>
         </div>
       </section>
 

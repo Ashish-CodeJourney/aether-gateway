@@ -1,0 +1,554 @@
+---
+import ProviderMark from './ProviderMark.astro';
+import {PROVIDERS} from './providers';
+
+type Props = {benchmarksHref: string};
+const {benchmarksHref} = Astro.props;
+
+const CHAIN = ['openai', 'anthropic', 'groq', 'ollama'].flatMap((id) => PROVIDERS.filter((p) => p.id === id));
+---
+
+<div class="demo fo" data-fo>
+  <div class="demo-stage">
+    <div class="demo-head">
+      <h3 class="demo-title">Failover playground</h3>
+      <span class="sim-label">Simulated in your browser</span>
+    </div>
+    <p class="demo-desc">
+      Click a provider to take it down, then send a request. Aether walks the chain for <code>model: "chat"</code> in
+      order; a failing provider trips its circuit breaker, and later requests skip it until it recovers.
+    </p>
+
+    <div class="fo-chain" data-fo-chain>
+      <div class="fo-app">
+        <span class="fo-app-dot" aria-hidden="true"></span>
+        Your app <span class="fo-app-sub">POST /v1/chat/completions</span>
+      </div>
+      <ol class="fo-list">
+        {
+          CHAIN.map((p, i) => (
+            <li class="fo-item">
+              <button type="button" class="fo-prov" data-fo-prov={i} data-id={p.id} data-name={p.name} data-down="false" data-breaker="closed" aria-describedby="fo-help">
+                <span class="fo-rank" aria-hidden="true">{i + 1}</span>
+                <span class="fo-mark">
+                  <ProviderMark provider={p} />
+                </span>
+                <span class="fo-name">
+                  {p.name}
+                  <span class="fo-health" data-fo-health>Healthy</span>
+                </span>
+                <span class="fo-breaker" data-fo-breaker>
+                  <span class="visually-hidden">Circuit breaker </span>CLOSED
+                </span>
+                <span class="fo-result" data-fo-result aria-hidden="true"></span>
+              </button>
+            </li>
+          ))
+        }
+      </ol>
+      <span class="fo-packet" aria-hidden="true" data-fo-packet></span>
+    </div>
+    <p class="fo-help" id="fo-help">Press a provider to toggle it between healthy and down.</p>
+
+    <div class="demo-controls">
+      <button type="button" class="chip-btn chip-btn-primary" data-fo-send>
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="currentColor"><path d="M2 2.5 14 8 2 13.5l2-5.5z"></path></svg>
+        Send request
+      </button>
+      <button type="button" class="chip-btn" data-fo-reset>Restore all providers</button>
+      <span class="fo-auto" data-fo-auto hidden>Auto-playing &middot; click anything to take over</span>
+    </div>
+  </div>
+
+  <div class="demo-side">
+    <div class="resp">
+      <div class="resp-head">
+        <span>Response</span>
+        <span class="resp-status" data-fo-status>200 OK</span>
+      </div>
+      <pre data-fo-headers><code><span class="h-line"><span class="h-key">X-Aether-Provider:</span> <span class="h-val">openai</span></span><span class="h-line"><span class="h-key">X-Aether-Attempts:</span> <span class="h-val">1</span></span><span class="h-line"><span class="h-key">X-Aether-Cache:</span> <span class="h-val">MISS</span></span></code></pre>
+    </div>
+    <ol class="log" aria-live="polite" aria-label="Request trace" data-fo-log>
+      <li class="log-empty">Send a request to see the trace.</li>
+    </ol>
+    <div class="measured">
+      <div>
+        <span class="measured-tag">Measured</span>
+        <p>
+          <strong>67.92 ms</strong> p99 to fail over to a healthy provider, across 100 independent injected outages.{' '}
+          <a href={benchmarksHref}>Benchmark report</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  .visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .fo-chain {
+    position: relative;
+    padding-left: 2.25rem;
+  }
+  .fo-chain::before {
+    content: '';
+    position: absolute;
+    left: 0.85rem;
+    top: 1.1rem;
+    bottom: 1.6rem;
+    width: 2px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #22d3ee, #93c5fd);
+    opacity: 0.6;
+  }
+  .fo-app {
+    position: relative;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    margin-bottom: 0.85rem;
+    padding: 0.45rem 0.8rem;
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid var(--border-strong);
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--ink);
+  }
+  .fo-app-dot {
+    position: absolute;
+    left: -1.72rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--cyan-500);
+  }
+  .fo-app-sub {
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .fo-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.55rem;
+  }
+  .fo-prov {
+    position: relative;
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 13px;
+    border: 1px solid var(--border);
+    background: #ffffff;
+    color: var(--ink-2);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease,
+      background-color 0.2s ease,
+      opacity 0.2s ease,
+      transform 0.2s ease;
+  }
+  .fo-prov:hover {
+    border-color: #a5e9f5;
+    transform: translateX(2px);
+  }
+  .fo-rank {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--faint);
+  }
+  .fo-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 10px;
+    background: var(--tint-2);
+    color: var(--ink-2);
+  }
+  .fo-name {
+    display: grid;
+    font-weight: 600;
+    color: var(--ink);
+    font-size: 0.94rem;
+    line-height: 1.3;
+  }
+  .fo-health {
+    font-weight: 500;
+    font-size: 0.75rem;
+    color: var(--ok);
+  }
+  .fo-breaker {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    background: var(--ok-soft);
+    color: var(--ok);
+    border: 1px solid #b7ebd3;
+    transition:
+      background-color 0.2s ease,
+      color 0.2s ease;
+  }
+  .fo-result {
+    min-width: 2.4rem;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 700;
+  }
+  .fo-prov[data-down='true'] {
+    background: repeating-linear-gradient(135deg, #fff7f7 0 8px, #fdeeee 8px 16px);
+    border-color: #f5c2c2;
+  }
+  .fo-prov[data-down='true'] .fo-health {
+    color: var(--danger);
+  }
+  .fo-prov[data-down='true'] .fo-mark {
+    background: #fde4e4;
+    color: var(--danger);
+  }
+  .fo-prov[data-breaker='open'] .fo-breaker {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: #f5c2c2;
+  }
+  .fo-prov[data-breaker='half'] .fo-breaker {
+    background: var(--warn-soft);
+    color: var(--warn);
+    border-color: #f3dfa6;
+  }
+  .fo-prov[data-breaker='open'][data-down='true'] {
+    opacity: 0.75;
+  }
+  .fo-prov.is-trying {
+    border-color: var(--cyan-500);
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.2), var(--shadow-md);
+  }
+  .fo-prov.is-failed {
+    animation: shake 0.4s ease;
+    border-color: #ef4444;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+  }
+  .fo-prov.is-failed .fo-result {
+    color: var(--danger);
+  }
+  .fo-prov.is-served {
+    border-color: #34d399;
+    box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.2), var(--shadow-md);
+  }
+  .fo-prov.is-served .fo-result {
+    color: var(--ok);
+  }
+  .fo-prov.is-skipped .fo-result {
+    color: var(--faint);
+  }
+  @keyframes shake {
+    20%,
+    60% {
+      transform: translateX(-4px);
+    }
+    40%,
+    80% {
+      transform: translateX(4px);
+    }
+  }
+  .fo-packet {
+    position: absolute;
+    left: calc(0.85rem - 6px);
+    top: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffffff, #22d3ee 45%, #0891b2);
+    box-shadow: 0 0 0 5px rgba(34, 211, 238, 0.22), 0 0 16px 3px rgba(34, 211, 238, 0.5);
+    opacity: 0;
+    transition:
+      transform 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.2s ease;
+    pointer-events: none;
+  }
+  .fo-packet.is-visible {
+    opacity: 1;
+  }
+  .fo-packet.is-ok {
+    background: radial-gradient(circle at 35% 35%, #ffffff, #34d399 45%, #059669);
+    box-shadow: 0 0 0 5px rgba(52, 211, 153, 0.22), 0 0 16px 3px rgba(52, 211, 153, 0.5);
+  }
+  .fo-packet.is-bad {
+    background: radial-gradient(circle at 35% 35%, #ffffff, #f87171 45%, #dc2626);
+    box-shadow: 0 0 0 5px rgba(248, 113, 113, 0.22), 0 0 16px 3px rgba(248, 113, 113, 0.5);
+  }
+  .fo-help {
+    margin-top: 0.75rem;
+    font-size: 0.78rem;
+    color: var(--faint);
+  }
+  .fo-auto {
+    align-self: center;
+    font-size: 0.76rem;
+    color: var(--teal-800);
+  }
+  @media (max-width: 480px) {
+    .fo-chain {
+      padding-left: 1.9rem;
+    }
+    .fo-chain::before {
+      left: 0.6rem;
+    }
+    .fo-packet {
+      left: calc(0.6rem - 6px);
+    }
+    .fo-app-dot {
+      left: -1.6rem;
+    }
+    .fo-prov {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 0.5rem;
+      padding: 0.6rem 0.7rem;
+    }
+    .fo-rank,
+    .fo-result {
+      display: none;
+    }
+    .fo-mark {
+      width: 1.8rem;
+      height: 1.8rem;
+    }
+  }
+</style>
+
+<script>
+  import {reducedMotion, sleep, watchVisibility} from '../../scripts/motion';
+
+  type Breaker = 'closed' | 'open' | 'half';
+  type Provider = {id: string; name: string; down: boolean; breaker: Breaker; el: HTMLButtonElement};
+
+  const root = document.querySelector<HTMLElement>('[data-fo]');
+  if (root) setup(root);
+
+  function setup(root: HTMLElement) {
+    const chainEl = root.querySelector<HTMLElement>('[data-fo-chain]');
+    const packet = root.querySelector<HTMLElement>('[data-fo-packet]');
+    const status = root.querySelector<HTMLElement>('[data-fo-status]');
+    const headers = root.querySelector<HTMLElement>('[data-fo-headers]');
+    const log = root.querySelector<HTMLElement>('[data-fo-log]');
+    const sendBtn = root.querySelector<HTMLButtonElement>('[data-fo-send]');
+    const resetBtn = root.querySelector<HTMLButtonElement>('[data-fo-reset]');
+    const autoNote = root.querySelector<HTMLElement>('[data-fo-auto]');
+    if (!chainEl || !packet || !status || !headers || !log || !sendBtn || !resetBtn || !autoNote) return;
+
+    const providers: Provider[] = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-fo-prov]')).map((el) => ({
+      id: el.dataset.id ?? '',
+      name: el.dataset.name ?? '',
+      down: false,
+      breaker: 'closed',
+      el,
+    }));
+
+    const BREAKER_TEXT: Record<Breaker, string> = {closed: 'CLOSED', open: 'OPEN', half: 'HALF-OPEN'};
+    const render = (p: Provider) => {
+      p.el.dataset.down = String(p.down);
+      p.el.dataset.breaker = p.breaker;
+      const health = p.el.querySelector('[data-fo-health]');
+      if (health) health.textContent = p.down ? 'Down · returns 503' : 'Healthy';
+      const breaker = p.el.querySelector('[data-fo-breaker]');
+      if (breaker) breaker.innerHTML = `<span class="visually-hidden">Circuit breaker </span>${BREAKER_TEXT[p.breaker]}`;
+      p.el.setAttribute('aria-pressed', String(p.down));
+    };
+    providers.forEach(render);
+
+    const moveTo = async (target: HTMLElement | null) => {
+      const c = chainEl.getBoundingClientRect();
+      const y = target ? target.getBoundingClientRect().top - c.top + target.offsetHeight / 2 - 7 : 14;
+      packet.style.transform = `translateY(${y}px)`;
+      await sleep(340);
+    };
+
+    const write = (items: string[]) => {
+      log.innerHTML = items.map((i) => `<li>${i}</li>`).join('');
+    };
+    const entry = (tone: string, html: string) => `<span class="dot dot-${tone}" aria-hidden="true"></span><span>${html}</span>`;
+    const hl = (k: string, v: string, cls = 'h-val') => `<span class="h-line"><span class="h-key">${k}:</span> <span class="${cls}">${v}</span></span>`;
+
+    let busy = false;
+    const send = async () => {
+      if (busy) return;
+      busy = true;
+      sendBtn.disabled = true;
+      const trace: string[] = [];
+      providers.forEach((p) => {
+        p.el.classList.remove('is-trying', 'is-failed', 'is-served', 'is-skipped');
+        const r = p.el.querySelector('[data-fo-result]');
+        if (r) r.textContent = '';
+      });
+      status.dataset.tone = 'idle';
+      status.textContent = 'in flight…';
+      packet.classList.remove('is-ok', 'is-bad');
+      packet.style.transition = 'none';
+      await moveTo(null);
+      packet.style.transition = '';
+      packet.classList.add('is-visible');
+      write([entry('info', 'Request received · cache MISS (new prompt)')]);
+
+      let attempts = 0;
+      let served: Provider | null = null;
+      for (const p of providers) {
+        const result = p.el.querySelector<HTMLElement>('[data-fo-result]');
+        await moveTo(p.el);
+        if (p.breaker === 'open' && p.down) {
+          p.el.classList.add('is-skipped');
+          if (result) result.textContent = 'skip';
+          trace.push(entry('warn', `<b>${p.name}</b> skipped · breaker OPEN, no call made`));
+          write(trace);
+          await sleep(220);
+          continue;
+        }
+        attempts += 1;
+        if (p.breaker === 'open') {
+          p.breaker = 'half';
+          render(p);
+        }
+        p.el.classList.add('is-trying');
+        await sleep(380);
+        p.el.classList.remove('is-trying');
+        if (p.down) {
+          const wasHalf = p.breaker === 'half';
+          p.breaker = 'open';
+          render(p);
+          p.el.classList.add('is-failed');
+          packet.classList.add('is-bad');
+          if (result) result.textContent = '503';
+          trace.push(entry('bad', `<b>${p.name}</b> → 503 · breaker ${wasHalf ? 're-opened' : 'tripped to OPEN'}`));
+          write(trace);
+          await sleep(420);
+          packet.classList.remove('is-bad');
+          continue;
+        }
+        const recovered = p.breaker === 'half';
+        p.breaker = 'closed';
+        render(p);
+        p.el.classList.add('is-served');
+        if (result) result.textContent = '200';
+        trace.push(entry('ok', `<b>${p.name}</b> → 200${recovered ? ' · trial call passed, breaker CLOSED' : ''}`));
+        write(trace);
+        served = p;
+        break;
+      }
+
+      packet.classList.add(served ? 'is-ok' : 'is-bad');
+      await moveTo(null);
+      packet.classList.remove('is-visible');
+
+      if (served) {
+        status.dataset.tone = 'ok';
+        status.textContent = '200 OK';
+        headers.innerHTML = `<code>${hl('X-Aether-Provider', served.id)}${hl('X-Aether-Attempts', String(attempts), attempts > 1 ? 'h-ok' : 'h-val')}${hl('X-Aether-Cache', 'MISS')}</code>`;
+        trace.push(
+          entry(
+            'info',
+            attempts > 1 || providers.indexOf(served) > 0
+              ? `Your app got a normal 200 from <b>${served.name}</b> and changed nothing.`
+              : `Served by the first provider in the chain.`,
+          ),
+        );
+      } else {
+        status.dataset.tone = 'bad';
+        status.textContent = '502 Bad Gateway';
+        headers.innerHTML = `<code>${hl('status', '502 · every provider in the chain is unavailable', 'h-bad')}${hl('X-Aether-Attempts', String(attempts))}</code>`;
+        trace.push(entry('bad', 'Every provider is down or open: Aether returns 502 instead of hanging.'));
+      }
+      write(trace);
+      headers.classList.remove('flash');
+      void headers.offsetWidth;
+      headers.classList.add('flash');
+      busy = false;
+      sendBtn.disabled = false;
+    };
+
+    // Auto-play a short story when nobody is interacting.
+    let idleUntil = 0;
+    let visible = false;
+    const takeOver = () => {
+      idleUntil = Date.now() + 15000;
+    };
+    providers.forEach((p) =>
+      p.el.addEventListener('click', () => {
+        takeOver();
+        p.down = !p.down;
+        render(p);
+      }),
+    );
+    sendBtn.addEventListener('click', () => {
+      takeOver();
+      void send();
+    });
+    resetBtn.addEventListener('click', () => {
+      takeOver();
+      providers.forEach((p) => {
+        p.down = false;
+        p.breaker = 'closed';
+        p.el.classList.remove('is-trying', 'is-failed', 'is-served', 'is-skipped');
+        const r = p.el.querySelector('[data-fo-result]');
+        if (r) r.textContent = '';
+        render(p);
+      });
+    });
+    watchVisibility(root, (v) => (visible = v), 0.35);
+
+    const SCRIPT: (() => void | Promise<void>)[] = [
+      send,
+      () => {
+        providers[0].down = true;
+        render(providers[0]);
+      },
+      send,
+      send,
+      () => {
+        providers[1].down = true;
+        render(providers[1]);
+      },
+      send,
+      () => {
+        providers[0].down = false;
+        providers[1].down = false;
+        render(providers[0]);
+        render(providers[1]);
+      },
+      send,
+      send,
+    ];
+    let step = 0;
+    const tick = async () => {
+      const auto = !reducedMotion() && visible && !document.hidden && Date.now() > idleUntil;
+      autoNote.hidden = !auto;
+      if (auto && !busy) {
+        await SCRIPT[step % SCRIPT.length]();
+        step += 1;
+      }
+      setTimeout(() => void tick(), auto ? 1400 : 600);
+    };
+    void tick();
+  }
+</script>

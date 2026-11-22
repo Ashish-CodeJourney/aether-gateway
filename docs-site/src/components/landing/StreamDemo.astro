@@ -1,0 +1,356 @@
+---
+const ANSWER =
+  'A circuit breaker watches calls to a dependency. While calls succeed it stays closed and lets traffic through. When failures pass a threshold it opens, and calls fail fast instead of waiting on a dependency that is already down. After a cool-down it lets a few trial calls through; if they succeed it closes again, and if not it stays open. That protects your users from slow timeouts and gives the struggling service room to recover.';
+const SSE_SAMPLE = ['A', ' circuit', ' breaker']
+  .map((t) => `<span class="h-line h-dim">data: {"choices":[{"delta":{"content":${JSON.stringify(t)}}}]}</span>`)
+  .join('');
+const TOTAL = (ANSWER.match(/\s*\S+/g) ?? []).length;
+---
+
+<div class="demo st" data-st data-answer={ANSWER}>
+  <div class="demo-stage">
+    <div class="demo-head">
+      <h3 class="demo-title">Close the tab mid-answer</h3>
+      <span class="sim-label">Simulated in your browser</span>
+    </div>
+    <p class="demo-desc">
+      Tokens are relayed as server-sent events the moment the provider produces them. If the user leaves, Aether
+      cancels the upstream request, so the rest of the answer is never generated or billed.
+    </p>
+
+    <div class="st-window">
+      <div class="st-bar" aria-hidden="true">
+        <span class="st-dots"><i></i><i></i><i></i></span>
+        <span class="st-url">your-app.example/chat</span>
+        <span class="st-conn" data-st-conn>connected</span>
+      </div>
+      <div class="st-chat">
+        <p class="st-msg st-user">Explain circuit breakers in one paragraph.</p>
+        <p class="st-msg st-bot" data-st-out>{ANSWER}</p>
+      </div>
+    </div>
+
+    <div class="demo-controls">
+      <button type="button" class="chip-btn chip-btn-primary" data-st-start>
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="currentColor"><path d="M4 2.5v11L13 8z"></path></svg>
+        <span data-st-start-label>Start streaming</span>
+      </button>
+      <button type="button" class="chip-btn st-close" data-st-close disabled>
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m4 4 8 8m0-8-8 8"></path></svg>
+        Close the tab
+      </button>
+    </div>
+  </div>
+
+  <div class="demo-side">
+    <div class="resp">
+      <div class="resp-head">
+        <span>Upstream &middot; SSE</span>
+        <span class="resp-status" data-tone="idle" data-st-status>idle</span>
+      </div>
+      <pre class="st-sse" data-st-sse><code set:html={SSE_SAMPLE} /></pre>
+    </div>
+    <dl class="st-meter">
+      <div>
+        <dt>Tokens generated</dt>
+        <dd><span data-st-tokens>0</span><span class="st-of"> / <span data-st-total>{TOTAL}</span></span></dd>
+      </div>
+      <div>
+        <dt>Billed so far <span class="st-hint">(simulated)</span></dt>
+        <dd data-st-cost>$0.000000</dd>
+      </div>
+    </dl>
+    <div class="st-progress" aria-hidden="true"><span class="st-progress-used" data-st-used></span><span class="st-progress-saved" data-st-saved></span></div>
+    <p class="st-callout" aria-live="polite" data-st-callout>
+      Start the stream, then close the tab before it finishes.
+    </p>
+  </div>
+</div>
+
+<style is:global>
+  .st-window {
+    border-radius: 14px;
+    border: 1px solid var(--border-strong);
+    background: #ffffff;
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    transition:
+      opacity 0.3s ease,
+      transform 0.3s ease,
+      filter 0.3s ease;
+  }
+  .st-window.is-closed {
+    opacity: 0.5;
+    transform: scale(0.985);
+    filter: grayscale(0.6);
+  }
+  .st-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--tint);
+  }
+  .st-dots {
+    display: inline-flex;
+    gap: 5px;
+  }
+  .st-dots i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #d5dfea;
+  }
+  .st-url {
+    flex: 1;
+    min-width: 0;
+    padding: 0.18rem 0.6rem;
+    border-radius: 7px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .st-conn {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--ok);
+  }
+  .st-conn[data-closed] {
+    color: var(--danger);
+  }
+  .st-chat {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    min-height: 15rem;
+    align-content: start;
+  }
+  .st-msg {
+    max-width: 92%;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+  .st-user {
+    justify-self: end;
+    border-radius: 14px 14px 4px 14px;
+    background: linear-gradient(120deg, #0e7490, #2563eb);
+    color: #ffffff;
+  }
+  .st-bot {
+    justify-self: start;
+    border-radius: 14px 14px 14px 4px;
+    background: var(--tint-2);
+    color: var(--ink);
+  }
+  .st-bot .st-caret {
+    display: inline-block;
+    width: 0.5em;
+    height: 1.05em;
+    margin-left: 2px;
+    vertical-align: -0.15em;
+    background: var(--cyan-500);
+    animation: caret 0.9s steps(1) infinite;
+  }
+  .st-bot .st-cut {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0 0.4rem;
+    border-radius: 6px;
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: 0.74rem;
+    font-weight: 600;
+  }
+  @keyframes caret {
+    50% {
+      opacity: 0;
+    }
+  }
+  .st-sse {
+    height: 9.6rem;
+    overflow: hidden;
+  }
+  .st-sse .h-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .st-meter {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin: 0;
+  }
+  .st-meter > div {
+    padding: 0.75rem 0.9rem;
+    border-radius: 13px;
+    border: 1px solid var(--border);
+    background: #ffffff;
+  }
+  .st-meter dt {
+    font-size: 0.74rem;
+    color: var(--muted);
+  }
+  .st-hint {
+    color: var(--faint);
+  }
+  .st-meter dd {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.35rem;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .st-of {
+    font-size: 0.7em;
+    color: var(--faint);
+  }
+  .st-progress {
+    display: flex;
+    height: 8px;
+    border-radius: 999px;
+    background: #e2edf7;
+    overflow: hidden;
+  }
+  .st-progress span {
+    display: block;
+    height: 100%;
+    width: 0;
+    transition: width 0.2s linear;
+  }
+  .st-progress-used {
+    background: linear-gradient(90deg, #22d3ee, #2563eb);
+  }
+  .st-progress-saved {
+    background: repeating-linear-gradient(135deg, #34d399 0 6px, #a7f3d0 6px 12px);
+  }
+  .st-callout {
+    padding: 0.85rem 1rem;
+    border-radius: 13px;
+    border: 1px solid var(--border);
+    background: #ffffff;
+    font-size: 0.88rem;
+    color: var(--ink-2);
+    min-height: 4.6rem;
+  }
+  .st-callout[data-tone='saved'] {
+    border-color: #b7ebd3;
+    background: linear-gradient(135deg, #ecfdf5, #f0fbfe);
+  }
+  .st-callout strong {
+    color: var(--ok);
+  }
+</style>
+
+<script>
+  import {sleep} from '../../scripts/motion';
+
+  const root = document.querySelector<HTMLElement>('[data-st]');
+  if (root) setup(root);
+
+  function setup(root: HTMLElement) {
+    const q = <T extends Element>(sel: string) => root.querySelector<T>(sel);
+    const out = q<HTMLElement>('[data-st-out]');
+    const win = q<HTMLElement>('.st-window');
+    const conn = q<HTMLElement>('[data-st-conn]');
+    const start = q<HTMLButtonElement>('[data-st-start]');
+    const startLabel = q<HTMLElement>('[data-st-start-label]');
+    const close = q<HTMLButtonElement>('[data-st-close]');
+    const status = q<HTMLElement>('[data-st-status]');
+    const sse = q<HTMLElement>('[data-st-sse]');
+    const tokensEl = q<HTMLElement>('[data-st-tokens]');
+    const totalEl = q<HTMLElement>('[data-st-total]');
+    const cost = q<HTMLElement>('[data-st-cost]');
+    const used = q<HTMLElement>('[data-st-used]');
+    const savedBar = q<HTMLElement>('[data-st-saved]');
+    const callout = q<HTMLElement>('[data-st-callout]');
+    if (!out || !win || !conn || !start || !startLabel || !close || !status || !sse || !tokensEl || !totalEl || !cost || !used || !savedBar || !callout) return;
+
+    const tokens = (root.dataset.answer ?? '').match(/\s*\S+/g) ?? [];
+    const PRICE = 0.0000006; // illustrative per-output-token price
+    totalEl.textContent = String(tokens.length);
+
+    let run = 0;
+    let streaming = false;
+    const html = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+    const begin = async () => {
+      const id = ++run;
+      streaming = true;
+      start.disabled = true;
+      close.disabled = false;
+      close.focus({preventScroll: true});
+      win.classList.remove('is-closed');
+      conn.textContent = 'connected';
+      conn.removeAttribute('data-closed');
+      status.dataset.tone = 'ok';
+      status.textContent = 'streaming';
+      callout.removeAttribute('data-tone');
+      callout.textContent = 'Streaming… close the tab before the answer finishes.';
+      savedBar.style.width = '0';
+      const code = document.createElement('code');
+      sse.replaceChildren(code);
+      let text = '';
+      for (let i = 0; i < tokens.length; i++) {
+        if (id !== run || !streaming) return;
+        text += tokens[i];
+        out.innerHTML = `${html(text)}<span class="st-caret" aria-hidden="true"></span>`;
+        const line = document.createElement('span');
+        line.className = 'h-line';
+        line.innerHTML = `<span class="h-key">data:</span> <span class="h-val">{"choices":[{"delta":{"content":${html(JSON.stringify(tokens[i]))}}}]}</span>`;
+        code.appendChild(line);
+        while (code.children.length > 6) code.firstElementChild?.remove();
+        tokensEl.textContent = String(i + 1);
+        cost.textContent = `$${((i + 1) * PRICE).toFixed(6)}`;
+        used.style.width = `${((i + 1) / tokens.length) * 100}%`;
+        await sleep(55 + Math.random() * 60);
+      }
+      if (id !== run) return;
+      streaming = false;
+      out.textContent = text;
+      code.insertAdjacentHTML('beforeend', '<span class="h-line"><span class="h-key">data:</span> <span class="h-ok">[DONE]</span></span>');
+      while (code.children.length > 6) code.firstElementChild?.remove();
+      status.textContent = 'complete';
+      start.disabled = false;
+      close.disabled = true;
+      startLabel.textContent = 'Stream again';
+      callout.textContent = 'The stream finished, so every token was generated and billed. Try closing the tab sooner.';
+    };
+
+    const cancel = () => {
+      if (!streaming) return;
+      streaming = false;
+      run += 1;
+      const generated = Number(tokensEl.textContent);
+      const left = tokens.length - generated;
+      win.classList.add('is-closed');
+      conn.textContent = 'tab closed';
+      conn.setAttribute('data-closed', '');
+      out.querySelector('.st-caret')?.remove();
+      out.insertAdjacentHTML('beforeend', '<span class="st-cut">disconnected</span>');
+      status.dataset.tone = 'bad';
+      status.textContent = 'cancelled';
+      sse.querySelector('code')?.insertAdjacentHTML('beforeend', '<span class="h-line h-bad">client disconnected → upstream request cancelled</span>');
+      const code = sse.querySelector('code');
+      while (code && code.children.length > 6) code.firstElementChild?.remove();
+      savedBar.style.width = `${(left / tokens.length) * 100}%`;
+      callout.dataset.tone = 'saved';
+      callout.innerHTML = `<strong>Upstream cancelled &ndash; you stop paying.</strong> The client left after ${generated} tokens, so Aether cancelled the provider call. The other ${left} were never generated.`;
+      start.disabled = false;
+      close.disabled = true;
+      startLabel.textContent = 'Stream again';
+      start.focus({preventScroll: true});
+    };
+
+    start.addEventListener('click', () => void begin());
+    close.addEventListener('click', cancel);
+  }
+</script>
