@@ -2,6 +2,8 @@ package com.aether.gateway.proxy.web;
 
 import com.aether.gateway.core.domain.ApiKeyContext;
 import com.aether.gateway.core.domain.CacheDecision;
+import com.aether.gateway.core.domain.CacheMatching;
+import com.aether.gateway.core.domain.CacheThresholdGate;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.CostCalculator;
@@ -109,6 +111,7 @@ public class ChatCompletionController {
     private final ChatCompletionDtoMapper mapper;
     private final Scheduler virtualThreadScheduler;
     private final boolean allowAnonymous;
+    private final double defaultCacheThreshold;
 
     public ChatCompletionController(
             ChatCompletionUseCase chatCompletionUseCase,
@@ -125,7 +128,8 @@ public class ChatCompletionController {
             PromptRegistryPort promptRegistryPort,
             ChatCompletionDtoMapper mapper,
             Scheduler virtualThreadScheduler,
-            @Value("${aether.security.allow-anonymous:false}") boolean allowAnonymous) {
+            @Value("${aether.security.allow-anonymous:false}") boolean allowAnonymous,
+            @Value("${aether.cache.default-threshold:0.94}") double defaultCacheThreshold) {
         this.chatCompletionUseCase = chatCompletionUseCase;
         this.chatStreamUseCase = chatStreamUseCase;
         this.apiKeyLookupPort = apiKeyLookupPort;
@@ -141,6 +145,7 @@ public class ChatCompletionController {
         this.mapper = mapper;
         this.virtualThreadScheduler = virtualThreadScheduler;
         this.allowAnonymous = allowAnonymous;
+        this.defaultCacheThreshold = defaultCacheThreshold;
     }
 
     /**
@@ -156,7 +161,7 @@ public class ChatCompletionController {
     public Mono<ResponseEntity<Object>> complete(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestHeader(value = "X-Aether-No-Cache", required = false) String noCacheHeader,
-            @RequestHeader(value = "X-Aether-Cache-Threshold", required = false) Double thresholdOverride,
+            @RequestHeader(value = "X-Aether-Cache-Threshold", required = false) String thresholdHeader,
             @RequestHeader(value = "X-Aether-Prompt", required = false) String promptReferenceHeader,
             @RequestBody ChatCompletionRequestDto requestDto,
             ServerHttpRequest httpRequest) {
@@ -174,10 +179,15 @@ public class ChatCompletionController {
                 .subscribeOn(virtualThreadScheduler)
                 .flatMap(effectiveDto -> {
                     ChatCompletionRequest domainRequest = mapper.toDomain(effectiveDto);
+                    // Validated before any quota is reserved, so a rejected
+                    // header never leaves a reservation behind.
+                    RouteCacheConfig routeCache = routeCacheFor(domainRequest);
+                    CacheMatching cacheMatching = CacheMatching.forRoute(
+                            routeCache, CacheThresholdGate.effectiveThreshold(routeCache, defaultCacheThreshold, thresholdHeader));
                     return Mono.fromCallable(() -> checkQuota(authorization, clientIp, domainRequest))
                             .subscribeOn(virtualThreadScheduler)
                             .flatMap(quotaOutcome -> Mono
-                                    .fromCallable(() -> checkCache(quotaOutcome, domainRequest, noCachePresent, thresholdOverride))
+                                    .fromCallable(() -> checkCache(quotaOutcome, domainRequest, noCachePresent, routeCache, cacheMatching))
                                     .subscribeOn(virtualThreadScheduler)
                                     .flatMap(cacheLookup -> dispatch(quotaOutcome, domainRequest, cacheLookup, requestStartNanos)));
                 })
@@ -260,7 +270,7 @@ public class ChatCompletionController {
         }
     }
 
-    private record CacheLookup(String namespace, CacheDecision decision, RouteCacheConfig routeCache) {
+    private record CacheLookup(String namespace, CacheDecision decision, RouteCacheConfig routeCache, CacheMatching matching) {
     }
 
     /**
@@ -318,25 +328,29 @@ public class ChatCompletionController {
 
     /** F4: skipped entirely (and the underlying quota reservation left untouched) when the quota check already rejected the request. */
     private CacheLookup checkCache(
-            QuotaOutcome quotaOutcome, ChatCompletionRequest domainRequest, boolean noCachePresent, Double thresholdOverride) {
+            QuotaOutcome quotaOutcome, ChatCompletionRequest domainRequest, boolean noCachePresent,
+            RouteCacheConfig routeCache, CacheMatching matching) {
         if (quotaOutcome instanceof QuotaOutcome.Rejected) {
-            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("quota_rejected"), RouteCacheConfig.DISABLED);
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("quota_rejected"), RouteCacheConfig.DISABLED, matching);
         }
         if (quotaOutcome instanceof QuotaOutcome.IpRateLimited) {
-            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("ip_rate_limited"), RouteCacheConfig.DISABLED);
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("ip_rate_limited"), RouteCacheConfig.DISABLED, matching);
         }
         if (quotaOutcome instanceof QuotaOutcome.Unauthenticated) {
-            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("unauthenticated"), RouteCacheConfig.DISABLED);
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("unauthenticated"), RouteCacheConfig.DISABLED, matching);
         }
         String namespace = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.key().keyId() : ANONYMOUS_NAMESPACE;
-        RouteCacheConfig routeCache = routingSource.routeFor(domainRequest.model())
+        if (!routeCache.enabled()) {
+            return new CacheLookup(namespace, new CacheDecision.Bypass("route_cache_disabled"), routeCache, matching);
+        }
+        CacheDecision decision = cachePort.lookup(namespace, domainRequest, matching, noCachePresent);
+        return new CacheLookup(namespace, decision, routeCache, matching);
+    }
+
+    private RouteCacheConfig routeCacheFor(ChatCompletionRequest domainRequest) {
+        return routingSource.routeFor(domainRequest.model())
                 .map(RouteConfig::cache)
                 .orElse(RouteCacheConfig.DISABLED);
-        if (!routeCache.enabled()) {
-            return new CacheLookup(namespace, new CacheDecision.Bypass("route_cache_disabled"), routeCache);
-        }
-        CacheDecision decision = cachePort.lookup(namespace, domainRequest, thresholdOverride, noCachePresent);
-        return new CacheLookup(namespace, decision, routeCache);
     }
 
     private Mono<ResponseEntity<Object>> dispatch(
@@ -499,7 +513,7 @@ public class ChatCompletionController {
         }
         if (response instanceof ProviderResponse.Completion completion) {
             String responseJson = mapper.toJson(mapper.toDto(completion.response()));
-            cachePort.store(cacheLookup.namespace(), domainRequest, responseJson, cacheLookup.routeCache().ttl());
+            cachePort.store(cacheLookup.namespace(), domainRequest, responseJson, cacheLookup.routeCache().ttl(), cacheLookup.matching());
         }
     }
 
@@ -645,7 +659,7 @@ public class ChatCompletionController {
         // response body content and doesn't compute cost from this path.
         var dto = new ChatCompletionResponseDto(
                 streamId, "chat.completion", Instant.now().getEpochSecond(), domainRequest.model(), List.of(choice), new UsageDto(0, 0, 0));
-        cachePort.store(cacheLookup.namespace(), domainRequest, mapper.toJson(dto), cacheLookup.routeCache().ttl());
+        cachePort.store(cacheLookup.namespace(), domainRequest, mapper.toJson(dto), cacheLookup.routeCache().ttl(), cacheLookup.matching());
     }
 
     private ServerSentEvent<String> toSseEvent(ProviderResponse.StreamChunk chunk) {

@@ -59,7 +59,7 @@ Passthrough to the configured embedding-capable provider. P2 priority
 |---|---|---|
 | `X-Aether-Route` | Force a specific route alias, bypassing automatic model-based resolution | Phase 05 |
 | `X-Aether-No-Cache` | Bypass cache for this request | Phase 07 |
-| `X-Aether-Cache-Threshold` | Per-request similarity override | Phase 07 |
+| `X-Aether-Cache-Threshold` | Per-request stricter similarity threshold (between the route's threshold and 1.0, else `400 invalid_request`) | Phase 07 |
 | `X-Aether-Prompt` | `name@alias` or `name@version` from the prompt registry | Phase 10 |
 
 ## Response headers

@@ -26,6 +26,11 @@ routes:
       - provider: <provider-name>
         model: <model name>
         # weight omitted here: this entry is a strict, order-only fallback
+    cache:                # optional; absent means caching is off for this route
+      enabled: true
+      semantic: false     # optional, default true; false = exact-match only
+      threshold: 0.94     # optional; defaults to aether.cache.default-threshold
+      ttl: 6h             # optional, default 6h; s/m/h/d suffixes or ISO-8601
 ```
 
 ## Semantics
@@ -58,6 +63,38 @@ routes:
 - A chain member's circuit breaker is keyed by `provider:model` (F3.1),
   not by provider alone, so a bad model on an otherwise-healthy provider
   does not trip the breaker for that provider's other models.
+- **`routes[].cache`** (F4.7): per-route response caching. Without a
+  `cache:` block, or with `enabled: false`, every request for the alias
+  goes to a provider.
+  - **`semantic`** chooses how a request matches a stored response.
+    `false` is **exact-only**: a response is reused only for an identical
+    request (same messages and parameters), so it can never return one
+    prompt's answer for a different prompt. An exact miss goes straight
+    to the provider - no embedding is computed and no similarity search
+    runs, and the stored entry carries no embedding at all, which also
+    keeps it out of every other route's semantic search. `true` (the
+    default when the key is absent, for backward compatibility) adds
+    semantic matching on an exact miss: the prompt is embedded and the
+    nearest stored prompts are accepted above `threshold`, subject to the
+    entity/numeric guard (see [Semantic cache
+    correctness](./cache-correctness.md)). Prefer `semantic: false` unless
+    a route's answers can tolerate the semantic cache's measured
+    false-hit rate.
+  - **`threshold`** is the cosine-similarity floor for a semantic hit.
+    The threshold actually applied is, in order of precedence: a valid
+    `X-Aether-Cache-Threshold` request header, then this route's
+    `threshold`, then the global `aether.cache.default-threshold` (env
+    var `AETHER_CACHE_DEFAULT_THRESHOLD`, default `0.94`).
+  - **`X-Aether-Cache-Threshold`** can only make matching *stricter*: it
+    must be a number between the route's effective threshold (above) and
+    `1.0` inclusive, or the request is rejected with `400
+    invalid_request` before any quota is reserved. Anonymous callers
+    share one cache namespace, so a caller allowed to loosen the
+    threshold could be served - and on a miss, seed - loose matches that
+    other callers then receive. The header is validated on every route,
+    including exact-only and uncached ones, where a valid value is simply
+    unused.
+  - **`ttl`** bounds how long an entry is served.
 
 ## Example: the local dev / M2 default (`routing.yaml` at repo root)
 

@@ -1,6 +1,7 @@
 package com.aether.gateway.core.port;
 
 import com.aether.gateway.core.domain.CacheDecision;
+import com.aether.gateway.core.domain.CacheMatching;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 
 import java.time.Duration;
@@ -15,6 +16,9 @@ import java.time.Duration;
  * adapter has the stored entry's original prompt text to compare
  * against.
  *
+ * <p>With {@link CacheMatching.ExactOnly} the adapter must neither
+ * compute an embedding nor run a similarity search, on lookup or store.
+ *
  * <p>ADR-005: cache unavailable (Redis or Postgres down) means fail
  * open - the adapter must return {@code CacheDecision.Miss} rather than
  * throwing, letting the request proceed to the provider. This is the
@@ -22,9 +26,9 @@ import java.time.Duration;
  */
 public interface CachePort {
 
-    CacheDecision lookup(String namespace, ChatCompletionRequest request, Double similarityThresholdOverride, boolean noCacheHeaderPresent);
+    CacheDecision lookup(String namespace, ChatCompletionRequest request, CacheMatching matching, boolean noCacheHeaderPresent);
 
-    void store(String namespace, ChatCompletionRequest request, String responseBodyJson, Duration ttl);
+    void store(String namespace, ChatCompletionRequest request, String responseBodyJson, Duration ttl, CacheMatching matching);
 
     /** F4.7: manual invalidation by key prefix within a namespace. Returns the number of entries removed. */
     long invalidateByPrefix(String namespace, String keyPrefix);

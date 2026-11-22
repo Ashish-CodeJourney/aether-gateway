@@ -22,19 +22,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * correctly but cannot prove that format is what a real deployment
  * actually sends.
  *
- * <p>Target is a self-hosted LiteLLM proxy fronting Ollama - the generic
- * OpenAI-compatible path, with no adapter written for it specifically.
- * That is the claim under test: "anything speaking the OpenAI wire
- * format works unmodified" should hold against a real one.
+ * <p>Intended target is a self-hosted OpenAI-compatible proxy (for
+ * example LiteLLM fronting Ollama) - the generic OpenAI-compatible path,
+ * with no adapter written for it specifically. That is the claim under
+ * test: "anything speaking the OpenAI wire format works unmodified"
+ * should hold against a real one.
  *
- * <p>Skipped unless {@code LITELLM_API_KEY} is set, so CI and a clean
- * checkout stay green and offline. Run it with:
+ * <p>The endpoint is supplied entirely through the environment, so no
+ * real deployment's hostname or credential lives in the repository.
+ * Skipped unless {@code AETHER_LIVE_OPENAI_BASE_URL},
+ * {@code AETHER_LIVE_OPENAI_API_KEY} and {@code AETHER_LIVE_OPENAI_MODEL}
+ * are all set, so CI and a clean checkout stay green and offline. Run it
+ * with:
  * <pre>
- * set -a; . ./.env; set +a
+ * export AETHER_LIVE_OPENAI_BASE_URL=https://your-proxy.example.com/v1
+ * export AETHER_LIVE_OPENAI_API_KEY=...
+ * export AETHER_LIVE_OPENAI_MODEL=...
  * ./gradlew :gateway-providers:test --tests '*LiveTest'
  * </pre>
  *
- * <p>The models behind this proxy are reasoning models: they spend
+ * <p>If the model behind the proxy is a reasoning model, it spends
  * output tokens thinking before emitting any content, and LiteLLM
  * returns that thinking in a non-standard {@code reasoning_content}
  * field this gateway neither reads nor needs. A tight {@code max_tokens}
@@ -42,19 +49,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code finish_reason} - worth knowing before concluding an adapter is
  * broken.
  */
-@EnabledIfEnvironmentVariable(named = "LITELLM_API_KEY", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "AETHER_LIVE_OPENAI_BASE_URL", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "AETHER_LIVE_OPENAI_API_KEY", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "AETHER_LIVE_OPENAI_MODEL", matches = ".+")
 class OpenAiCompatibleAdapterLiveTest {
 
-    private static final String BASE_URL = "https://ai.nelkinda.com/v1";
-    private static final String MODEL = "mac/gemma4:12b-mlx";
+    private static final String PROVIDER_ID = "live-openai-compatible";
+    private static final String BASE_URL = System.getenv("AETHER_LIVE_OPENAI_BASE_URL");
+    private static final String API_KEY = System.getenv("AETHER_LIVE_OPENAI_API_KEY");
+    private static final String MODEL = System.getenv("AETHER_LIVE_OPENAI_MODEL");
 
     private OpenAiCompatibleAdapter adapter() {
-        return new OpenAiCompatibleAdapter(
-                "litellm-nelkinda",
-                BASE_URL,
-                System.getenv("LITELLM_API_KEY"),
-                RestClient.builder(),
-                WebClient.builder());
+        return new OpenAiCompatibleAdapter(PROVIDER_ID, BASE_URL, API_KEY, RestClient.builder(), WebClient.builder());
     }
 
     private ChatCompletionRequest request(boolean stream) {
@@ -69,7 +75,7 @@ class OpenAiCompatibleAdapterLiveTest {
         ProviderResponse result = adapter().invoke(request(false));
 
         assertThat(result)
-                .as("a real completion, not a ProviderError - check the model is pulled on the backing host")
+                .as("a real completion, not a ProviderError - check the model is available on the backing host")
                 .isInstanceOf(ProviderResponse.Completion.class);
 
         var response = ((ProviderResponse.Completion) result).response();
@@ -93,13 +99,10 @@ class OpenAiCompatibleAdapterLiveTest {
 
     @Test
     void reportsAnUnknownModelAsAProviderErrorRatherThanThrowing() {
-        var result = new OpenAiCompatibleAdapter(
-                "litellm-nelkinda", BASE_URL, System.getenv("LITELLM_API_KEY"),
-                RestClient.builder(), WebClient.builder())
-                .invoke(new ChatCompletionRequest(
-                        "mac/definitely-not-a-real-model",
-                        List.of(new ChatMessage("user", "hi")),
-                        false));
+        var result = adapter().invoke(new ChatCompletionRequest(
+                "definitely-not-a-real-model",
+                List.of(new ChatMessage("user", "hi")),
+                false));
 
         assertThat(result).isInstanceOf(ProviderResponse.ProviderError.class);
     }

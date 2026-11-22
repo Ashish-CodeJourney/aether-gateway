@@ -111,10 +111,7 @@ It is not yet accurate enough to recommend for answers that need to be correct. 
 
 The guard cannot detect negation ("open" vs "closed"), spelled-out numbers ("two doses" vs "three doses") or common nouns that change the meaning ("weekdays" vs "weekends"). [Semantic cache correctness](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) covers the full analysis.
 
-**Current limitation:** today, enabling `cache` on a route turns on exact *and* semantic matching together. A route-level switch for exact-only caching is on the roadmap. Until then, you have two options:
-
-- Bypass the cache for sensitive requests with `X-Aether-No-Cache`.
-- Set `AETHER_CACHE_DEFAULT_THRESHOLD` above `1.0` so that no semantic match can qualify. Clients can still lower the threshold per request with the `X-Aether-Cache-Threshold` header.
+**Semantic matching is opt-in per route.** Exact-only caching is `semantic: false` in a route's `cache:` block in `routing.yaml`; the shipped example configs use it, so out of the box only identical requests are served from cache. (A `cache:` block that omits `semantic` keeps the older behaviour, exact plus semantic, so existing configs are unchanged.) Clients can raise the similarity threshold for a request with `X-Aether-Cache-Threshold`, but never lower it below the route's configured value. See [Routing policy](https://ashish-codejourney.github.io/aether-gateway/docs/design/routing-policy).
 
 ## How it compares
 
@@ -207,7 +204,6 @@ In progress or planned. None of these ship yet:
 - **`/v1/embeddings`** endpoint.
 - **Lightweight single-container mode** for trying the gateway without the full Compose stack.
 - **Spring Boot starter** for embedding the gateway in an existing Spring application.
-- **Exact-only cache mode** as a per-route switch, with semantic matching as an explicit opt-in.
 - **Entity guard improvements** for negation and spelled-out numbers.
 
 ## Non-goals

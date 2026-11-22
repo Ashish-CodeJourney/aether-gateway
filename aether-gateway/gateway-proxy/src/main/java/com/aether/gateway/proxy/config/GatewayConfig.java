@@ -276,13 +276,11 @@ public class GatewayConfig {
     public CachePort cachePort(
             StringRedisTemplate redisTemplate,
             JdbcClient jdbcClient,
-            EmbeddingGenerator embeddingGenerator,
-            @Value("${aether.cache.default-threshold:0.94}") double defaultThreshold) {
+            EmbeddingGenerator embeddingGenerator) {
         return new CacheAdapter(
                 new RedisExactMatchStore(redisTemplate),
                 new PgVectorCacheStore(jdbcClient),
-                embeddingGenerator,
-                defaultThreshold);
+                embeddingGenerator);
     }
 
     // Phase 08 (M5): F6.1-F6.4 observability. MeterRegistry is

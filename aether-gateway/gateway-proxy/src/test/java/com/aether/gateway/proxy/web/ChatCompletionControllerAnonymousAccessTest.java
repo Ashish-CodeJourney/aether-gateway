@@ -69,7 +69,8 @@ class ChatCompletionControllerAnonymousAccessTest {
                 promptRegistryPort,
                 new ChatCompletionDtoMapper(),
                 Schedulers.immediate(),
-                allowAnonymous);
+                allowAnonymous,
+                0.94);
         return WebTestClient.bindToController(controller).build();
     }
 
