@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/ci.yml)
 [![Docs](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/docs.yml/badge.svg)](https://github.com/Ashish-CodeJourney/aether-gateway/actions/workflows/docs.yml)
-[![Docs site](https://img.shields.io/badge/docs-ashish--codejourney.github.io%2Faether-gateway-blue)](https://ashish-codejourney.github.io/aether-gateway/)
+[![Release](https://img.shields.io/github/v/release/Ashish-CodeJourney/aether-gateway)](https://github.com/Ashish-CodeJourney/aether-gateway/releases/latest)
+[![Docs](https://img.shields.io/badge/docs-website-blue)](https://ashish-codejourney.github.io/aether-gateway/)
+[![Docker](https://img.shields.io/badge/docker-ashishvaghelaa%2Faether--gateway--proxy-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/ashishvaghelaa/aether-gateway-proxy)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **One self-hosted, OpenAI-compatible endpoint in front of all your LLM providers, with failover, caching, quotas and per-request cost tracking built in.**
