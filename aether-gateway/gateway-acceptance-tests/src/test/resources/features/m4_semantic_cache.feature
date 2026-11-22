@@ -38,6 +38,20 @@ Feature: Semantic cache correctness
       | 1.5       |
       | loose     |
 
+  @m4 @F4.7
+  Scenario: An exact-only route never serves a paraphrase from the cache
+    Given cache requests target the "mock-exact-only-cache" route
+    And a prior request was made and cached for prompt "What is the capital of Portugal?"
+    When a client sends "Can you tell me Portugal's capital city?" with cache threshold "0.5"
+    Then the response header "X-Aether-Cache" is "MISS"
+
+  @m4 @F4.7
+  Scenario: An exact-only route still serves an identical request from the cache
+    Given cache requests target the "mock-exact-only-cache" route
+    And a prior request was made and cached for prompt "What is the capital of Norway?"
+    When a client sends "What is the capital of Norway?" with no cache threshold header
+    Then the response header "X-Aether-Cache" is "EXACT_HIT"
+
   @m4 @F4.4
   Scenario: Cache entries never cross API key namespaces
     Given API key "tenant-a" has a cached response for "Summarise this contract"

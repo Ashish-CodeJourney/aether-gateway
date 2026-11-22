@@ -163,6 +163,52 @@ class RoutingYamlParserTest {
     }
 
     @Test
+    void aCacheBlockCanTurnSemanticMatchingOffForExactOnlyCaching() {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:8082
+                routes:
+                  - alias: fast-chat
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                    cache:
+                      enabled: true
+                      semantic: false
+                      ttl: 6h
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        assertThat(config.routes().get("fast-chat").cache().semantic()).isFalse();
+    }
+
+    @Test
+    void semanticMatchingStaysOnWhenTheCacheBlockDoesNotMentionIt() {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:8082
+                routes:
+                  - alias: fast-chat
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                    cache:
+                      enabled: true
+                      threshold: 0.94
+                      ttl: 6h
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        assertThat(config.routes().get("fast-chat").cache().semantic()).isTrue();
+    }
+
+    @Test
     void aRouteWithNoCacheBlockDefaultsToDisabled() {
         String yaml = """
                 providers:

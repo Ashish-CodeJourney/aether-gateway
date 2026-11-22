@@ -3,6 +3,7 @@ package com.aether.gateway.cache;
 import com.aether.gateway.core.domain.CacheBypassRule;
 import com.aether.gateway.core.domain.CacheDecision;
 import com.aether.gateway.core.domain.CacheKey;
+import com.aether.gateway.core.domain.CacheMatching;
 import com.aether.gateway.core.domain.CacheThresholdGate;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
@@ -38,29 +39,26 @@ public class CacheAdapter implements CachePort {
     private final RedisExactMatchStore redisStore;
     private final PgVectorCacheStore pgStore;
     private final EmbeddingGenerator embeddingGenerator;
-    private final double configuredThreshold;
 
     public CacheAdapter(
             RedisExactMatchStore redisStore,
             PgVectorCacheStore pgStore,
-            EmbeddingGenerator embeddingGenerator,
-            double configuredThreshold) {
+            EmbeddingGenerator embeddingGenerator) {
         this.redisStore = redisStore;
         this.pgStore = pgStore;
         this.embeddingGenerator = embeddingGenerator;
-        this.configuredThreshold = configuredThreshold;
     }
 
     @Override
     public CacheDecision lookup(
-            String namespace, ChatCompletionRequest request, Double similarityThresholdOverride, boolean noCacheHeaderPresent) {
+            String namespace, ChatCompletionRequest request, CacheMatching matching, boolean noCacheHeaderPresent) {
         Optional<String> bypass = CacheBypassRule.bypassReason(request, noCacheHeaderPresent);
         if (bypass.isPresent()) {
             return new CacheDecision.Bypass(bypass.get());
         }
 
         try {
-            return lookupUnsafe(namespace, request, similarityThresholdOverride);
+            return lookupUnsafe(namespace, request, matching);
         } catch (RuntimeException e) {
             // ADR-005: fail open. A cache outage must never turn into a
             // user-visible error; falling through to Miss means the
@@ -69,7 +67,7 @@ public class CacheAdapter implements CachePort {
         }
     }
 
-    private CacheDecision lookupUnsafe(String namespace, ChatCompletionRequest request, Double similarityThresholdOverride) {
+    private CacheDecision lookupUnsafe(String namespace, ChatCompletionRequest request, CacheMatching matching) {
         String exactHash = CacheKey.exactHash(request);
 
         Optional<String> redisHit = redisStore.get(namespace, exactHash);
@@ -87,13 +85,20 @@ public class CacheAdapter implements CachePort {
             return new CacheDecision.ExactHit(row.id(), row.responseBodyJson());
         }
 
+        return switch (matching) {
+            case CacheMatching.ExactOnly exactOnly -> new CacheDecision.Miss();
+            case CacheMatching.Semantic semantic -> semanticLookup(namespace, request, semantic.similarityThreshold());
+        };
+    }
+
+    private CacheDecision semanticLookup(String namespace, ChatCompletionRequest request, double similarityThreshold) {
         String candidateText = canonicalPromptText(request);
         float[] embedding = embeddingGenerator.embed(candidateText);
         Set<String> candidateFingerprint = EntityNumericGuard.fingerprint(candidateText);
 
         List<CacheEntryRow> candidates = pgStore.findNearest(namespace, embedding, CANDIDATE_LIMIT);
         for (CacheEntryRow candidate : candidates) {
-            if (!CacheThresholdGate.isHit(candidate.similarity(), configuredThreshold, similarityThresholdOverride)) {
+            if (!CacheThresholdGate.isHit(candidate.similarity(), similarityThreshold, null)) {
                 break; // sorted most-similar first; no later candidate can pass either
             }
             if (!candidateFingerprint.equals(parseFingerprint(candidate.entityFingerprint()))) {
@@ -105,11 +110,13 @@ public class CacheAdapter implements CachePort {
     }
 
     @Override
-    public void store(String namespace, ChatCompletionRequest request, String responseBodyJson, Duration ttl) {
+    public void store(String namespace, ChatCompletionRequest request, String responseBodyJson, Duration ttl, CacheMatching matching) {
         try {
             String exactHash = CacheKey.exactHash(request);
             String candidateText = canonicalPromptText(request);
-            float[] embedding = embeddingGenerator.embed(candidateText);
+            // Exact-only entries carry no embedding, which also keeps them
+            // out of every semantic search (findNearest skips NULLs).
+            float[] embedding = matching instanceof CacheMatching.Semantic ? embeddingGenerator.embed(candidateText) : null;
             String fingerprint = String.join(",", new TreeSet<>(EntityNumericGuard.fingerprint(candidateText)));
             Instant expiresAt = Instant.now().plus(ttl);
 

@@ -1,10 +1,16 @@
 package com.aether.gateway.proxy.web;
 
 import com.aether.gateway.core.domain.CacheDecision;
+import com.aether.gateway.core.domain.CacheMatching;
 import com.aether.gateway.core.domain.ChainMember;
+import com.aether.gateway.core.domain.ChatCompletionChoice;
+import com.aether.gateway.core.domain.ChatCompletionResponse;
+import com.aether.gateway.core.domain.ChatMessage;
+import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.RouteCacheConfig;
 import com.aether.gateway.core.domain.RouteConfig;
 import com.aether.gateway.core.domain.TokenEstimator;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ApiKeyLookupPort;
 import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
@@ -39,27 +45,29 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Which similarity threshold a cached route actually applies: a valid
+ * How a cached route matches. Threshold precedence: a valid
  * {@code X-Aether-Cache-Threshold} header first, then the route's own
  * {@code cache.threshold} from routing.yaml, then the global
- * {@code aether.cache.default-threshold}.
+ * {@code aether.cache.default-threshold}. A route with
+ * {@code cache.semantic: false} matches exactly only.
  */
 class ChatCompletionControllerCacheThresholdTest {
 
     private static final double GLOBAL_DEFAULT_THRESHOLD = 0.94;
+    private static final Duration TTL = Duration.ofHours(1);
     private static final String CACHED_BODY = """
             {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"mock","choices":[]}""";
 
     private final CachePort cachePort = mock(CachePort.class);
     private final RoutingSource routingSource = mock(RoutingSource.class);
     private final IpRateLimitPort ipRateLimitPort = mock(IpRateLimitPort.class);
+    private final ChatCompletionUseCase chatCompletionUseCase = mock(ChatCompletionUseCase.class);
 
-    private WebTestClient client() {
+    private WebTestClient client(CacheDecision cacheDecision) {
         when(ipRateLimitPort.tryConsume(anyString())).thenReturn(true);
-        when(cachePort.lookup(anyString(), any(), any(), anyBoolean()))
-                .thenReturn(new CacheDecision.ExactHit("entry-1", CACHED_BODY));
+        when(cachePort.lookup(anyString(), any(), any(), anyBoolean())).thenReturn(cacheDecision);
         var controller = new ChatCompletionController(
-                mock(ChatCompletionUseCase.class),
+                chatCompletionUseCase,
                 mock(ChatStreamUseCase.class),
                 mock(ApiKeyLookupPort.class),
                 mock(QuotaPort.class),
@@ -78,14 +86,34 @@ class ChatCompletionControllerCacheThresholdTest {
         return WebTestClient.bindToController(controller).build();
     }
 
+    private WebTestClient client() {
+        return client(new CacheDecision.ExactHit("entry-1", CACHED_BODY));
+    }
+
     private void routeWithCache(RouteCacheConfig cache) {
         when(routingSource.routeFor("mock")).thenReturn(Optional.of(
                 new RouteConfig("mock", List.of(new ChainMember("mock-primary", "mock", 100)), cache)));
     }
 
+    private static RouteCacheConfig semanticRoute(OptionalDouble threshold) {
+        return new RouteCacheConfig(true, threshold, TTL, true);
+    }
+
+    private static RouteCacheConfig exactOnlyRoute() {
+        return new RouteCacheConfig(true, OptionalDouble.of(0.8), TTL, false);
+    }
+
     private static ChatCompletionRequestDto request() {
         return new ChatCompletionRequestDto(
                 "mock", List.of(new ChatMessageDto("user", "hello")), false, null, null, null);
+    }
+
+    private static ProviderResponse.Completion providerCompletion() {
+        var response = new ChatCompletionResponse(
+                "chatcmpl-2", "chat.completion", 1, "mock",
+                List.of(new ChatCompletionChoice(0, new ChatMessage("assistant", "hi"), "stop")),
+                Usage.of(1, 1));
+        return new ProviderResponse.Completion(response, "mock-primary", 1, List.of("mock-primary"));
     }
 
     private WebTestClient.ResponseSpec send(WebTestClient client, String thresholdHeader) {
@@ -100,35 +128,35 @@ class ChatCompletionControllerCacheThresholdTest {
 
     @Test
     void appliesTheRoutesOwnThresholdWhenNoHeaderIsSent() {
-        routeWithCache(new RouteCacheConfig(true, OptionalDouble.of(0.8), Duration.ofHours(1)));
+        routeWithCache(semanticRoute(OptionalDouble.of(0.8)));
 
         send(client(), null).expectStatus().isOk();
 
-        verify(cachePort).lookup(eq("anonymous"), any(), eq(0.8), eq(false));
+        verify(cachePort).lookup(eq("anonymous"), any(), eq(new CacheMatching.Semantic(0.8)), eq(false));
     }
 
     @Test
     void fallsBackToTheGlobalDefaultWhenTheRouteSetsNoThreshold() {
-        routeWithCache(new RouteCacheConfig(true, OptionalDouble.empty(), Duration.ofHours(1)));
+        routeWithCache(semanticRoute(OptionalDouble.empty()));
 
         send(client(), null).expectStatus().isOk();
 
-        verify(cachePort).lookup(eq("anonymous"), any(), eq(GLOBAL_DEFAULT_THRESHOLD), eq(false));
+        verify(cachePort).lookup(eq("anonymous"), any(), eq(new CacheMatching.Semantic(GLOBAL_DEFAULT_THRESHOLD)), eq(false));
     }
 
     @Test
     void aValidHeaderTakesPrecedenceOverTheRoutesThreshold() {
-        routeWithCache(new RouteCacheConfig(true, OptionalDouble.of(0.8), Duration.ofHours(1)));
+        routeWithCache(semanticRoute(OptionalDouble.of(0.8)));
 
         send(client(), "0.97").expectStatus().isOk();
 
-        verify(cachePort).lookup(eq("anonymous"), any(), eq(0.97), eq(false));
+        verify(cachePort).lookup(eq("anonymous"), any(), eq(new CacheMatching.Semantic(0.97)), eq(false));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"0.5", "0.79", "1.5", "abc", "NaN"})
     void rejectsAHeaderThatIsInvalidOrLooserThanTheRouteBeforeAnyQuotaOrCacheWork(String header) {
-        routeWithCache(new RouteCacheConfig(true, OptionalDouble.of(0.8), Duration.ofHours(1)));
+        routeWithCache(semanticRoute(OptionalDouble.of(0.8)));
 
         send(client(), header)
                 .expectStatus().isBadRequest()
@@ -139,5 +167,34 @@ class ChatCompletionControllerCacheThresholdTest {
 
         verify(ipRateLimitPort, never()).tryConsume(anyString());
         verify(cachePort, never()).lookup(anyString(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void anExactOnlyRouteLooksUpByExactMatchOnly() {
+        routeWithCache(exactOnlyRoute());
+
+        send(client(), null).expectStatus().isOk();
+
+        verify(cachePort).lookup(eq("anonymous"), any(), eq(new CacheMatching.ExactOnly()), eq(false));
+    }
+
+    @Test
+    void anExactOnlyRouteStoresAMissForExactMatchOnly() {
+        routeWithCache(exactOnlyRoute());
+        when(chatCompletionUseCase.complete(any())).thenReturn(providerCompletion());
+
+        send(client(new CacheDecision.Miss()), null).expectStatus().isOk();
+
+        verify(cachePort).store(eq("anonymous"), any(), anyString(), eq(TTL), eq(new CacheMatching.ExactOnly()));
+    }
+
+    @Test
+    void aSemanticRouteStoresAMissForSemanticMatching() {
+        routeWithCache(semanticRoute(OptionalDouble.of(0.8)));
+        when(chatCompletionUseCase.complete(any())).thenReturn(providerCompletion());
+
+        send(client(new CacheDecision.Miss()), null).expectStatus().isOk();
+
+        verify(cachePort).store(eq("anonymous"), any(), anyString(), eq(TTL), eq(new CacheMatching.Semantic(0.8)));
     }
 }

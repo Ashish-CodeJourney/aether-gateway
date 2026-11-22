@@ -22,11 +22,11 @@ class CacheThresholdResolutionTest {
     private static final double GLOBAL_DEFAULT = 0.94;
 
     private static RouteCacheConfig routeWithThreshold(double threshold) {
-        return new RouteCacheConfig(true, OptionalDouble.of(threshold), Duration.ofHours(1));
+        return new RouteCacheConfig(true, OptionalDouble.of(threshold), Duration.ofHours(1), true);
     }
 
     private static RouteCacheConfig routeWithoutThreshold() {
-        return new RouteCacheConfig(true, OptionalDouble.empty(), Duration.ofHours(1));
+        return new RouteCacheConfig(true, OptionalDouble.empty(), Duration.ofHours(1), true);
     }
 
     @Test

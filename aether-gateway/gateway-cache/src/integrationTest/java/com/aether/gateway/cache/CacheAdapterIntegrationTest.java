@@ -1,6 +1,7 @@
 package com.aether.gateway.cache;
 
 import com.aether.gateway.core.domain.CacheDecision;
+import com.aether.gateway.core.domain.CacheMatching;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
 import org.flywaydb.core.Flyway;
@@ -37,7 +38,11 @@ class CacheAdapterIntegrationTest {
 
     private static PostgreSQLContainer<?> postgres;
     private static GenericContainer<?> redis;
+    private static final CacheMatching SEMANTIC = new CacheMatching.Semantic(0.5);
+    private static final CacheMatching EXACT_ONLY = new CacheMatching.ExactOnly();
+
     private static EmbeddingGenerator embeddingGenerator;
+    private static EmbeddingGenerator refusingEmbeddingGenerator;
     private static JdbcClient jdbcClient;
     private static StringRedisTemplate redisTemplate;
 
@@ -78,6 +83,14 @@ class CacheAdapterIntegrationTest {
         Files.createDirectories(cacheDir);
         embeddingGenerator = new EmbeddingGenerator(cacheDir.toString());
         embeddingGenerator.warmUp();
+        // An Error, not a RuntimeException, so the adapter's fail-open
+        // catch cannot swallow it and disguise an embedding call as a Miss.
+        refusingEmbeddingGenerator = new EmbeddingGenerator(cacheDir.toString()) {
+            @Override
+            public float[] embed(String text) {
+                throw new AssertionError("exact-only caching must never compute an embedding");
+            }
+        };
     }
 
     @AfterAll
@@ -91,8 +104,69 @@ class CacheAdapterIntegrationTest {
         cacheAdapter = new CacheAdapter(
                 new RedisExactMatchStore(redisTemplate),
                 new PgVectorCacheStore(jdbcClient),
-                embeddingGenerator,
-                0.5);
+                embeddingGenerator);
+    }
+
+    private CacheAdapter adapterThatCannotEmbed() {
+        return new CacheAdapter(
+                new RedisExactMatchStore(redisTemplate),
+                new PgVectorCacheStore(jdbcClient),
+                refusingEmbeddingGenerator);
+    }
+
+    @Test
+    void exactOnlyCachingStoresAndServesAnIdenticalRequestWithoutEverComputingAnEmbedding() {
+        String namespace = "ns-" + UUID.randomUUID();
+        var request = requestFor("What's the capital of France?");
+        var exactOnlyAdapter = adapterThatCannotEmbed();
+        exactOnlyAdapter.store(namespace, request, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10), EXACT_ONLY);
+
+        CacheDecision decision = exactOnlyAdapter.lookup(namespace, request, EXACT_ONLY, false);
+
+        assertThat(decision).isInstanceOf(CacheDecision.ExactHit.class);
+        assertThat(((CacheDecision.ExactHit) decision).responseBodyJson()).isEqualTo("{\"answer\":\"Paris\"}");
+    }
+
+    @Test
+    void anExactOnlyEntryIsDurableInPostgresNotJustRedis() {
+        String namespace = "ns-" + UUID.randomUUID();
+        var request = requestFor("How many moons does Mars have?");
+        var exactOnlyAdapter = adapterThatCannotEmbed();
+        exactOnlyAdapter.store(namespace, request, "{\"answer\":\"two\"}", Duration.ofMinutes(10), EXACT_ONLY);
+        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
+
+        CacheDecision decision = exactOnlyAdapter.lookup(namespace, request, EXACT_ONLY, false);
+
+        assertThat(decision).isInstanceOf(CacheDecision.ExactHit.class);
+    }
+
+    @Test
+    void anExactOnlyMissNeverFallsThroughToSemanticSearch() {
+        String namespace = "ns-" + UUID.randomUUID();
+        cacheAdapter.store(namespace, requestFor("What's the capital of France?"), "{\"answer\":\"Paris\"}",
+                Duration.ofMinutes(10), SEMANTIC);
+
+        CacheDecision decision = adapterThatCannotEmbed()
+                .lookup(namespace, requestFor("Can you tell me France's capital city?"), EXACT_ONLY, false);
+
+        assertThat(decision).isInstanceOf(CacheDecision.Miss.class);
+    }
+
+    @Test
+    void exactOnlyEntriesAreInvisibleToSemanticSearchWithoutBreakingItForOtherEntries() {
+        String namespace = "ns-" + UUID.randomUUID();
+        adapterThatCannotEmbed().store(namespace, requestFor("What's the capital of France?"), "{\"answer\":\"Paris\"}",
+                Duration.ofMinutes(10), EXACT_ONLY);
+        cacheAdapter.store(namespace, requestFor("How does photosynthesis work?"), "{\"answer\":\"sunlight\"}",
+                Duration.ofMinutes(10), SEMANTIC);
+
+        CacheDecision paraphraseOfExactOnlyEntry =
+                cacheAdapter.lookup(namespace, requestFor("Can you tell me France's capital city?"), SEMANTIC, false);
+        CacheDecision paraphraseOfSemanticEntry =
+                cacheAdapter.lookup(namespace, requestFor("Can you explain the process of photosynthesis?"), SEMANTIC, false);
+
+        assertThat(paraphraseOfExactOnlyEntry).isInstanceOf(CacheDecision.Miss.class);
+        assertThat(paraphraseOfSemanticEntry).isInstanceOf(CacheDecision.SemanticHit.class);
     }
 
     private ChatCompletionRequest requestFor(String content) {
@@ -103,9 +177,9 @@ class CacheAdapterIntegrationTest {
     void anIdenticalRequestIsAnExactHitAfterBeingStored() {
         String namespace = "ns-" + UUID.randomUUID();
         var request = requestFor("What's the capital of France?");
-        cacheAdapter.store(namespace, request, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10));
+        cacheAdapter.store(namespace, request, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10), SEMANTIC);
 
-        CacheDecision decision = cacheAdapter.lookup(namespace, request, null, false);
+        CacheDecision decision = cacheAdapter.lookup(namespace, request, SEMANTIC, false);
 
         assertThat(decision).isInstanceOf(CacheDecision.ExactHit.class);
         assertThat(((CacheDecision.ExactHit) decision).responseBodyJson()).isEqualTo("{\"answer\":\"Paris\"}");
@@ -115,10 +189,10 @@ class CacheAdapterIntegrationTest {
     void aGenuineParaphraseIsASemanticHit() {
         String namespace = "ns-" + UUID.randomUUID();
         var seed = requestFor("What's the capital of France?");
-        cacheAdapter.store(namespace, seed, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10));
+        cacheAdapter.store(namespace, seed, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10), SEMANTIC);
 
         var paraphrase = requestFor("Can you tell me France's capital city?");
-        CacheDecision decision = cacheAdapter.lookup(namespace, paraphrase, null, false);
+        CacheDecision decision = cacheAdapter.lookup(namespace, paraphrase, SEMANTIC, false);
 
         assertThat(decision).isInstanceOf(CacheDecision.SemanticHit.class);
         var hit = (CacheDecision.SemanticHit) decision;
@@ -136,10 +210,10 @@ class CacheAdapterIntegrationTest {
     void anEntityMismatchIsRejectedByTheGuardEvenIfSimilarityWouldOtherwisePass() {
         String namespace = "ns-" + UUID.randomUUID();
         var seed = requestFor("What's the capital of France?");
-        cacheAdapter.store(namespace, seed, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10));
+        cacheAdapter.store(namespace, seed, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10), SEMANTIC);
 
         var adversarial = requestFor("What's the capital of Germany?");
-        CacheDecision decision = cacheAdapter.lookup(namespace, adversarial, null, false);
+        CacheDecision decision = cacheAdapter.lookup(namespace, adversarial, SEMANTIC, false);
 
         assertThat(decision).as("entity guard must block this hit regardless of embedding similarity")
                 .isNotInstanceOf(CacheDecision.SemanticHit.class)
@@ -151,9 +225,9 @@ class CacheAdapterIntegrationTest {
         String namespaceA = "tenant-a-" + UUID.randomUUID();
         String namespaceB = "tenant-b-" + UUID.randomUUID();
         var request = requestFor("Summarise this contract for me");
-        cacheAdapter.store(namespaceA, request, "{\"answer\":\"summary\"}", Duration.ofMinutes(10));
+        cacheAdapter.store(namespaceA, request, "{\"answer\":\"summary\"}", Duration.ofMinutes(10), SEMANTIC);
 
-        CacheDecision decisionForB = cacheAdapter.lookup(namespaceB, request, null, false);
+        CacheDecision decisionForB = cacheAdapter.lookup(namespaceB, request, SEMANTIC, false);
 
         assertThat(decisionForB).isInstanceOf(CacheDecision.Miss.class);
     }
@@ -164,7 +238,7 @@ class CacheAdapterIntegrationTest {
         var highTempRequest = new ChatCompletionRequest(
                 "mock", List.of(new ChatMessage("user", "surprise me")), false, 0.9, null);
 
-        CacheDecision decision = cacheAdapter.lookup(namespace, highTempRequest, null, false);
+        CacheDecision decision = cacheAdapter.lookup(namespace, highTempRequest, SEMANTIC, false);
 
         assertThat(decision).isInstanceOf(CacheDecision.Bypass.class);
         assertThat(((CacheDecision.Bypass) decision).reason()).isEqualTo("temperature_too_high");
@@ -174,10 +248,10 @@ class CacheAdapterIntegrationTest {
     void unrelatedPromptsAreAMiss() {
         String namespace = "ns-" + UUID.randomUUID();
         var seed = requestFor("What's the capital of France?");
-        cacheAdapter.store(namespace, seed, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10));
+        cacheAdapter.store(namespace, seed, "{\"answer\":\"Paris\"}", Duration.ofMinutes(10), SEMANTIC);
 
         var unrelated = requestFor("What's a good recipe for banana bread?");
-        CacheDecision decision = cacheAdapter.lookup(namespace, unrelated, null, false);
+        CacheDecision decision = cacheAdapter.lookup(namespace, unrelated, SEMANTIC, false);
 
         assertThat(decision).isInstanceOf(CacheDecision.Miss.class);
     }
@@ -191,10 +265,9 @@ class CacheAdapterIntegrationTest {
         var brokenAdapter = new CacheAdapter(
                 new RedisExactMatchStore(brokenRedisTemplate),
                 new PgVectorCacheStore(jdbcClient),
-                embeddingGenerator,
-                0.5);
+                embeddingGenerator);
 
-        CacheDecision decision = brokenAdapter.lookup("ns-broken", requestFor("hello"), null, false);
+        CacheDecision decision = brokenAdapter.lookup("ns-broken", requestFor("hello"), SEMANTIC, false);
 
         assertThat(decision).as("a store outage must fail open (Miss), never throw").isInstanceOf(CacheDecision.Miss.class);
         brokenConnectionFactory.destroy();

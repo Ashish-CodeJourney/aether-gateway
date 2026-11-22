@@ -64,7 +64,8 @@ public class RoutingYamlParser {
         Number thresholdRaw = (Number) cacheRaw.get("threshold");
         OptionalDouble threshold = thresholdRaw == null ? OptionalDouble.empty() : OptionalDouble.of(thresholdRaw.doubleValue());
         Duration ttl = parseDuration((String) cacheRaw.getOrDefault("ttl", "6h"));
-        return new RouteCacheConfig(enabled, threshold, ttl);
+        boolean semantic = !Boolean.FALSE.equals(cacheRaw.getOrDefault("semantic", Boolean.TRUE));
+        return new RouteCacheConfig(enabled, threshold, ttl, semantic);
     }
 
     /** Supports routing.yaml's shorthand duration suffixes (s/m/h/d) as well as full ISO-8601 ("PT6H"). */

@@ -2,6 +2,7 @@ package com.aether.gateway.proxy.web;
 
 import com.aether.gateway.core.domain.ApiKeyContext;
 import com.aether.gateway.core.domain.CacheDecision;
+import com.aether.gateway.core.domain.CacheMatching;
 import com.aether.gateway.core.domain.CacheThresholdGate;
 import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
@@ -181,11 +182,12 @@ public class ChatCompletionController {
                     // Validated before any quota is reserved, so a rejected
                     // header never leaves a reservation behind.
                     RouteCacheConfig routeCache = routeCacheFor(domainRequest);
-                    double cacheThreshold = CacheThresholdGate.effectiveThreshold(routeCache, defaultCacheThreshold, thresholdHeader);
+                    CacheMatching cacheMatching = CacheMatching.forRoute(
+                            routeCache, CacheThresholdGate.effectiveThreshold(routeCache, defaultCacheThreshold, thresholdHeader));
                     return Mono.fromCallable(() -> checkQuota(authorization, clientIp, domainRequest))
                             .subscribeOn(virtualThreadScheduler)
                             .flatMap(quotaOutcome -> Mono
-                                    .fromCallable(() -> checkCache(quotaOutcome, domainRequest, noCachePresent, routeCache, cacheThreshold))
+                                    .fromCallable(() -> checkCache(quotaOutcome, domainRequest, noCachePresent, routeCache, cacheMatching))
                                     .subscribeOn(virtualThreadScheduler)
                                     .flatMap(cacheLookup -> dispatch(quotaOutcome, domainRequest, cacheLookup, requestStartNanos)));
                 })
@@ -268,7 +270,7 @@ public class ChatCompletionController {
         }
     }
 
-    private record CacheLookup(String namespace, CacheDecision decision, RouteCacheConfig routeCache) {
+    private record CacheLookup(String namespace, CacheDecision decision, RouteCacheConfig routeCache, CacheMatching matching) {
     }
 
     /**
@@ -327,22 +329,22 @@ public class ChatCompletionController {
     /** F4: skipped entirely (and the underlying quota reservation left untouched) when the quota check already rejected the request. */
     private CacheLookup checkCache(
             QuotaOutcome quotaOutcome, ChatCompletionRequest domainRequest, boolean noCachePresent,
-            RouteCacheConfig routeCache, double cacheThreshold) {
+            RouteCacheConfig routeCache, CacheMatching matching) {
         if (quotaOutcome instanceof QuotaOutcome.Rejected) {
-            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("quota_rejected"), RouteCacheConfig.DISABLED);
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("quota_rejected"), RouteCacheConfig.DISABLED, matching);
         }
         if (quotaOutcome instanceof QuotaOutcome.IpRateLimited) {
-            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("ip_rate_limited"), RouteCacheConfig.DISABLED);
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("ip_rate_limited"), RouteCacheConfig.DISABLED, matching);
         }
         if (quotaOutcome instanceof QuotaOutcome.Unauthenticated) {
-            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("unauthenticated"), RouteCacheConfig.DISABLED);
+            return new CacheLookup(ANONYMOUS_NAMESPACE, new CacheDecision.Bypass("unauthenticated"), RouteCacheConfig.DISABLED, matching);
         }
         String namespace = quotaOutcome instanceof QuotaOutcome.Proceed proceed ? proceed.key().keyId() : ANONYMOUS_NAMESPACE;
         if (!routeCache.enabled()) {
-            return new CacheLookup(namespace, new CacheDecision.Bypass("route_cache_disabled"), routeCache);
+            return new CacheLookup(namespace, new CacheDecision.Bypass("route_cache_disabled"), routeCache, matching);
         }
-        CacheDecision decision = cachePort.lookup(namespace, domainRequest, cacheThreshold, noCachePresent);
-        return new CacheLookup(namespace, decision, routeCache);
+        CacheDecision decision = cachePort.lookup(namespace, domainRequest, matching, noCachePresent);
+        return new CacheLookup(namespace, decision, routeCache, matching);
     }
 
     private RouteCacheConfig routeCacheFor(ChatCompletionRequest domainRequest) {
@@ -511,7 +513,7 @@ public class ChatCompletionController {
         }
         if (response instanceof ProviderResponse.Completion completion) {
             String responseJson = mapper.toJson(mapper.toDto(completion.response()));
-            cachePort.store(cacheLookup.namespace(), domainRequest, responseJson, cacheLookup.routeCache().ttl());
+            cachePort.store(cacheLookup.namespace(), domainRequest, responseJson, cacheLookup.routeCache().ttl(), cacheLookup.matching());
         }
     }
 
@@ -657,7 +659,7 @@ public class ChatCompletionController {
         // response body content and doesn't compute cost from this path.
         var dto = new ChatCompletionResponseDto(
                 streamId, "chat.completion", Instant.now().getEpochSecond(), domainRequest.model(), List.of(choice), new UsageDto(0, 0, 0));
-        cachePort.store(cacheLookup.namespace(), domainRequest, mapper.toJson(dto), cacheLookup.routeCache().ttl());
+        cachePort.store(cacheLookup.namespace(), domainRequest, mapper.toJson(dto), cacheLookup.routeCache().ttl(), cacheLookup.matching());
     }
 
     private ServerSentEvent<String> toSseEvent(ProviderResponse.StreamChunk chunk) {

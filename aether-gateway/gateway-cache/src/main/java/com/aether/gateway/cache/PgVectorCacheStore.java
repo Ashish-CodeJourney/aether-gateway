@@ -55,7 +55,7 @@ public class PgVectorCacheStore {
                         SELECT id, canonical_prompt, response_body, entity_fingerprint, expires_at,
                                1 - (embedding <=> :embedding::vector) AS similarity
                         FROM cache_entry
-                        WHERE namespace = :namespace AND expires_at > now()
+                        WHERE namespace = :namespace AND expires_at > now() AND embedding IS NOT NULL
                         ORDER BY embedding <=> :embedding::vector
                         LIMIT :limit
                         """)
@@ -97,7 +97,7 @@ public class PgVectorCacheStore {
                 .param("id", id)
                 .param("namespace", namespace)
                 .param("exactHash", exactHash)
-                .param("embedding", toVectorLiteral(embedding))
+                .param("embedding", embedding == null ? null : toVectorLiteral(embedding))
                 .param("canonicalPrompt", canonicalPrompt)
                 .param("responseBody", responseBodyJson)
                 .param("model", model)
