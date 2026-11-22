@@ -5,6 +5,7 @@ import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.ToolCall;
 import com.aether.gateway.core.domain.ToolCallDelta;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ProviderAdapterContractTest;
 import okhttp3.mockwebserver.MockResponse;
@@ -112,6 +113,11 @@ class AnthropicAdapterContractTest extends ProviderAdapterContractTest {
     @Override
     protected String expectedStreamedContent() {
         return "Hello there";
+    }
+
+    @Override
+    protected Usage expectedStreamedUsage() {
+        return Usage.of(5, 2);
     }
 
     private ChatCompletionRequest request(ChatMessage... messages) {

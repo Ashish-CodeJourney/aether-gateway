@@ -28,7 +28,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 import java.util.concurrent.Flow;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * F2.2 (Phase 12/M9): the generic OpenAI-compatible {@link ProviderAdapter}
@@ -112,9 +111,8 @@ public class OpenAiCompatibleAdapter implements ProviderAdapter {
                 .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
                 .build();
         String responseId = providerName + "-" + System.nanoTime();
-        AtomicInteger index = new AtomicInteger(0);
 
-        Flux<ProviderResponse.StreamChunk> flux = webClient.post()
+        Flux<WireStreamChunkResponse> wireChunks = webClient.post()
                 .uri("/chat/completions")
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(OpenAiWireMapping.toWireRequest(request, true))
@@ -122,8 +120,8 @@ public class OpenAiCompatibleAdapter implements ProviderAdapter {
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
                 })
                 .takeWhile(sse -> !"[DONE]".equals(sse.data()))
-                .map(sse -> OpenAiWireMapping.toStreamChunk(
-                        snakeCaseMapper.readValue(sse.data(), WireStreamChunkResponse.class), responseId, index.getAndIncrement()));
+                .map(sse -> snakeCaseMapper.readValue(sse.data(), WireStreamChunkResponse.class));
+        Flux<ProviderResponse.StreamChunk> flux = OpenAiWireMapping.toStreamChunks(wireChunks, responseId);
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
     }

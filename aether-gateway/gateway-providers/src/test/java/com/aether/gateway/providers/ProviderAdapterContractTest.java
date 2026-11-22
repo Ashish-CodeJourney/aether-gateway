@@ -4,6 +4,7 @@ import com.aether.gateway.core.domain.ChatCompletionRequest;
 import com.aether.gateway.core.domain.ChatMessage;
 import com.aether.gateway.core.domain.ProviderResponse;
 import com.aether.gateway.core.domain.ProviderStreamException;
+import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -80,6 +81,9 @@ public abstract class ProviderAdapterContractTest {
 
     /** The concatenation of every streamed chunk's delta content {@link #streamingResponse()} encodes, in order. */
     protected abstract String expectedStreamedContent();
+
+    /** The token usage the provider reports for the whole of {@link #streamingResponse()}. */
+    protected abstract Usage expectedStreamedUsage();
 
     private ChatCompletionRequest sampleRequest() {
         return new ChatCompletionRequest(
@@ -161,6 +165,24 @@ public abstract class ProviderAdapterContractTest {
         String assembled = chunks.stream().map(ProviderResponse.StreamChunk::deltaContent).collect(joining());
         assertThat(assembled).isEqualTo(expectedStreamedContent());
         assertThat(chunks.get(chunks.size() - 1).last()).isTrue();
+    }
+
+    @Test
+    void invokeStreamingReportsTheProvidersOwnUsageOnTheLastChunkOnly() {
+        server.enqueue(streamingResponse());
+
+        List<ProviderResponse.StreamChunk> chunks = JdkFlowAdapter.flowPublisherToFlux(adapter.invokeStreaming(sampleRequest()))
+                .collectList()
+                .block(Duration.ofSeconds(10));
+
+        assertThat(chunks).isNotNull().isNotEmpty();
+        var last = chunks.get(chunks.size() - 1);
+        assertThat(last.last()).isTrue();
+        assertThat(last.usage()).isEqualTo(expectedStreamedUsage());
+        assertThat(chunks.subList(0, chunks.size() - 1)).allSatisfy(chunk -> {
+            assertThat(chunk.last()).isFalse();
+            assertThat(chunk.usage()).isNull();
+        });
     }
 
     /** Helper for concrete subclasses building canned JSON response bodies. */

@@ -39,4 +39,23 @@ class StreamChunkTest {
 
         assertThat(chunk.toolCallDeltas()).hasSize(1);
     }
+
+    @Test
+    void aChunkCarriesNoUsageUnlessTheProviderReportedSome() {
+        var plain = new ProviderResponse.StreamChunk("id", 0, "hel", false);
+        var withToolCalls = new ProviderResponse.StreamChunk("id", 1, "", true, List.of(), "stop");
+
+        assertThat(plain.usage()).isNull();
+        assertThat(withToolCalls.usage()).isNull();
+    }
+
+    @Test
+    void theLastChunkCanCarryTheProvidersRealUsage() {
+        var usage = Usage.of(12, 34);
+
+        var last = new ProviderResponse.StreamChunk("id", 3, "", true, List.of(), "stop", usage);
+
+        assertThat(last.usage()).isEqualTo(usage);
+        assertThat(last.usage().totalTokens()).isEqualTo(46);
+    }
 }

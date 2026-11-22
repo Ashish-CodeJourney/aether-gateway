@@ -22,6 +22,7 @@ import com.aether.gateway.providers.gemini.wire.WireGeminiPart;
 import com.aether.gateway.providers.gemini.wire.WireGeminiRequest;
 import com.aether.gateway.providers.gemini.wire.WireGeminiResponse;
 import com.aether.gateway.providers.gemini.wire.WireGeminiSystemInstruction;
+import com.aether.gateway.providers.gemini.wire.WireGeminiUsageMetadata;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
@@ -37,6 +38,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.util.List;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -130,6 +132,7 @@ public class GeminiAdapter implements ProviderAdapter {
         var camelCaseMapper = JsonMapper.builder().build();
         String responseId = providerName + "-" + System.nanoTime();
         AtomicInteger index = new AtomicInteger(0);
+        AtomicReference<WireGeminiUsageMetadata> latestUsage = new AtomicReference<>();
 
         Flux<ProviderResponse.StreamChunk> flux = webClient.post()
                 .uri(uriBuilder -> uriBuilder
@@ -148,7 +151,13 @@ public class GeminiAdapter implements ProviderAdapter {
                     boolean last = candidate.finishReason() != null;
                     String content = candidate.content() != null && !candidate.content().parts().isEmpty()
                             ? candidate.content().parts().get(0).text() : "";
-                    return new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), content, last);
+                    if (chunk.usageMetadata() != null) {
+                        latestUsage.set(chunk.usageMetadata());
+                    }
+                    // usageMetadata is a running count repeated on every
+                    // chunk, so only the finishing chunk reports it.
+                    Usage usage = last && latestUsage.get() != null ? toUsage(latestUsage.get()) : null;
+                    return new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), content, last, List.of(), null, usage);
                 });
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
@@ -212,13 +221,16 @@ public class GeminiAdapter implements ProviderAdapter {
                 ? candidate.content().parts().get(0).text() : "";
         var choice = new ChatCompletionChoice(
                 candidate.index(), new ChatMessage("assistant", text), mapFinishReason(candidate.finishReason()));
-        var usageMeta = wire.usageMetadata();
-        Usage usage = Usage.of(
-                usageMeta != null && usageMeta.promptTokenCount() != null ? usageMeta.promptTokenCount() : 0,
-                usageMeta != null && usageMeta.candidatesTokenCount() != null ? usageMeta.candidatesTokenCount() : 0);
+        Usage usage = wire.usageMetadata() == null ? Usage.of(0, 0) : toUsage(wire.usageMetadata());
         return new ChatCompletionResponse(
                 providerName + "-" + System.nanoTime(), "chat.completion", System.currentTimeMillis() / 1000,
                 model, List.of(choice), usage);
+    }
+
+    private static Usage toUsage(WireGeminiUsageMetadata usageMeta) {
+        return Usage.of(
+                usageMeta.promptTokenCount() != null ? usageMeta.promptTokenCount() : 0,
+                usageMeta.candidatesTokenCount() != null ? usageMeta.candidatesTokenCount() : 0);
     }
 
     /** Gemini's finishReason values ("STOP", "MAX_TOKENS", ...) are uppercase; normalise to the OpenAI-style lowercase the rest of this project's domain model expects. */

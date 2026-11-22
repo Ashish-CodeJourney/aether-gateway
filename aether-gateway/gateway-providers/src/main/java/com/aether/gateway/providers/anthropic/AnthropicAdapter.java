@@ -15,6 +15,7 @@ import com.aether.gateway.providers.anthropic.wire.WireAnthropicMessage;
 import com.aether.gateway.providers.anthropic.wire.WireAnthropicRequest;
 import com.aether.gateway.providers.anthropic.wire.WireAnthropicResponse;
 import com.aether.gateway.providers.anthropic.wire.WireAnthropicStreamEvent;
+import com.aether.gateway.providers.anthropic.wire.WireAnthropicUsage;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
@@ -163,6 +164,8 @@ public class AnthropicAdapter implements ProviderAdapter {
         AtomicInteger index = new AtomicInteger(0);
         Map<Integer, Integer> toolOrdinalByBlockIndex = new ConcurrentHashMap<>();
         AtomicReference<String> stopReason = new AtomicReference<>();
+        AtomicReference<Integer> inputTokens = new AtomicReference<>();
+        AtomicReference<Integer> outputTokens = new AtomicReference<>();
 
         Flux<ProviderResponse.StreamChunk> flux = webClient.post()
                 .uri("/messages")
@@ -176,9 +179,17 @@ public class AnthropicAdapter implements ProviderAdapter {
                 // and a text block's content_block_start carry nothing to
                 // relay and do not terminate the stream; forwarding them
                 // would pad it with empty chunks every client then has to
-                // filter out. message_delta's stop reason is held until
-                // message_stop, which is the chunk that reports it.
+                // filter out. message_start's input token count and
+                // message_delta's stop reason and output token count are
+                // held until message_stop, which is the chunk that reports
+                // them.
                 .mapNotNull(event -> switch (event.type()) {
+                    case "message_start" -> {
+                        if (event.message() != null && event.message().usage() != null) {
+                            recordUsage(event.message().usage(), inputTokens, outputTokens);
+                        }
+                        yield null;
+                    }
                     case "content_block_start" -> toolUseStart(event, toolOrdinalByBlockIndex)
                             .map(delta -> new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), "", false, List.of(delta), null))
                             .orElse(null);
@@ -187,14 +198,35 @@ public class AnthropicAdapter implements ProviderAdapter {
                         if (event.delta() != null && event.delta().stopReason() != null) {
                             stopReason.set(event.delta().stopReason());
                         }
+                        if (event.usage() != null) {
+                            recordUsage(event.usage(), inputTokens, outputTokens);
+                        }
                         yield null;
                     }
                     case "message_stop" -> new ProviderResponse.StreamChunk(
-                            responseId, index.getAndIncrement(), "", true, List.of(), mapStopReason(stopReason.get()));
+                            responseId, index.getAndIncrement(), "", true, List.of(), mapStopReason(stopReason.get()),
+                            streamedUsage(inputTokens.get(), outputTokens.get()));
                     default -> null;
                 });
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
+    }
+
+    /** message_delta's counts are cumulative, so the latest one reported wins. */
+    private static void recordUsage(WireAnthropicUsage usage, AtomicReference<Integer> inputTokens, AtomicReference<Integer> outputTokens) {
+        if (usage.inputTokens() != null) {
+            inputTokens.set(usage.inputTokens());
+        }
+        if (usage.outputTokens() != null) {
+            outputTokens.set(usage.outputTokens());
+        }
+    }
+
+    private static Usage streamedUsage(Integer inputTokens, Integer outputTokens) {
+        if (inputTokens == null && outputTokens == null) {
+            return null;
+        }
+        return Usage.of(inputTokens == null ? 0 : inputTokens, outputTokens == null ? 0 : outputTokens);
     }
 
     /** Tool calls are numbered among tool_use blocks only, as OpenAI clients expect, not by Anthropic's block index. */
