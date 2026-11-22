@@ -141,8 +141,7 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
                 Supplier<ProviderResponse> decorated = Bulkhead.decorateSupplier(
                         bulkhead, () -> breaker.executeSupplier(() -> {
                             ProviderResponse r = adapter.invoke(downstreamRequest);
-                            if (r instanceof ProviderResponse.ProviderError error
-                                    && FailureClassifier.isRetryable(error.httpStatus())) {
+                            if (r instanceof ProviderResponse.ProviderError error && shouldFailOver(error)) {
                                 throw new ProviderCallFailedException(error);
                             }
                             return r;
@@ -162,7 +161,7 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
             }
             budget.spend(elapsedSince(start));
 
-            if (response instanceof ProviderResponse.ProviderError error && FailureClassifier.isRetryable(error.httpStatus())) {
+            if (response instanceof ProviderResponse.ProviderError error && shouldFailOver(error)) {
                 attempt++;
                 if (attempt > maxRetriesPerProvider || budget.isExhausted()) {
                     if (breaker.getState() == CircuitBreaker.State.OPEN) {
@@ -449,6 +448,16 @@ public class ResilientRouter implements ChatCompletionUseCase, ChatStreamUseCase
 
     private Duration elapsedSince(long startNanos) {
         return Duration.ofNanos(System.nanoTime() - startNanos);
+    }
+
+    /**
+     * A provider failure worth retrying elsewhere: one of the statuses
+     * every provider uses for "try again" (429/503/504), or one the
+     * adapter itself knows is transient for its provider - an
+     * unreachable host (502) or Anthropic's 529 overloaded.
+     */
+    private static boolean shouldFailOver(ProviderResponse.ProviderError error) {
+        return FailureClassifier.isRetryable(error.httpStatus()) || error.retryable();
     }
 
     private void sleepUninterruptibly(long millis) {

@@ -168,6 +168,51 @@ class ResilientRouterTest {
     }
 
     @Test
+    void failsOverWhenThePrimaryIsUnreachableBecauseTheAdapterFlagsItRetryable() {
+        var primary = new FakeAdapter("mock-primary", new ProviderResponse.ProviderError("provider_unreachable", "connection refused", 502, true));
+        var fallback = new FakeAdapter("mock-fallback", new ProviderResponse.Completion(fakeSuccess("fallback")));
+        var route = new RouteConfig("mock", List.of(
+                new ChainMember("mock-primary", "mock", 100),
+                new ChainMember("mock-fallback", "mock", null)));
+        var router = buildRouter(Map.of("mock-primary", primary, "mock-fallback", fallback), route);
+
+        ProviderResponse result = router.complete(new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hi")), false));
+
+        assertThat(result).isInstanceOf(ProviderResponse.Completion.class);
+        assertThat(((ProviderResponse.Completion) result).response().id()).isEqualTo("id-fallback");
+    }
+
+    @Test
+    void failsOverOnAServiceUnavailableStatusEvenWhenTheAdapterDidNotFlagItRetryable() {
+        var primary = new FakeAdapter("mock-primary", new ProviderResponse.ProviderError("provider_error", "down", 503, false));
+        var fallback = new FakeAdapter("mock-fallback", new ProviderResponse.Completion(fakeSuccess("fallback")));
+        var route = new RouteConfig("mock", List.of(
+                new ChainMember("mock-primary", "mock", 100),
+                new ChainMember("mock-fallback", "mock", null)));
+        var router = buildRouter(Map.of("mock-primary", primary, "mock-fallback", fallback), route);
+
+        ProviderResponse result = router.complete(new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hi")), false));
+
+        assertThat(result).isInstanceOf(ProviderResponse.Completion.class);
+        assertThat(((ProviderResponse.Completion) result).response().id()).isEqualTo("id-fallback");
+    }
+
+    @Test
+    void failsOverWhenAnthropicReportsItIsOverloaded() {
+        var primary = new FakeAdapter("anthropic-main", new ProviderResponse.ProviderError("provider_error", "overloaded_error", 529, true));
+        var fallback = new FakeAdapter("mock-fallback", new ProviderResponse.Completion(fakeSuccess("fallback")));
+        var route = new RouteConfig("mock", List.of(
+                new ChainMember("anthropic-main", "claude-haiku-5-5", 100),
+                new ChainMember("mock-fallback", "mock", null)));
+        var router = buildRouter(Map.of("anthropic-main", primary, "mock-fallback", fallback), route);
+
+        ProviderResponse result = router.complete(new ChatCompletionRequest("mock", List.of(new ChatMessage("user", "hi")), false));
+
+        assertThat(result).isInstanceOf(ProviderResponse.Completion.class);
+        assertThat(((ProviderResponse.Completion) result).response().id()).isEqualTo("id-fallback");
+    }
+
+    @Test
     void doesNotFailOverOnATerminalError() {
         var primary = new FakeAdapter("mock-primary", new ProviderResponse.ProviderError("bad_request", "bad", 400, false));
         var fallback = new FakeAdapter("mock-fallback", new ProviderResponse.Completion(fakeSuccess("fallback")));
