@@ -1,0 +1,123 @@
+package com.aether.gateway.proxy.web;
+
+import com.aether.gateway.core.domain.CacheDecision;
+import com.aether.gateway.core.domain.ChainMember;
+import com.aether.gateway.core.domain.RouteCacheConfig;
+import com.aether.gateway.core.domain.RouteConfig;
+import com.aether.gateway.core.domain.TokenEstimator;
+import com.aether.gateway.core.port.ApiKeyLookupPort;
+import com.aether.gateway.core.port.CachePort;
+import com.aether.gateway.core.port.ChatCompletionUseCase;
+import com.aether.gateway.core.port.ChatStreamUseCase;
+import com.aether.gateway.core.port.CostModelPort;
+import com.aether.gateway.core.port.IpRateLimitPort;
+import com.aether.gateway.core.port.MetricsPort;
+import com.aether.gateway.core.port.PromptRegistryPort;
+import com.aether.gateway.core.port.QuotaPort;
+import com.aether.gateway.core.port.RequestLogPort;
+import com.aether.gateway.router.routing.RoutingSource;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.scheduler.Schedulers;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+import java.util.OptionalDouble;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Which similarity threshold a cached route actually applies: a valid
+ * {@code X-Aether-Cache-Threshold} header first, then the route's own
+ * {@code cache.threshold} from routing.yaml, then the global
+ * {@code aether.cache.default-threshold}.
+ */
+class ChatCompletionControllerCacheThresholdTest {
+
+    private static final double GLOBAL_DEFAULT_THRESHOLD = 0.94;
+    private static final String CACHED_BODY = """
+            {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"mock","choices":[]}""";
+
+    private final CachePort cachePort = mock(CachePort.class);
+    private final RoutingSource routingSource = mock(RoutingSource.class);
+    private final IpRateLimitPort ipRateLimitPort = mock(IpRateLimitPort.class);
+
+    private WebTestClient client() {
+        when(ipRateLimitPort.tryConsume(anyString())).thenReturn(true);
+        when(cachePort.lookup(anyString(), any(), any(), anyBoolean()))
+                .thenReturn(new CacheDecision.ExactHit("entry-1", CACHED_BODY));
+        var controller = new ChatCompletionController(
+                mock(ChatCompletionUseCase.class),
+                mock(ChatStreamUseCase.class),
+                mock(ApiKeyLookupPort.class),
+                mock(QuotaPort.class),
+                ipRateLimitPort,
+                mock(TokenEstimator.class),
+                cachePort,
+                routingSource,
+                mock(MetricsPort.class),
+                mock(RequestLogPort.class),
+                mock(CostModelPort.class),
+                mock(PromptRegistryPort.class),
+                new ChatCompletionDtoMapper(),
+                Schedulers.immediate(),
+                true,
+                GLOBAL_DEFAULT_THRESHOLD);
+        return WebTestClient.bindToController(controller).build();
+    }
+
+    private void routeWithCache(RouteCacheConfig cache) {
+        when(routingSource.routeFor("mock")).thenReturn(Optional.of(
+                new RouteConfig("mock", List.of(new ChainMember("mock-primary", "mock", 100)), cache)));
+    }
+
+    private static ChatCompletionRequestDto request() {
+        return new ChatCompletionRequestDto(
+                "mock", List.of(new ChatMessageDto("user", "hello")), false, null, null, null);
+    }
+
+    private WebTestClient.ResponseSpec send(WebTestClient client, String thresholdHeader) {
+        var spec = client.post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON);
+        if (thresholdHeader != null) {
+            spec = spec.header("X-Aether-Cache-Threshold", thresholdHeader);
+        }
+        return spec.bodyValue(request()).exchange();
+    }
+
+    @Test
+    void appliesTheRoutesOwnThresholdWhenNoHeaderIsSent() {
+        routeWithCache(new RouteCacheConfig(true, OptionalDouble.of(0.8), Duration.ofHours(1)));
+
+        send(client(), null).expectStatus().isOk();
+
+        verify(cachePort).lookup(eq("anonymous"), any(), eq(0.8), eq(false));
+    }
+
+    @Test
+    void fallsBackToTheGlobalDefaultWhenTheRouteSetsNoThreshold() {
+        routeWithCache(new RouteCacheConfig(true, OptionalDouble.empty(), Duration.ofHours(1)));
+
+        send(client(), null).expectStatus().isOk();
+
+        verify(cachePort).lookup(eq("anonymous"), any(), eq(GLOBAL_DEFAULT_THRESHOLD), eq(false));
+    }
+
+    @Test
+    void aValidHeaderTakesPrecedenceOverTheRoutesThreshold() {
+        routeWithCache(new RouteCacheConfig(true, OptionalDouble.of(0.8), Duration.ofHours(1)));
+
+        send(client(), "0.97").expectStatus().isOk();
+
+        verify(cachePort).lookup(eq("anonymous"), any(), eq(0.97), eq(false));
+    }
+}

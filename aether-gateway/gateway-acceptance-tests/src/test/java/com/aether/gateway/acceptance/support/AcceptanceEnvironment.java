@@ -318,6 +318,15 @@ public final class AcceptanceEnvironment {
                       enabled: true
                       threshold: 0.94
                       ttl: 6h
+                  - alias: mock-lenient-cache
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                    cache:
+                      enabled: true
+                      threshold: 0.5
+                      ttl: 6h
                 """.formatted(mockPrimaryPort, mockFallbackPort);
         Path path = Files.createTempFile("aether-routing-", ".yaml");
         Files.writeString(path, yaml);

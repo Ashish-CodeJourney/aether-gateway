@@ -7,6 +7,13 @@ Feature: Semantic cache correctness
     Then the response header "X-Aether-Cache" is "SEMANTIC_HIT"
     And the response header "X-Aether-Similarity" is at least "0.75"
 
+  @m4 @F4.7
+  Scenario: A route's own cache threshold applies when no header is sent
+    Given cache requests target the "mock-lenient-cache" route
+    And a prior request was made and cached for prompt "What is the capital of Italy?"
+    When a client sends "Can you tell me Italy's capital city?" with no cache threshold header
+    Then the response header "X-Aether-Cache" is "SEMANTIC_HIT"
+
   @m4 @F4.5 @AC4
   Scenario: An adversarial near-miss is never served as a cache hit
     Given a prior request was made and cached for prompt "What is 2 + 2?"

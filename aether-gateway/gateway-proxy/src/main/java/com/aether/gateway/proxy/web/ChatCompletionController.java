@@ -109,6 +109,7 @@ public class ChatCompletionController {
     private final ChatCompletionDtoMapper mapper;
     private final Scheduler virtualThreadScheduler;
     private final boolean allowAnonymous;
+    private final double defaultCacheThreshold;
 
     public ChatCompletionController(
             ChatCompletionUseCase chatCompletionUseCase,
@@ -125,7 +126,8 @@ public class ChatCompletionController {
             PromptRegistryPort promptRegistryPort,
             ChatCompletionDtoMapper mapper,
             Scheduler virtualThreadScheduler,
-            @Value("${aether.security.allow-anonymous:false}") boolean allowAnonymous) {
+            @Value("${aether.security.allow-anonymous:false}") boolean allowAnonymous,
+            @Value("${aether.cache.default-threshold:0.94}") double defaultCacheThreshold) {
         this.chatCompletionUseCase = chatCompletionUseCase;
         this.chatStreamUseCase = chatStreamUseCase;
         this.apiKeyLookupPort = apiKeyLookupPort;
@@ -141,6 +143,7 @@ public class ChatCompletionController {
         this.mapper = mapper;
         this.virtualThreadScheduler = virtualThreadScheduler;
         this.allowAnonymous = allowAnonymous;
+        this.defaultCacheThreshold = defaultCacheThreshold;
     }
 
     /**
@@ -335,7 +338,10 @@ public class ChatCompletionController {
         if (!routeCache.enabled()) {
             return new CacheLookup(namespace, new CacheDecision.Bypass("route_cache_disabled"), routeCache);
         }
-        CacheDecision decision = cachePort.lookup(namespace, domainRequest, thresholdOverride, noCachePresent);
+        double threshold = thresholdOverride != null
+                ? thresholdOverride
+                : routeCache.threshold().orElse(defaultCacheThreshold);
+        CacheDecision decision = cachePort.lookup(namespace, domainRequest, threshold, noCachePresent);
         return new CacheLookup(namespace, decision, routeCache);
     }
 

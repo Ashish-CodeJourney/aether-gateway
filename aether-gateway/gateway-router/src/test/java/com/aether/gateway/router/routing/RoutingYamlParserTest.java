@@ -136,8 +136,30 @@ class RoutingYamlParserTest {
 
         var cache = config.routes().get("fast-chat").cache();
         assertThat(cache.enabled()).isTrue();
-        assertThat(cache.threshold()).isEqualTo(0.94);
+        assertThat(cache.threshold()).hasValue(0.94);
         assertThat(cache.ttl()).isEqualTo(Duration.ofHours(6));
+    }
+
+    @Test
+    void aCacheBlockWithoutAThresholdLeavesItUnsetSoTheGlobalDefaultApplies() {
+        String yaml = """
+                providers:
+                  mock-primary:
+                    baseUrl: http://localhost:8082
+                routes:
+                  - alias: fast-chat
+                    chain:
+                      - provider: mock-primary
+                        model: mock
+                        weight: 100
+                    cache:
+                      enabled: true
+                      ttl: 6h
+                """;
+
+        LoadedRoutingConfig config = parser.parse(yaml);
+
+        assertThat(config.routes().get("fast-chat").cache().threshold()).isEmpty();
     }
 
     @Test

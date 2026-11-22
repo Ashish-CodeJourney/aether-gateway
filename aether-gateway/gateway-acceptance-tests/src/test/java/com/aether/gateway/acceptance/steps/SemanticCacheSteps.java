@@ -26,13 +26,19 @@ public class SemanticCacheSteps {
     private final Map<String, String> apiKeysByAlias = new HashMap<>();
 
     private HttpResponse<String> lastResponse;
+    private String route = "mock";
 
     private String requestBody(String prompt) {
-        return "{\"model\": \"mock\", \"messages\": [{\"role\": \"user\", \"content\": \"" + escape(prompt) + "\"}]}";
+        return "{\"model\": \"" + route + "\", \"messages\": [{\"role\": \"user\", \"content\": \"" + escape(prompt) + "\"}]}";
     }
 
     private String escape(String text) {
         return text.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    @Given("cache requests target the {string} route")
+    public void cacheRequestsTargetTheRoute(String alias) {
+        route = alias;
     }
 
     @Given("a prior request was made and cached for prompt {string}")
@@ -40,6 +46,12 @@ public class SemanticCacheSteps {
         HttpResponse<String> response = client.postJson(
                 AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions", requestBody(prompt), null, null);
         assertThat(response.statusCode()).as("seeding the cache requires the seed request itself to succeed").isEqualTo(200);
+    }
+
+    @When("a client sends {string} with no cache threshold header")
+    public void aClientSendsWithNoCacheThresholdHeader(String prompt) throws Exception {
+        lastResponse = client.postJson(
+                AcceptanceEnvironment.gatewayBaseUrl() + "/v1/chat/completions", requestBody(prompt), null, null);
     }
 
     @When("a client sends {string} with cache threshold {string}")

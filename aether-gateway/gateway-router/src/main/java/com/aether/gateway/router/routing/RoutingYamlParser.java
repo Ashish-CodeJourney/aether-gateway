@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 
 /**
  * F2.3: parses routing.yaml (PRD section 7's shape) into domain types.
@@ -60,7 +61,8 @@ public class RoutingYamlParser {
             return RouteCacheConfig.DISABLED;
         }
         boolean enabled = Boolean.TRUE.equals(cacheRaw.getOrDefault("enabled", Boolean.FALSE));
-        double threshold = ((Number) cacheRaw.getOrDefault("threshold", 0.94)).doubleValue();
+        Number thresholdRaw = (Number) cacheRaw.get("threshold");
+        OptionalDouble threshold = thresholdRaw == null ? OptionalDouble.empty() : OptionalDouble.of(thresholdRaw.doubleValue());
         Duration ttl = parseDuration((String) cacheRaw.getOrDefault("ttl", "6h"));
         return new RouteCacheConfig(enabled, threshold, ttl);
     }
