@@ -142,7 +142,7 @@ class ChatCompletionDtoMapperTest {
     void mapsANonFinalStreamChunkWithNoFinishReason() {
         var chunk = new ProviderResponse.StreamChunk("resp-1", 0, "hel", false);
 
-        StreamChunkResponseDto dto = mapper.toDto(chunk);
+        StreamChunkResponseDto dto = mapper.toDto(chunk, "mock");
 
         assertThat(dto.id()).isEqualTo("resp-1");
         assertThat(dto.choices().get(0).delta().content()).isEqualTo("hel");
@@ -153,7 +153,7 @@ class ChatCompletionDtoMapperTest {
     void mapsAFinalStreamChunkWithAStopFinishReason() {
         var chunk = new ProviderResponse.StreamChunk("resp-1", 2, "", true);
 
-        StreamChunkResponseDto dto = mapper.toDto(chunk);
+        StreamChunkResponseDto dto = mapper.toDto(chunk, "mock");
 
         assertThat(dto.choices().get(0).finishReason()).isEqualTo("stop");
     }
@@ -208,7 +208,7 @@ class ChatCompletionDtoMapperTest {
                 new ToolCallDelta(0, "call_1", "get_weather", ""),
                 new ToolCallDelta(0, null, null, "{\"city\":")), null);
 
-        JsonNode delta = json(mapper.toJson(mapper.toDto(chunk))).get("choices").get(0).get("delta");
+        JsonNode delta = json(mapper.toJson(mapper.toDto(chunk, "mock"))).get("choices").get(0).get("delta");
 
         assertThat(delta.get("tool_calls")).isEqualTo(json("""
                 [{"index":0,"id":"call_1","type":"function","function":{"name":"get_weather","arguments":""}},
@@ -221,7 +221,7 @@ class ChatCompletionDtoMapperTest {
     void usesTheProvidersFinishReasonOnTheLastStreamChunk() {
         var chunk = new ProviderResponse.StreamChunk("resp-1", 3, "", true, List.of(), "tool_calls");
 
-        StreamChunkResponseDto dto = mapper.toDto(chunk);
+        StreamChunkResponseDto dto = mapper.toDto(chunk, "mock");
 
         assertThat(dto.choices().get(0).finishReason()).isEqualTo("tool_calls");
     }

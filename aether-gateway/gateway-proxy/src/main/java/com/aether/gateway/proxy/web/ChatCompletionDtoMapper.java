@@ -78,7 +78,7 @@ public class ChatCompletionDtoMapper {
         return new ChoiceDto(choice.index(), messageDto, choice.finishReason());
     }
 
-    public StreamChunkResponseDto toDto(ProviderResponse.StreamChunk chunk) {
+    public StreamChunkResponseDto toDto(ProviderResponse.StreamChunk chunk, String model) {
         List<ToolCallDto> toolCalls = chunk.toolCallDeltas().stream()
                 .map(this::toToolCallFragment)
                 .toList();
@@ -87,7 +87,7 @@ public class ChatCompletionDtoMapper {
         String finishReason = chunk.last() ? (chunk.finishReason() != null ? chunk.finishReason() : "stop") : null;
         var choice = new StreamChoiceDto(0, delta, finishReason);
         return new StreamChunkResponseDto(
-                chunk.id(), "chat.completion.chunk", Instant.now().getEpochSecond(), null, List.of(choice));
+                chunk.id(), "chat.completion.chunk", Instant.now().getEpochSecond(), model, List.of(choice));
     }
 
     private ToolCallDto toToolCallFragment(ToolCallDelta delta) {

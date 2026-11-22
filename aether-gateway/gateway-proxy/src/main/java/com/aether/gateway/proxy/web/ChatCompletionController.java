@@ -691,6 +691,9 @@ public class ChatCompletionController {
         AtomicReference<Usage> reportedUsage = new AtomicReference<>();
         String streamId = "aether-" + UUID.randomUUID();
         metricsPort.streamStarted();
+        String chunkModel = pricedChainMember(attribution.servedByProvider(), domainRequest.model())
+                .map(ChainMember::model)
+                .orElse(domainRequest.model());
 
         Flux<ServerSentEvent<String>> body = chunks
                 .doOnNext(chunk -> {
@@ -705,7 +708,7 @@ public class ChatCompletionController {
                     ttfbNanos.compareAndSet(-1, System.nanoTime());
                 })
                 .doOnError(e -> sawError.set(true))
-                .map(this::toSseEvent)
+                .map(chunk -> toSseEvent(chunk, chunkModel))
                 .concatWith(Mono.just(ServerSentEvent.<String>builder("[DONE]").build()))
                 // Headers are already sent mid-stream, so the failure is
                 // reported the way OpenAI's SDKs expect: a final data
@@ -782,8 +785,8 @@ public class ChatCompletionController {
         cachePort.store(cacheLookup.namespace(), domainRequest, mapper.toJson(dto), cacheLookup.routeCache().ttl(), cacheLookup.matching());
     }
 
-    private ServerSentEvent<String> toSseEvent(ProviderResponse.StreamChunk chunk) {
-        return ServerSentEvent.builder(mapper.toJson(mapper.toDto(chunk))).build();
+    private ServerSentEvent<String> toSseEvent(ProviderResponse.StreamChunk chunk, String model) {
+        return ServerSentEvent.builder(mapper.toJson(mapper.toDto(chunk, model))).build();
     }
 
     // ---- F6.1/F6.2/F6.3/F6.4: metrics + async request log, shared by every terminal outcome above ----

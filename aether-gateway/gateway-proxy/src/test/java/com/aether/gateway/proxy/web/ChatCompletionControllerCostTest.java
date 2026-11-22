@@ -140,4 +140,27 @@ class ChatCompletionControllerCostTest {
         verify(metricsPort).recordRequest(metrics.capture());
         assertThat(metrics.getValue().savedUsd()).isEqualTo(0.60);
     }
+
+    @Test
+    void namesTheUpstreamModelOnEveryStreamedChunkAsOpenAiClientsExpect() {
+        var chunks = reactor.core.publisher.Flux.just(
+                new ProviderResponse.StreamChunk("s", 0, "hi", false, List.of(), null),
+                new ProviderResponse.StreamChunk("s", 1, "", true, List.of(), "stop"));
+        when(chatStreamUseCase.stream(any())).thenReturn(reactor.adapter.JdkFlowAdapter.publisherToFlowPublisher(chunks));
+
+        String body = clientWithClaudeRoute(new CacheDecision.Miss()).post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(new ChatCompletionRequestDto("claude", List.of(new ChatMessageDto("user", "hi")), true, null, null, null))
+                .exchange()
+                .expectStatus().isOk()
+                .returnResult(String.class)
+                .getResponseBody()
+                .collectList()
+                .map(lines -> String.join("\n", lines))
+                .block(Duration.ofSeconds(5));
+
+        assertThat(body).doesNotContain("\"model\":null");
+        assertThat(body.split("\"model\":\"claude-haiku-5-5\"", -1)).hasSize(3);
+    }
 }
