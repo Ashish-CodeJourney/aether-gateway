@@ -148,6 +148,34 @@ class ChatCompletionControllerToolCallingTest {
     }
 
     @Test
+    void relaysStreamedToolCallFragmentsAndNeverCachesTheStream() {
+        var chunks = reactor.core.publisher.Flux.just(
+                new ProviderResponse.StreamChunk("s", 0, "", false,
+                        List.of(new com.aether.gateway.core.domain.ToolCallDelta(0, "call_1", "get_weather", "")), null),
+                new ProviderResponse.StreamChunk("s", 1, "", false,
+                        List.of(new com.aether.gateway.core.domain.ToolCallDelta(0, null, null, "{}")), null),
+                new ProviderResponse.StreamChunk("s", 2, "", true, List.of(), "tool_calls"));
+        when(chatStreamUseCase.stream(any())).thenReturn(reactor.adapter.JdkFlowAdapter.publisherToFlowPublisher(chunks));
+        var request = new ChatCompletionRequestDto(
+                "mock", List.of(new ChatMessageDto("user", "weather?")), true, null, List.of(weatherTool()), null);
+
+        String body = anonymousClient().post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .exchange()
+                .expectStatus().isOk()
+                .returnResult(String.class)
+                .getResponseBody()
+                .collectList()
+                .map(lines -> String.join("\n", lines))
+                .block(Duration.ofSeconds(5));
+
+        assertThat(body).contains("\"tool_calls\":[{\"index\":0,\"id\":\"call_1\"", "\"finish_reason\":\"tool_calls\"");
+        verify(cachePort, never()).store(anyString(), any(), anyString(), any());
+    }
+
+    @Test
     void reportsAProviderWithoutToolSupportAsAClientErrorBeforeAnyStreamStarts() {
         when(chatStreamUseCase.stream(any())).thenThrow(new ToolsNotSupportedException("gemini-main"));
         var request = new ChatCompletionRequestDto(
