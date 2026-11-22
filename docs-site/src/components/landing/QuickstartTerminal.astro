@@ -287,6 +287,18 @@ const LINES: Line[] = [
   .term-line {
     display: block;
   }
+  @media (max-width: 520px) {
+    .code-badge {
+      display: none;
+    }
+    .term-body {
+      font-size: 0.68rem;
+      padding: 1rem;
+    }
+    .code-panel {
+      font-size: 0.78rem;
+    }
+  }
   .term-cmd + .term-out {
     margin-top: 0.15rem;
   }
