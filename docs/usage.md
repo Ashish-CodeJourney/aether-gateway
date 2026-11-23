@@ -24,6 +24,27 @@ A stream is billed at the token usage the provider reports when it finishes (Ant
 
 `GET /v1/models` lists the models configured across every route in `routing.yaml`.
 
+## Tool calling
+
+Send OpenAI-format `tools` and `tool_choice`, and replay assistant `tool_calls` and `role: "tool"` results in later turns, exactly as you would to OpenAI. Replies carry `tool_calls` with `finish_reason: "tool_calls"`, and streams carry `delta.tool_calls`. Requests that use tools are never cached. How each provider type handles them:
+
+| Provider type | Tools | `tool_choice` |
+|---|---|---|
+| OpenAI-compatible (`openai`, `groq`, `openai-compatible`) | Sent unchanged | Sent unchanged |
+| Anthropic | Translated to `tools` / `tool_use` / `tool_result` | `auto`, `none`, `required`, named function |
+| Gemini | Translated to `functionDeclarations` / `functionCall` / `functionResponse` | `auto`→`AUTO`, `none`→`NONE`, `required`→`ANY`, named function→`ANY` restricted to that function |
+| Ollama (native `/api/chat`) | Sent as-is; arguments converted between Ollama's JSON object and OpenAI's JSON string | `auto` (or omitted) sends the tools; `none` leaves them out; `required` or a named function returns `400 tool_choice_not_supported`, because Ollama can't force a tool call |
+
+Gemini specifics:
+
+- **Schemas.** Gemini accepts only an OpenAPI subset of JSON Schema, so each tool's `parameters` is converted. A type list like `["integer", "null"]` becomes `type: "integer"` plus `nullable: true`, `oneOf` becomes `anyOf`, and `const` becomes a one-value `enum`. Keywords Gemini doesn't support are dropped, including `$schema`, `additionalProperties`, `$ref`/`$defs`, `examples`, `allOf` and `not`. A sub-schema reached through `$ref` therefore loses its structure, so inline it if the model needs it. A function with no properties is declared without `parameters`, which is how Gemini says "no arguments".
+- **Call ids.** Gemini usually returns no id with a function call, so the gateway generates `call_<n>_<function name>`, numbered within the reply. Gemini also needs a function result's name, which an OpenAI `tool` message doesn't carry, so the gateway looks it up from the assistant tool call with the same `tool_call_id` earlier in the conversation. A `tool` message whose id matches no earlier call is rejected with `400 invalid_request`.
+- **Tool results** that are a JSON object are sent as-is. Any other result is wrapped as `{"output": "<result>"}`.
+- **Thought signatures.** Gemini 3 models attach a `thoughtSignature` to function calls and expect it back. The OpenAI format has nowhere to carry it, so a replayed call is sent with Google's documented `skip_thought_signature_validator` placeholder instead. Google warns this can make the model's reasoning worse on multi-step tool use.
+- A streamed function call arrives whole, so it's emitted as a single `delta.tool_calls` entry that carries the id, the name and the complete arguments.
+
+Ollama returns tool call ids itself (0.24 does), and the gateway generates `call_<n>_<function name>` for older versions that don't. A `tool` result goes to Ollama with the `tool_name` taken from the matching earlier call. Tool calling needs a model that supports it, such as `llama3.1` or `qwen3`.
+
 ## Embeddings
 
 `POST /v1/embeddings` is OpenAI's embeddings shape, so any OpenAI SDK's `embeddings.create(...)` works when pointed at the gateway:

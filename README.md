@@ -110,7 +110,7 @@ X-Aether-Provider: mock-fallback
 - **Operator console and admin API.** Manage API keys (stored as salted hashes), a versioned prompt registry, cache stats and the request explorer. See [`console/README.md`](console/README.md).
 - **Kubernetes-ready.** Plain manifests in [`k8s/`](k8s/) with a PodDisruptionBudget, a NetworkPolicy and graceful SSE draining. In two real rolling updates, all 1,000 in-flight streams (500 per rollout) finished without a break.
 - **Hot-reloadable routing.** Edit `routing.yaml` and `POST /admin/routes/reload` applies it without a restart. Provider credentials are referenced by environment variable *name*, so the config file is safe to commit. Provider base URLs are checked against private network ranges (SSRF protection).
-- **Tool calling.** OpenAI-format `tools`, `tool_choice`, assistant `tool_calls` and `tool` results pass through end to end, streaming included (`delta.tool_calls`). Passed through unchanged to OpenAI-compatible providers and translated to and from Anthropic's Messages API. Gemini and Ollama return a clear `400 tools_not_supported` for now rather than silently dropping tools. Tool-calling traffic is never cached.
+- **Tool calling.** OpenAI-format `tools`, `tool_choice`, assistant `tool_calls` and `tool` results pass through end to end, streaming included (`delta.tool_calls`). Passed through unchanged to OpenAI-compatible providers, and translated to and from Anthropic's Messages API, Gemini's function calling (with JSON Schema converted to Gemini's subset) and Ollama's native `/api/chat`. Ollama can't force a tool call, so `tool_choice: "required"` or a named function gets a clear `400 tool_choice_not_supported` instead of being silently ignored. Tool-calling traffic is never cached.
 - **Embeddings.** OpenAI-compatible `POST /v1/embeddings` with the same auth, quotas, failover and cost headers as chat. Supported on OpenAI-compatible providers, Ollama and Gemini. Providers without embeddings support are skipped in the chain.
 - **Provider adapters.** Ollama, Groq, Gemini, Anthropic, OpenAI, and a generic adapter for anything that speaks the OpenAI format (LiteLLM, vLLM, TGI, and so on).
 
@@ -216,7 +216,6 @@ All ADRs are on the [docs site](https://ashish-codejourney.github.io/aether-gate
 
 Planned:
 
-- **Tool calling on Gemini and Ollama** (it already works on OpenAI-compatible providers and Anthropic).
 - **Lightweight single-container mode** for trying the gateway without the full Compose stack.
 - **Spring Boot starter** for embedding the gateway in an existing Spring application.
 - **Entity guard improvements** for negation and spelled-out numbers.

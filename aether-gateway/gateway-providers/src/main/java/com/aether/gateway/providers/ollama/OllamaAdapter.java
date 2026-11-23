@@ -10,7 +10,9 @@ import com.aether.gateway.core.domain.EmbeddingOutcome;
 import com.aether.gateway.core.domain.EmbeddingRequest;
 import com.aether.gateway.core.domain.EmbeddingResponse;
 import com.aether.gateway.core.domain.ProviderResponse;
-import com.aether.gateway.core.domain.ToolsNotSupportedException;
+import com.aether.gateway.core.domain.ProviderStreamException;
+import com.aether.gateway.core.domain.ToolCall;
+import com.aether.gateway.core.domain.ToolCallDelta;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.ollama.wire.WireOllamaChatRequest;
@@ -18,8 +20,10 @@ import com.aether.gateway.providers.ollama.wire.WireOllamaChatResponse;
 import com.aether.gateway.providers.ollama.wire.WireOllamaEmbedRequest;
 import com.aether.gateway.providers.ollama.wire.WireOllamaEmbedResponse;
 import com.aether.gateway.providers.ollama.wire.WireOllamaMessage;
+import com.aether.gateway.providers.ollama.wire.WireOllamaToolCall;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.json.JacksonJsonDecoder;
+import org.springframework.http.codec.json.JacksonJsonEncoder;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
@@ -31,6 +35,7 @@ import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
@@ -50,12 +55,9 @@ import java.util.stream.IntStream;
  * Bearer header for the case where an operator has put Ollama behind an
  * authenticating reverse proxy.
  *
- * <p>Tool calling is not translated for this wire format yet. A request
- * that uses tools is refused with {@code tools_not_supported} rather than
- * sent without them, since a reply that silently ignored the tools would
- * look valid to the client and be wrong. Ollama's OpenAI-compatible
- * endpoint ({@code /v1}) behind the OpenAI-compatible adapter is the way
- * to use tools with Ollama today.
+ * <p>Tool calling is translated to and from OpenAI's shape by
+ * {@link OllamaToolTranslation}, including its refusal of a
+ * {@code tool_choice} Ollama cannot enforce.
  */
 public class OllamaAdapter implements ProviderAdapter {
 
@@ -76,10 +78,15 @@ public class OllamaAdapter implements ProviderAdapter {
                     converters.add(new JacksonJsonHttpMessageConverter(snakeCaseMapper));
                 });
         // The NDJSON stream's final line carries prompt_eval_count and
-        // eval_count, which WebClient's default camelCase decoder drops.
+        // eval_count, which WebClient's default camelCase decoder drops;
+        // the request's tool_calls/tool_name need the same mapper on the
+        // way out.
         var webBuilderWithAuth = webBuilder
                 .baseUrl(baseUrl)
-                .codecs(codecs -> codecs.defaultCodecs().jacksonJsonDecoder(new JacksonJsonDecoder(snakeCaseMapper)));
+                .codecs(codecs -> {
+                    codecs.defaultCodecs().jacksonJsonDecoder(new JacksonJsonDecoder(snakeCaseMapper));
+                    codecs.defaultCodecs().jacksonJsonEncoder(new JacksonJsonEncoder(snakeCaseMapper));
+                });
         if (apiKey != null && !apiKey.isBlank()) {
             restBuilderWithAuth = restBuilderWithAuth.defaultHeader("Authorization", "Bearer " + apiKey);
             webBuilderWithAuth = webBuilderWithAuth.defaultHeader("Authorization", "Bearer " + apiKey);
@@ -95,8 +102,9 @@ public class OllamaAdapter implements ProviderAdapter {
 
     @Override
     public ProviderResponse invoke(ChatCompletionRequest request) {
-        if (request.usesTools()) {
-            return ToolsNotSupportedException.asProviderError(providerName);
+        Optional<String> unsupportedToolChoice = OllamaToolTranslation.unsupportedToolChoice(providerName, request.toolChoice());
+        if (unsupportedToolChoice.isPresent()) {
+            return new ProviderResponse.ProviderError(OllamaToolTranslation.TOOL_CHOICE_NOT_SUPPORTED, unsupportedToolChoice.get(), 400, false);
         }
         var wireRequest = toWireRequest(request, false);
         try {
@@ -117,11 +125,14 @@ public class OllamaAdapter implements ProviderAdapter {
 
     @Override
     public Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request) {
-        if (request.usesTools()) {
-            throw new ToolsNotSupportedException(providerName);
+        Optional<String> unsupportedToolChoice = OllamaToolTranslation.unsupportedToolChoice(providerName, request.toolChoice());
+        if (unsupportedToolChoice.isPresent()) {
+            return JdkFlowAdapter.publisherToFlowPublisher(Flux.error(new ProviderStreamException(
+                    400, OllamaToolTranslation.TOOL_CHOICE_NOT_SUPPORTED, unsupportedToolChoice.get(), false)));
         }
         String responseId = providerName + "-" + System.nanoTime();
         AtomicInteger index = new AtomicInteger(0);
+        AtomicInteger toolCallOrdinal = new AtomicInteger(0);
 
         Flux<ProviderResponse.StreamChunk> flux = webClient.post()
                 .uri("/api/chat")
@@ -129,14 +140,23 @@ public class OllamaAdapter implements ProviderAdapter {
                 .bodyValue(toWireRequest(request, true))
                 .retrieve()
                 .bodyToFlux(WireOllamaChatResponse.class)
-                .map(chunk -> new ProviderResponse.StreamChunk(
-                        responseId,
-                        index.getAndIncrement(),
-                        chunk.message() != null && chunk.message().content() != null ? chunk.message().content() : "",
-                        chunk.done(),
-                        List.of(),
-                        null,
-                        streamedUsage(chunk)));
+                .map(chunk -> {
+                    List<ToolCallDelta> toolCallDeltas = toolCallsOf(chunk.message()).stream()
+                            .map(call -> OllamaToolTranslation.deltaFromWire(toolCallOrdinal.getAndIncrement(), call))
+                            .toList();
+                    // Ollama's done_reason stays "stop" after a tool call;
+                    // OpenAI clients look for "tool_calls" to know they
+                    // must run the tools.
+                    String finishReason = chunk.done() && toolCallOrdinal.get() > 0 ? "tool_calls" : null;
+                    return new ProviderResponse.StreamChunk(
+                            responseId,
+                            index.getAndIncrement(),
+                            chunk.message() != null && chunk.message().content() != null ? chunk.message().content() : "",
+                            chunk.done(),
+                            toolCallDeltas,
+                            finishReason,
+                            streamedUsage(chunk));
+                });
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
     }
@@ -181,17 +201,28 @@ public class OllamaAdapter implements ProviderAdapter {
     }
 
     private WireOllamaChatRequest toWireRequest(ChatCompletionRequest request, boolean stream) {
-        List<WireOllamaMessage> messages = request.messages().stream()
-                .map(m -> new WireOllamaMessage(m.role(), m.content()))
-                .toList();
-        return new WireOllamaChatRequest(request.model(), messages, stream);
+        return new WireOllamaChatRequest(
+                request.model(),
+                OllamaToolTranslation.messages(request.messages()),
+                stream,
+                OllamaToolTranslation.tools(request.tools(), request.toolChoice()));
+    }
+
+    private static List<WireOllamaToolCall> toolCallsOf(WireOllamaMessage message) {
+        return message == null || message.toolCalls() == null ? List.of() : message.toolCalls();
     }
 
     private ChatCompletionResponse toDomainResponse(String model, WireOllamaChatResponse wire) {
+        List<WireOllamaToolCall> wireCalls = toolCallsOf(wire.message());
+        List<ToolCall> toolCalls = IntStream.range(0, wireCalls.size())
+                .mapToObj(i -> OllamaToolTranslation.fromWire(i, wireCalls.get(i)))
+                .toList();
+        String content = wire.message().content() == null ? "" : wire.message().content();
+        String finishReason = !toolCalls.isEmpty() ? "tool_calls" : wire.done() ? "stop" : null;
         var choice = new ChatCompletionChoice(
                 0,
-                new ChatMessage(wire.message().role(), wire.message().content()),
-                wire.done() ? "stop" : null);
+                new ChatMessage(wire.message().role(), content, toolCalls, null),
+                finishReason);
         Usage usage = toUsage(wire);
         return new ChatCompletionResponse(
                 providerName + "-" + System.nanoTime(), "chat.completion", System.currentTimeMillis() / 1000,
