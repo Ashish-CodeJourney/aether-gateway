@@ -10,14 +10,18 @@ import com.aether.gateway.core.domain.EmbeddingOutcome;
 import com.aether.gateway.core.domain.EmbeddingRequest;
 import com.aether.gateway.core.domain.EmbeddingResponse;
 import com.aether.gateway.core.domain.ProviderResponse;
-import com.aether.gateway.core.domain.ToolsNotSupportedException;
+import com.aether.gateway.core.domain.ProviderStreamException;
+import com.aether.gateway.core.domain.ToolCall;
+import com.aether.gateway.core.domain.ToolCallDelta;
 import com.aether.gateway.core.domain.Usage;
 import com.aether.gateway.core.port.ProviderAdapter;
 import com.aether.gateway.providers.gemini.wire.WireGeminiBatchEmbedRequest;
 import com.aether.gateway.providers.gemini.wire.WireGeminiBatchEmbedResponse;
+import com.aether.gateway.providers.gemini.wire.WireGeminiCandidate;
 import com.aether.gateway.providers.gemini.wire.WireGeminiContent;
 import com.aether.gateway.providers.gemini.wire.WireGeminiEmbedContent;
 import com.aether.gateway.providers.gemini.wire.WireGeminiEmbedContentRequest;
+import com.aether.gateway.providers.gemini.wire.WireGeminiFunctionCall;
 import com.aether.gateway.providers.gemini.wire.WireGeminiPart;
 import com.aether.gateway.providers.gemini.wire.WireGeminiRequest;
 import com.aether.gateway.providers.gemini.wire.WireGeminiResponse;
@@ -36,6 +40,7 @@ import reactor.core.publisher.Flux;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -57,13 +62,15 @@ import java.util.stream.IntStream;
  * still satisfy the identical {@link ProviderAdapter} port despite none
  * of the three sharing a wire format.
  *
- * <p>Tool calling ({@code functionDeclarations}/{@code functionCall}
- * parts) is not translated yet. A request that uses tools is refused with
- * {@code tools_not_supported} rather than sent without them, since a reply
- * that silently ignored the tools would look valid to the client and be
- * wrong.
+ * <p>Tool calling is translated to and from OpenAI's shape: requests in
+ * {@link GeminiRequestTranslation} (with JSON Schema converted by
+ * {@link GeminiSchemaConversion}), and {@code functionCall} reply parts
+ * here, as {@code tool_calls} with generated ids and a
+ * {@code tool_calls} finish reason.
  */
 public class GeminiAdapter implements ProviderAdapter {
+
+    private static final String INVALID_REQUEST = "invalid_request";
 
     private final String providerName;
     private final String apiKey;
@@ -101,10 +108,12 @@ public class GeminiAdapter implements ProviderAdapter {
 
     @Override
     public ProviderResponse invoke(ChatCompletionRequest request) {
-        if (request.usesTools()) {
-            return ToolsNotSupportedException.asProviderError(providerName);
+        WireGeminiRequest wireRequest;
+        try {
+            wireRequest = toWireRequest(request);
+        } catch (GeminiRequestTranslation.UnknownToolCallIdException e) {
+            return new ProviderResponse.ProviderError(INVALID_REQUEST, e.getMessage(), 400, false);
         }
-        var wireRequest = toWireRequest(request);
         try {
             WireGeminiResponse wireResponse = restClient.post()
                     .uri(uriBuilder -> uriBuilder
@@ -126,12 +135,17 @@ public class GeminiAdapter implements ProviderAdapter {
 
     @Override
     public Flow.Publisher<ProviderResponse.StreamChunk> invokeStreaming(ChatCompletionRequest request) {
-        if (request.usesTools()) {
-            throw new ToolsNotSupportedException(providerName);
+        WireGeminiRequest wireRequest;
+        try {
+            wireRequest = toWireRequest(request);
+        } catch (GeminiRequestTranslation.UnknownToolCallIdException e) {
+            return JdkFlowAdapter.publisherToFlowPublisher(
+                    Flux.error(new ProviderStreamException(400, INVALID_REQUEST, e.getMessage(), false)));
         }
         var camelCaseMapper = JsonMapper.builder().build();
         String responseId = providerName + "-" + System.nanoTime();
         AtomicInteger index = new AtomicInteger(0);
+        AtomicInteger toolCallOrdinal = new AtomicInteger(0);
         AtomicReference<WireGeminiUsageMetadata> latestUsage = new AtomicReference<>();
 
         Flux<ProviderResponse.StreamChunk> flux = webClient.post()
@@ -141,7 +155,7 @@ public class GeminiAdapter implements ProviderAdapter {
                         .queryParamIfPresent("key", java.util.Optional.ofNullable(apiKey))
                         .build(request.model()))
                 .accept(MediaType.TEXT_EVENT_STREAM)
-                .bodyValue(toWireRequest(request))
+                .bodyValue(wireRequest)
                 .retrieve()
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {
                 })
@@ -149,15 +163,27 @@ public class GeminiAdapter implements ProviderAdapter {
                     WireGeminiResponse chunk = camelCaseMapper.readValue(sse.data(), WireGeminiResponse.class);
                     var candidate = chunk.candidates().get(0);
                     boolean last = candidate.finishReason() != null;
-                    String content = candidate.content() != null && !candidate.content().parts().isEmpty()
-                            ? candidate.content().parts().get(0).text() : "";
+                    List<WireGeminiPart> parts = partsOf(candidate);
+                    // Gemini sends each function call whole, never split
+                    // across chunks, so one delta carries id, name and the
+                    // complete arguments. Calls are numbered across the
+                    // whole stream, as OpenAI clients index them.
+                    List<ToolCallDelta> toolCallDeltas = parts.stream()
+                            .filter(part -> part.functionCall() != null)
+                            .map(part -> toToolCallDelta(toolCallOrdinal.getAndIncrement(), part.functionCall()))
+                            .toList();
                     if (chunk.usageMetadata() != null) {
                         latestUsage.set(chunk.usageMetadata());
                     }
                     // usageMetadata is a running count repeated on every
                     // chunk, so only the finishing chunk reports it.
                     Usage usage = last && latestUsage.get() != null ? toUsage(latestUsage.get()) : null;
-                    return new ProviderResponse.StreamChunk(responseId, index.getAndIncrement(), content, last, List.of(), null, usage);
+                    // Gemini reports STOP even when it ended on a function
+                    // call; OpenAI clients look for "tool_calls" to know
+                    // they must run the tools.
+                    String finishReason = last && toolCallOrdinal.get() > 0 ? "tool_calls" : null;
+                    return new ProviderResponse.StreamChunk(
+                            responseId, index.getAndIncrement(), replyText(parts), last, toolCallDeltas, finishReason, usage);
                 });
 
         return JdkFlowAdapter.publisherToFlowPublisher(flux.onErrorMap(StreamFailures::translate));
@@ -198,12 +224,7 @@ public class GeminiAdapter implements ProviderAdapter {
     }
 
     private WireGeminiRequest toWireRequest(ChatCompletionRequest request) {
-        List<WireGeminiContent> contents = request.messages().stream()
-                .filter(m -> !"system".equals(m.role()))
-                .map(m -> new WireGeminiContent(
-                        "assistant".equals(m.role()) ? "model" : "user",
-                        List.of(new WireGeminiPart(m.content()))))
-                .toList();
+        List<WireGeminiContent> contents = GeminiRequestTranslation.contents(request.messages());
 
         String systemText = request.messages().stream()
                 .filter(m -> "system".equals(m.role()))
@@ -212,19 +233,59 @@ public class GeminiAdapter implements ProviderAdapter {
         WireGeminiSystemInstruction systemInstruction = systemText.isBlank()
                 ? null : new WireGeminiSystemInstruction(List.of(new WireGeminiPart(systemText)));
 
-        return new WireGeminiRequest(contents, systemInstruction);
+        return new WireGeminiRequest(
+                contents,
+                systemInstruction,
+                GeminiRequestTranslation.tools(request.tools()),
+                GeminiRequestTranslation.toolConfig(request.toolChoice()));
     }
 
     private ChatCompletionResponse toDomainResponse(String model, WireGeminiResponse wire) {
         var candidate = wire.candidates().get(0);
-        String text = candidate.content() != null && !candidate.content().parts().isEmpty()
-                ? candidate.content().parts().get(0).text() : "";
+        List<WireGeminiPart> parts = partsOf(candidate);
+        List<WireGeminiFunctionCall> functionCalls = parts.stream()
+                .map(WireGeminiPart::functionCall)
+                .filter(Objects::nonNull)
+                .toList();
+        List<ToolCall> toolCalls = IntStream.range(0, functionCalls.size())
+                .mapToObj(i -> toToolCall(i, functionCalls.get(i)))
+                .toList();
+        String finishReason = toolCalls.isEmpty() ? mapFinishReason(candidate.finishReason()) : "tool_calls";
         var choice = new ChatCompletionChoice(
-                candidate.index(), new ChatMessage("assistant", text), mapFinishReason(candidate.finishReason()));
+                candidate.index(), new ChatMessage("assistant", replyText(parts), toolCalls, null), finishReason);
         Usage usage = wire.usageMetadata() == null ? Usage.of(0, 0) : toUsage(wire.usageMetadata());
         return new ChatCompletionResponse(
                 providerName + "-" + System.nanoTime(), "chat.completion", System.currentTimeMillis() / 1000,
                 model, List.of(choice), usage);
+    }
+
+    private static List<WireGeminiPart> partsOf(WireGeminiCandidate candidate) {
+        return candidate.content() == null || candidate.content().parts() == null ? List.of() : candidate.content().parts();
+    }
+
+    /** Every text part, joined; reasoning-summary ("thought") parts are not reply text. */
+    private static String replyText(List<WireGeminiPart> parts) {
+        return parts.stream()
+                .filter(part -> part.text() != null && !Boolean.TRUE.equals(part.thought()))
+                .map(WireGeminiPart::text)
+                .collect(Collectors.joining());
+    }
+
+    /**
+     * The Gemini API usually returns no call id, while OpenAI clients need
+     * one to pair each tool result with its call. The generated
+     * {@code call_<ordinal>_<name>} is unique within a reply and
+     * deterministic, so the same reply always yields the same ids.
+     */
+    private static ToolCall toToolCall(int ordinal, WireGeminiFunctionCall call) {
+        String id = call.id() != null && !call.id().isBlank() ? call.id() : "call_" + ordinal + "_" + call.name();
+        String arguments = call.args() == null || call.args().isNull() ? "{}" : call.args().toString();
+        return new ToolCall(id, "function", call.name(), arguments);
+    }
+
+    private static ToolCallDelta toToolCallDelta(int ordinal, WireGeminiFunctionCall functionCall) {
+        ToolCall call = toToolCall(ordinal, functionCall);
+        return new ToolCallDelta(ordinal, call.id(), call.functionName(), call.argumentsJson());
     }
 
     private static Usage toUsage(WireGeminiUsageMetadata usageMeta) {
