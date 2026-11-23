@@ -89,6 +89,10 @@ class EntityGuardAblationExperimentTest {
         int referenceIndex = THRESHOLDS.indexOf(0.94);
         double falseHitReduction = falseHitRatesNoGuard.get(referenceIndex) - falseHitRatesGuarded.get(referenceIndex);
         double recallCost = hitRatesNoGuard.get(referenceIndex) - hitRatesGuarded.get(referenceIndex);
+        String residualFalseHits = residualFalseHits(falseHitMeasurements, adversarialPairs, 0.94);
+        GuardLatency latency = GuardLatency.measure(
+                promptsOf(corpusDir, "near-duplicates.jsonl", "adversarial-near-misses.jsonl", "unrelated.jsonl"),
+                promptsOf(corpusDir, "long-context.jsonl"));
 
         String report = """
                 # Experiment 2: entity guard ablation
@@ -107,6 +111,21 @@ class EntityGuardAblationExperimentTest {
                 - False-hit rate reduction: %.1f%% (%.1f%% -> %.1f%%)
                 - Recall cost: %.1f%% (%.1f%% -> %.1f%%)
 
+                ## Adversarial pairs the guard still allows at threshold 0.94
+
+                %s
+                ## Guard cost
+
+                `EntityNumericGuard.fingerprint` runs once per semantic lookup (the
+                stored side is persisted at write time). Mean wall-clock time per
+                call, single thread, after warm-up, on this run's machine:
+
+                - Short prompts (%d near-duplicate, adversarial and unrelated prompts): %.1f us
+                - Long-context prompts (%d prompts, ~4-5k tokens each): %.2f ms
+
+                Embedding the same prompt with all-MiniLM-L6-v2 is the dominant
+                per-lookup cost (see experiment 3).
+
                 The guard only ever *rejects* candidate hits (it adds no new
                 similarity-based hits), so at every threshold `hit_rate_guarded <=
                 hit_rate_no_guard` and `false_hit_rate_guarded <=
@@ -116,7 +135,10 @@ class EntityGuardAblationExperimentTest {
                 """.formatted(
                 nearDuplicatePairs.size(), adversarialPairs.size(),
                 falseHitReduction * 100, falseHitRatesNoGuard.get(referenceIndex) * 100, falseHitRatesGuarded.get(referenceIndex) * 100,
-                recallCost * 100, hitRatesNoGuard.get(referenceIndex) * 100, hitRatesGuarded.get(referenceIndex) * 100);
+                recallCost * 100, hitRatesNoGuard.get(referenceIndex) * 100, hitRatesGuarded.get(referenceIndex) * 100,
+                residualFalseHits,
+                latency.shortPromptCount(), latency.shortPromptMicros(),
+                latency.longPromptCount(), latency.longPromptMillis());
 
         Files.writeString(resultsDir.resolve("experiment-2-guard-ablation.md"), report, StandardCharsets.UTF_8);
 
@@ -137,6 +159,48 @@ class EntityGuardAblationExperimentTest {
     }
 
     private record PairMeasurement(String pairId, double similarity, boolean guardAllows) {
+    }
+
+    private static String residualFalseHits(List<PairMeasurement> measurements, List<CorpusPair> pairs, double threshold) {
+        Map<String, CorpusPair> pairsById = new LinkedHashMap<>();
+        pairs.forEach(pair -> pairsById.put(pair.pairId(), pair));
+        List<String> lines = measurements.stream()
+                .filter(m -> m.similarity() >= threshold && m.guardAllows())
+                .map(m -> String.format(Locale.ROOT, "- `%s` (similarity %.3f): \"%s\" vs \"%s\"",
+                        m.pairId(), m.similarity(), pairsById.get(m.pairId()).seedPrompt(), pairsById.get(m.pairId()).variantPrompt()))
+                .toList();
+        return lines.isEmpty() ? "None.\n" : String.join("\n", lines) + "\n";
+    }
+
+    private static List<String> promptsOf(Path corpusDir, String... files) throws IOException {
+        List<String> prompts = new ArrayList<>();
+        for (String file : files) {
+            CorpusLoader.load(corpusDir.resolve(file)).forEach(entry -> prompts.add(entry.prompt()));
+        }
+        return prompts;
+    }
+
+    private record GuardLatency(int shortPromptCount, double shortPromptMicros, int longPromptCount, double longPromptMillis) {
+
+        static GuardLatency measure(List<String> shortPrompts, List<String> longPrompts) {
+            double shortNanos = meanNanosPerCall(shortPrompts, 200);
+            double longNanos = meanNanosPerCall(longPrompts, 10);
+            return new GuardLatency(shortPrompts.size(), shortNanos / 1_000, longPrompts.size(), longNanos / 1_000_000);
+        }
+
+        private static double meanNanosPerCall(List<String> prompts, int rounds) {
+            long tokens = 0;
+            for (int round = 0; round < rounds; round++) {
+                tokens += prompts.stream().mapToInt(prompt -> EntityNumericGuard.fingerprint(prompt).size()).sum();
+            }
+            long start = System.nanoTime();
+            for (int round = 0; round < rounds; round++) {
+                tokens += prompts.stream().mapToInt(prompt -> EntityNumericGuard.fingerprint(prompt).size()).sum();
+            }
+            long elapsed = System.nanoTime() - start;
+            assertThat(tokens).isPositive();
+            return (double) elapsed / rounds / prompts.size();
+        }
     }
 
     private static List<Double> thresholds() {

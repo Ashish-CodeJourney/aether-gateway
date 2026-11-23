@@ -59,29 +59,29 @@ class ThresholdSweepTest {
         report.append("- Near-duplicate pairs measured: ").append(ndMeasurements.size()).append("\n");
         report.append("- Adversarial pairs measured: ").append(advMeasurements.size()).append("\n\n");
 
-        report.append("| Threshold | Hit rate (near-dup) | False-hit rate, no guard | False-hit rate, with guard |\n");
-        report.append("|---|---|---|---|\n");
+        report.append("| Threshold | Hit rate, no guard | Hit rate, with guard | False-hit rate, no guard | False-hit rate, with guard |\n");
+        report.append("|---|---|---|---|---|\n");
 
-        // Operating-point choice: no swept threshold reaches a 0%
-        // guarded false-hit rate (see "Residual false-hit analysis"
-        // below for why), so the naive rule "pick the threshold where
-        // false-hits hit zero" never fires. Instead: among thresholds
-        // that keep the cache meaningfully useful (hit rate >= a 10%
-        // floor - deliberately low, only to rule out near-zero-hit-rate
+        // Operating-point choice: among thresholds that keep the cache
+        // meaningfully useful (guarded hit rate >= a 10% floor -
+        // deliberately low, only to rule out near-zero-hit-rate
         // degenerate points, not a target in itself), pick the one that
-        // minimises the guarded false-hit rate. This is a Pareto choice
-        // computed from the actual measured trade-off, not a guess.
+        // minimises the guarded false-hit rate. Both sides use the
+        // guarded rates, since that is what production serves. This is
+        // a Pareto choice computed from the actual measured trade-off,
+        // not a guess.
         double hitRateFloor = 0.10;
         double bestThreshold = CANDIDATE_THRESHOLDS[CANDIDATE_THRESHOLDS.length - 1];
         double bestGuardedFalseHitRate = Double.MAX_VALUE;
         double bestHitRate = 0;
         for (double threshold : CANDIDATE_THRESHOLDS) {
-            double hitRate = fraction(ndMeasurements, m -> m.similarity() >= threshold);
+            double rawHitRate = fraction(ndMeasurements, m -> m.similarity() >= threshold);
+            double hitRate = fraction(ndMeasurements, m -> m.similarity() >= threshold && m.guardWouldAllow());
             double rawFalseHitRate = fraction(advMeasurements, m -> m.similarity() >= threshold);
             double guardedFalseHitRate = fraction(advMeasurements, m -> m.similarity() >= threshold && m.guardWouldAllow());
 
-            report.append(String.format(Locale.ROOT, "| %.2f | %.1f%% | %.1f%% | %.1f%% |%n",
-                    threshold, hitRate * 100, rawFalseHitRate * 100, guardedFalseHitRate * 100));
+            report.append(String.format(Locale.ROOT, "| %.2f | %.1f%% | %.1f%% | %.1f%% | %.1f%% |%n",
+                    threshold, rawHitRate * 100, hitRate * 100, rawFalseHitRate * 100, guardedFalseHitRate * 100));
 
             if (hitRate >= hitRateFloor && guardedFalseHitRate < bestGuardedFalseHitRate) {
                 bestGuardedFalseHitRate = guardedFalseHitRate;
@@ -91,26 +91,32 @@ class ThresholdSweepTest {
         }
 
         report.append("\n## Chosen operating point\n\n");
-        report.append(String.format(Locale.ROOT, "**threshold = %.2f**, measured hit rate %.1f%%, measured false-hit rate %.1f%% with the entity guard active.%n%n",
+        report.append(String.format(Locale.ROOT, "**threshold = %.2f**, measured hit rate %.1f%% and false-hit rate %.1f%%, both with the entity guard active.%n%n",
                 bestThreshold, bestHitRate * 100, bestGuardedFalseHitRate * 100));
         report.append("Justification: among the candidate thresholds that keep the cache meaningfully useful ")
-                .append("(hit rate >= 10%, a floor only to exclude degenerate near-zero-hit-rate points), this is the ")
-                .append("one that minimises the guarded false-hit rate - the Pareto-best point actually measured, not ")
-                .append("a guess. It does not yet clear AC3 (hit rate >= 35%) or AC4 (false-hit rate <= 5%) ")
-                .append("simultaneously; per this phase's plan, that is acceptable as long as the numbers are measured ")
-                .append("and the choice is justified, with further tuning left to Phase 09's full experiment suite.\n\n")
-                .append("**Residual false-hit analysis.** At every threshold swept, the guarded false-hit rate is ")
-                .append("strictly greater than zero. Inspecting the corpus explains why: the entity/numeric guard ")
-                .append("(EntityNumericGuard) only ever compares extracted numbers, named entities, and dates, exactly ")
-                .append("as F4's correctness note specifies - it has no concept of negation or polarity. Several ")
-                .append("adversarial pairs in the corpus change meaning through negation or a direction flip alone ")
-                .append("(\"is open\" vs \"is closed\", \"rose\" vs \"fell\", \"increased\" vs \"decreased\", ")
-                .append("\"expected\" vs \"not expected\") with no number, entity, or date changing at all; these are, ")
-                .append("by the guard's defined scope, structurally undetectable by it and will pass through as a hit ")
-                .append("whenever their embedding similarity clears the threshold. This is a genuine, documented ")
-                .append("limitation, not a bug - closing it would mean extending the guard beyond what F4 specifies ")
-                .append("(e.g. a small negation-word check), which is a reasonable Phase 09 follow-up, not required ")
-                .append("for this phase's exit criterion.\n");
+                .append("(guarded hit rate >= 10%, a floor only to exclude degenerate near-zero-hit-rate points), ")
+                .append("this is the one that minimises the guarded false-hit rate - the Pareto-best point actually ")
+                .append("measured, not a guess. It ")
+                .append(bestHitRate >= 0.35 ? "clears" : "does not clear")
+                .append(" AC3 (hit rate >= 35%) on this corpus. This is the sweep's in-sample optimum, not the ")
+                .append("product default (`aether.cache.default-threshold`): the guard's heuristics were written ")
+                .append("against these adversarial pairs, so a low guarded false-hit rate here does not show it ")
+                .append("generalises. docs/design/cache-correctness.md explains why the default stays where it is.\n\n");
+
+        double chosenThreshold = bestThreshold;
+        List<Measurement> residualFalseHits = advMeasurements.stream()
+                .filter(m -> m.similarity() >= chosenThreshold && m.guardWouldAllow())
+                .toList();
+        report.append("**Residual false hits at the chosen threshold** (adversarial pairs the guard still allows):\n\n");
+        if (residualFalseHits.isEmpty()) {
+            report.append("None on this corpus. The corpus's adversarial pairs informed the guard's heuristics, so ")
+                    .append("this is an in-sample result; see docs/design/cache-correctness.md for the guard's ")
+                    .append("known blind spots.\n");
+        }
+        for (Measurement m : residualFalseHits) {
+            report.append(String.format(Locale.ROOT, "- `%s` (similarity %.3f): \"%s\" vs \"%s\"%n",
+                    m.pair().pairId(), m.similarity(), m.pair().seed(), m.pair().variant()));
+        }
 
         Files.writeString(resultsDir.resolve("m4-threshold-sweep.md"), report.toString(), StandardCharsets.UTF_8);
         System.out.println(report);
