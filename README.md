@@ -116,16 +116,16 @@ X-Aether-Provider: mock-fallback
 
 ### Semantic cache (experimental)
 
-The gateway can also return a cached answer for a prompt that is *similar* to an earlier one. It embeds the prompt (all-MiniLM-L6-v2, running in-process), searches pgvector for near neighbours, and then applies a guard that rejects a match when the numbers, dates or named entities differ.
+The gateway can also return a cached answer for a prompt that is *similar* to an earlier one. It embeds the prompt (all-MiniLM-L6-v2, running in-process), searches pgvector for near neighbours, and then applies a guard that rejects a match when the numbers, units, dates, named entities, negation or a small set of common opposites ("open"/"closed", "increased"/"decreased") differ.
 
 It is not yet accurate enough to recommend for answers that need to be correct. On a 502-prompt hand-labelled corpus at the default 0.94 threshold with the guard on:
 
 | | Measured |
 |---|---|
-| Hit rate | 13.16% |
-| False-hit rate (a wrong cached answer served) | **8.0%** (4 of 50 adversarial pairs) |
+| Hit rate | 14.47% (11 of 76 paraphrase pairs) |
+| False-hit rate (a wrong cached answer served) | **0.0%** (0 of 50 adversarial pairs), in-sample |
 
-The guard cannot detect negation ("open" vs "closed"), spelled-out numbers ("two doses" vs "three doses") or common nouns that change the meaning ("weekdays" vs "weekends"). [Semantic cache correctness](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) covers the full analysis.
+Treat that 0% with suspicion. The guard's negation, spelled-out-number, unit and opposites checks were written after reading which of these 50 pairs got through, so it fits this corpus by construction. On 20 new adversarial pairs written after the guard was frozen, it rejected only 6. Opposites outside its short word list ("faster" vs "slower", "fixed" vs "variable" rate) and meaning-bearing common nouns ("finance team" vs "legal team") still pass. [Semantic cache correctness](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness) covers the full analysis.
 
 **Semantic matching is opt-in per route.** Exact-only caching is `semantic: false` in a route's `cache:` block in `routing.yaml`; the shipped example configs use it, so out of the box only identical requests are served from cache. (A `cache:` block that omits `semantic` keeps the older behaviour, exact plus semantic, so existing configs are unchanged.) Clients can raise the similarity threshold for a request with `X-Aether-Cache-Threshold`, but never lower it below the route's configured value. See [Routing policy](https://ashish-codejourney.github.io/aether-gateway/docs/design/routing-policy).
 
@@ -154,8 +154,8 @@ Every number below comes from a committed run. The full tables, methodology, cav
 | Failover latency, p99 (100 independent trials) | 67.92 ms | < 500 ms |
 | Quota accuracy, 100 concurrent requests | 0 over-issue | 0 |
 | Broken streams during rolling K8s update | 0 of 1,000 | 0 |
-| Semantic cache hit rate (0.94 threshold, guard on) | 13.16% | ≥ 35% (not met) |
-| Semantic cache false-hit rate | 8.0% | ≤ 5% (not met) |
+| Semantic cache hit rate (0.94 threshold, guard on) | 14.47% | ≥ 35% (not met) |
+| Semantic cache false-hit rate | 0.0% on the labelled corpus (in-sample; 6 of 20 new adversarial pairs caught) | ≤ 5% (not shown out of sample) |
 | Concurrent streams on 2 vCPU / 4 GB | 37.1% failures at 2,000 | ≥ 2,000 (not met) |
 
 ## Architecture
@@ -219,7 +219,7 @@ Planned:
 - **Tool calling on Gemini and Ollama** (it already works on OpenAI-compatible providers and Anthropic).
 - **Lightweight single-container mode** for trying the gateway without the full Compose stack.
 - **Spring Boot starter** for embedding the gateway in an existing Spring application.
-- **Entity guard improvements** for negation and spelled-out numbers.
+- **Entity guard improvements**: negation, spelled-out numbers, units and common opposites are done. Next are a held-out adversarial set measured with embeddings, and a model-based check (NER or a cross-encoder re-ranker) for opposites and common nouns that a word list can't cover.
 
 ## Non-goals
 
