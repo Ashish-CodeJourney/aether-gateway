@@ -92,3 +92,8 @@ Feature: Semantic cache correctness
       | The project deadline is March 15th.                 | The project deadline is March 25th.                  |
       | The hotel has 120 rooms.                            | The hotel has 220 rooms.                             |
       | The conference will be held in Berlin.              | The conference will be held in Munich.               |
+      | Is aspirin safe to take during pregnancy?           | Is aspirin not safe to take during pregnancy?        |
+      | The vaccine requires two doses.                     | The vaccine requires three doses.                    |
+      | The library is open until 8 PM.                     | The library is closed until 8 PM.                    |
+      | The API rate limit resets every 60 minutes.         | The API rate limit resets every 60 seconds.          |
+      | The store closes at 9 PM on weekdays.               | The store closes at 9 PM on weekends.                |
