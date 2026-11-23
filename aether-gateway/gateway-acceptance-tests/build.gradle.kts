@@ -35,10 +35,32 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-tasks.named<Test>("test") {
+fun Test.againstTheBuiltJars() {
     dependsOn(":gateway-proxy:bootJar", ":mock-provider:bootJar")
     doFirst {
         systemProperty("gateway.proxy.jar", project(":gateway-proxy").tasks.named("bootJar").get().outputs.files.singleFile.absolutePath)
         systemProperty("mock.provider.jar", project(":mock-provider").tasks.named("bootJar").get().outputs.files.singleFile.absolutePath)
     }
+}
+
+// Full mode: the gateway against Testcontainers Postgres and Redis.
+tasks.named<Test>("test") {
+    againstTheBuiltJars()
+    systemProperty("cucumber.filter.tags", "not @lite-only")
+}
+
+// ADR-010 lite mode: the same suite against a gateway started with the
+// lite profile and no infrastructure at all. Semantic caching does not
+// exist in lite mode, so scenarios that expect a SEMANTIC_HIT are skipped.
+tasks.register<Test>("acceptanceTestLite") {
+    description = "Runs the acceptance suite against a lite-mode gateway (no Postgres, no Redis)."
+    group = "verification"
+    val testSourceSet = project.extensions.getByType<JavaPluginExtension>().sourceSets["test"]
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    useJUnitPlatform()
+    againstTheBuiltJars()
+    systemProperty("aether.acceptance.mode", "lite")
+    systemProperty("cucumber.filter.tags", "not @requires-semantic-cache")
+    shouldRunAfter(tasks.named("test"))
 }

@@ -24,7 +24,9 @@ import java.util.Optional;
 /**
  * Per TESTING-STRATEGY.md and ADR-009: the system under test runs as
  * real, separate OS processes (the built gateway-proxy and mock-provider
- * boot jars), against real Testcontainers-managed Postgres and Redis.
+ * boot jars), against real Testcontainers-managed Postgres and Redis -
+ * or, in lite mode (see {@link #isLiteMode()}), against no
+ * infrastructure at all.
  * gateway-acceptance-tests has no project(...) dependency on gateway-core
  * or any other internal module (see this module's build.gradle.kts), so
  * every interaction below is over HTTP/process boundaries only, never a
@@ -58,16 +60,18 @@ public final class AcceptanceEnvironment {
             return;
         }
 
-        postgres = new PostgreSQLContainer<>(
-                DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"))
-                .withDatabaseName("aether")
-                .withUsername("postgres")
-                .withPassword("postgres");
-        postgres.start();
+        if (!isLiteMode()) {
+            postgres = new PostgreSQLContainer<>(
+                    DockerImageName.parse("pgvector/pgvector:pg17").asCompatibleSubstituteFor("postgres"))
+                    .withDatabaseName("aether")
+                    .withUsername("postgres")
+                    .withPassword("postgres");
+            postgres.start();
 
-        redis = new GenericContainer<>(DockerImageName.parse("redis:8"))
-                .withExposedPorts(6379);
-        redis.start();
+            redis = new GenericContainer<>(DockerImageName.parse("redis:8"))
+                    .withExposedPorts(6379);
+            redis.start();
+        }
 
         mockPrimaryPort = findFreePort();
         mockPrimaryProcess = startJar(System.getProperty("mock.provider.jar"),
@@ -85,11 +89,15 @@ public final class AcceptanceEnvironment {
         gatewayPort = findFreePort();
         Map<String, String> gatewayEnv = new HashMap<>();
         gatewayEnv.put("GATEWAY_PORT", String.valueOf(gatewayPort));
-        gatewayEnv.put("GATEWAY_DB_URL", "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether");
-        gatewayEnv.put("GATEWAY_DB_USER", "postgres");
-        gatewayEnv.put("GATEWAY_DB_PASSWORD", "postgres");
-        gatewayEnv.put("SPRING_DATA_REDIS_HOST", "localhost");
-        gatewayEnv.put("SPRING_DATA_REDIS_PORT", String.valueOf(redis.getMappedPort(6379)));
+        if (isLiteMode()) {
+            gatewayEnv.put("SPRING_PROFILES_ACTIVE", "lite");
+        } else {
+            gatewayEnv.put("GATEWAY_DB_URL", "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether");
+            gatewayEnv.put("GATEWAY_DB_USER", "postgres");
+            gatewayEnv.put("GATEWAY_DB_PASSWORD", "postgres");
+            gatewayEnv.put("SPRING_DATA_REDIS_HOST", "localhost");
+            gatewayEnv.put("SPRING_DATA_REDIS_PORT", String.valueOf(redis.getMappedPort(6379)));
+        }
         gatewayEnv.put("ROUTING_CONFIG_PATH", routingConfig.toAbsolutePath().toString());
         // Phase 06 (M3): pin the pessimistic per-request token estimate to
         // match mock-provider's default completion-token count (12,
@@ -166,6 +174,16 @@ public final class AcceptanceEnvironment {
             redis.stop();
         }
         started = false;
+    }
+
+    /**
+     * ADR-010: {@code -Daether.acceptance.mode=lite} (the
+     * {@code acceptanceTestLite} Gradle task) runs the same suite against
+     * a gateway started with the lite profile and no Postgres or Redis
+     * at all; anything else runs it against full mode.
+     */
+    public static boolean isLiteMode() {
+        return "lite".equals(System.getProperty("aether.acceptance.mode"));
     }
 
     public static String gatewayBaseUrl() {
@@ -294,6 +312,8 @@ public final class AcceptanceEnvironment {
                     baseUrl: http://localhost:%d
                   mock-fallback:
                     baseUrl: http://localhost:%d
+                  echo:
+                    type: echo
 
                 routes:
                   - alias: mock
@@ -325,6 +345,14 @@ public final class AcceptanceEnvironment {
                       enabled: true
                       semantic: false
                       threshold: 0.5
+                      ttl: 6h
+                  - alias: echo
+                    chain:
+                      - provider: echo
+                        model: echo-1
+                    cache:
+                      enabled: true
+                      semantic: false
                       ttl: 6h
                 """.formatted(mockPrimaryPort, mockFallbackPort);
         Path path = Files.createTempFile("aether-routing-", ".yaml");
