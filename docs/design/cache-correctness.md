@@ -2,11 +2,11 @@
 title: "Semantic cache correctness"
 ---
 
-How Phase 07 (M4)'s semantic cache stays a cost optimisation rather than
-a correctness liability, per the PRD's F4 correctness note. Written
-alongside the M4 exit criterion measurement; see
-`benchmark/results/m4-threshold-sweep.md` for the raw numbers this
-document explains.
+How the semantic cache stays a cost optimisation rather than a
+correctness liability: a cached answer to a *different* question is a
+wrong answer, not a saving. Written alongside the semantic cache's
+threshold measurement; see `benchmark/results/m4-threshold-sweep.md` for
+the raw numbers this document explains.
 
 ## The tradeoff, and why a threshold alone is not enough
 
@@ -17,7 +17,7 @@ far more than the one token that actually changes its answer. Any
 similarity threshold high enough to reject this pair also rejects a
 meaningful fraction of genuine paraphrases, and any threshold low enough
 to keep hit rate useful lets a meaningful fraction of factually-wrong
-pairs through. The PRD's mitigation is to not rely on the threshold
+pairs through. The mitigation is to not rely on the threshold
 alone: pair it with a hard, threshold-independent guard.
 
 ## The entity/numeric guard
@@ -48,9 +48,8 @@ for one.
 
 ### Known, accepted limitations (measured, not guessed)
 
-The guard's scope is exactly "numbers, named entities, dates," per the
-PRD's own wording, and nothing outside that scope is caught. The M4
-threshold sweep (`benchmark/results/m4-threshold-sweep.md`) measured
+The guard's scope is exactly "numbers, named entities, dates," by
+design, and nothing outside that scope is caught. The threshold sweep (`benchmark/results/m4-threshold-sweep.md`) measured
 this directly against the corpus rather than assuming it:
 
 1. **Negation and polarity flips are invisible to the guard.**
@@ -62,8 +61,8 @@ this directly against the corpus rather than assuming it:
 2. **Spelled-out numbers are not extracted.** The number regex matches
    digit sequences only; "two doses" vs "three doses" does not register
    as a number-fingerprint mismatch the way "2 doses" vs "3 doses"
-   would. Found directly while picking example pairs for the M4
-   Cucumber scenarios (`gateway-acceptance-tests/.../m4_semantic_cache.
+   would. Found directly while picking example pairs for the semantic
+   cache Cucumber scenarios (`gateway-acceptance-tests/.../m4_semantic_cache.
    feature`): the pair "The vaccine requires two doses." / "...three
    doses." measured 0.91 cosine similarity with the guard reporting the
    fingerprints as equal (i.e. it would incorrectly allow a hit), while
@@ -80,9 +79,9 @@ None of these are correctness bugs in the sense of behaving differently
 than designed; they are the measured boundary of a guard whose scope was
 deliberately kept narrow. Extending the guard to catch negation (a small
 stopword-adjacent check) or spelled-out numbers (a word-to-number
-lookup) are reasonable, scoped Phase 09 follow-ups, not required for
-this phase's exit criterion, which only requires the false-hit rate to
-be *measured and the threshold choice justified* - not zero.
+lookup) are reasonable, scoped follow-ups. The bar the semantic cache
+was built against is that its false-hit rate is *measured and the
+threshold choice justified* - not that it is zero.
 
 ## Bypass rules (F4.5)
 
@@ -106,7 +105,7 @@ never consulted" apart from "it was consulted and found nothing."
 Every cache entry (both the Redis exact-match hot cache and the
 Postgres/pgvector row) is scoped by a `namespace` string equal to the
 requesting API key's id, or the fixed string `"anonymous"` for
-unauthenticated requests (mirroring the M3 quota subsystem's same
+unauthenticated requests (mirroring the quota subsystem's same
 choice for consistency). Every read and write path threads this
 namespace through explicitly - there is no code path that queries or
 stores without it - so cross-tenant leakage would require a namespace
@@ -140,11 +139,10 @@ semantic matching is an explicit per-route opt-in.
 
 ## Fail-open (ADR-005)
 
-Unlike quota (fail-closed, Phase 06), a cache subsystem outage
+Unlike quota (fail-closed), a cache subsystem outage
 (Redis unreachable, Postgres unreachable, or the embedding model
 throwing) degrades to `CacheDecision.Miss` - the request still gets
 served by the provider, just without a cache hit. `CacheAdapter` wraps
 every lookup and store in a catch that swallows the exception rather
-than propagating it; this is the deliberate asymmetry the PRD calls out
-explicitly (a cache should never be able to turn an outage of its own
+than propagating it; this is a deliberate asymmetry (a cache should never be able to turn an outage of its own
 into a user-visible error).
