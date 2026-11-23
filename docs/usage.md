@@ -18,7 +18,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-Set `"stream": true` for a Server-Sent Events response, identical in shape to OpenAI's streaming format (`data: {...}` chunks, terminated by `data: [DONE]`). Cancelling the client connection (closing the tab, aborting the fetch) propagates upstream and stops paying for tokens - this is measured, not assumed (see the streaming design notes linked from [Architecture Decisions](/docs/category/architecture-decisions)).
+Set `"stream": true` for a Server-Sent Events response, identical in shape to OpenAI's streaming format (`data: {...}` chunks, terminated by `data: [DONE]`). Cancelling the client connection (closing the tab, aborting the fetch) propagates upstream and stops paying for tokens - this is measured, not assumed (see [WebFlux for streaming](./adr/002-webflux-streaming-mvc-virtual-threads-elsewhere.md)). A stream fails over to the next provider in the chain just like a non-streaming request, as long as the failure happens before its first chunk; after that it is committed to the provider that started it (see [Routing policy](./design/routing-policy.md)).
 
 A stream is billed at the token usage the provider reports when it finishes (Anthropic, Gemini, Ollama and OpenAI-compatible providers all report it; the gateway asks OpenAI-compatible ones with `stream_options.include_usage` itself), and that usage is what the request log, the cost metrics and the API key's monthly budget see. Its headers go out before that usage exists, so a streamed response carries no `X-Aether-Cost-USD`. A stream that is cancelled or fails before the provider reports usage, or from a provider that reports none, is recorded at the gateway's pre-request estimate instead.
 
@@ -61,11 +61,11 @@ Errors keep the gateway's RFC 9457 fields and add OpenAI's `error` object (`mess
 
 An `Authorization: Bearer <api-key>` header attaches the request to a real API key - its own rate limit, concurrency cap, and monthly token budget apply, and usage is attributed to it in the request log and cost dashboard.
 
-Real API keys are created via the [admin API](#admin-api) and are stored as salted hashes, never plaintext (F9.1).
+Real API keys are created via the [admin API](#admin-api) and are stored as salted hashes, never plaintext.
 
 A request with no `Authorization` header - or one that doesn't resolve to a real key - is **rejected with `401 unauthenticated` by default**. Such a request is unmetered, charged to no budget, and served using the operator's own provider credentials, so a gateway reachable beyond localhost would otherwise be an open proxy to whatever those credentials can buy. An unrecognised key is treated identically to no key at all, so the endpoint can't be used to probe which keys exist.
 
-Setting `AETHER_SECURITY_ALLOW_ANONYMOUS=true` opts back in: anonymous requests are then served unmetered against any per-key budget, but rate-limited per source IP address (F9.5) so one anonymous client can't exhaust the gateway. The Docker Compose stack and the acceptance suite both enable it, since neither has real credentials to protect; the Kubernetes manifests deliberately leave it off.
+Setting `AETHER_SECURITY_ALLOW_ANONYMOUS=true` opts back in: anonymous requests are then served unmetered against any per-key budget, but rate-limited per source IP address so one anonymous client can't exhaust the gateway. The Docker Compose stack and the acceptance suite both enable it, since neither has real credentials to protect; the Kubernetes manifests deliberately leave it off.
 
 ## Response headers
 
@@ -73,7 +73,7 @@ Every response carries headers describing exactly what happened, useful for debu
 
 | Header | Meaning |
 |---|---|
-| `X-Aether-Cache` | `MISS`, `EXACT_HIT`, or `SEMANTIC_HIT` |
+| `X-Aether-Cache` | `MISS`, `EXACT_HIT`, `SEMANTIC_HIT`, or `BYPASS` (the cache was not consulted: `X-Aether-No-Cache`, tools in the request, `temperature > 0.3`, or caching off for the route) |
 | `X-Aether-Cost-USD` | Real cost for a miss, `0` for any cache hit; absent on a streamed miss, whose cost is only known once the stream ends |
 | `X-Aether-Provider` | Which provider actually served this (useful for confirming failover happened) |
 | `X-Aether-Attempts` | Tries made on the provider that answered (retries included) |
@@ -103,7 +103,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 
 ## Admin API
 
-Every `/admin/**` endpoint requires `X-Aether-Admin-Key: <key>` (fail-closed - a blank or missing configured key rejects every admin request, F8.5). The key is set via `AETHER_ADMIN_API_KEY`; the operator console (`console/`) is the friendlier way to reach all of these.
+Every `/admin/**` endpoint requires `X-Aether-Admin-Key: <key>` (fail-closed - a blank or missing configured key rejects every admin request). The key is set via `AETHER_ADMIN_API_KEY`; the operator console (`console/`) is the friendlier way to reach all of these.
 
 | Endpoint | Purpose |
 |---|---|

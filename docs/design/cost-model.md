@@ -2,10 +2,10 @@
 title: "Cost model"
 ---
 
-How Phase 08 (M5) computes `cost_usd` and `cache_savings_usd` per
+How the gateway computes `cost_usd` and `cache_savings_usd` per
 request, and how the per-(provider, model) price table itself is
-configured. Feeds directly into Phase 09 (M6)'s cost simulation
-experiments.
+configured. Also the basis of the cost simulation experiments in
+`BENCHMARKS.md`.
 
 ## Price table: `cost-model.yaml`
 
@@ -22,19 +22,19 @@ models:
 
 Loaded once at startup by `CostModelRepository`
 (`gateway-observability`), matching `RoutingPolicyRepository`'s F2.7
-hot-reload shape (PRD section 8's "config change requires no redeploy"
-non-functional requirement): `reload()` re-reads the file from disk.
-Unlike routing, there is currently no `POST /admin/cost-model/reload`
-endpoint wired up to trigger it from outside the process - that is a
-natural Phase 10 admin-API addition, not required for this phase's exit
-criterion, so the mechanism exists but isn't yet exposed over HTTP.
+hot-reload shape (a config change should never require a redeploy):
+`reload()` re-reads the file from disk. Unlike routing, there is
+currently no `POST /admin/cost-model/reload` endpoint wired up to
+trigger it from outside the process, so the mechanism exists but isn't
+exposed over HTTP; restart the gateway to pick up a price change.
 
 Prices for `mock-primary`/`mock-fallback` are illustrative, chosen to be
 easy to hand-verify ($0.50 input / $1.50 output per 1M tokens), since
 there is no real invoice to match against for a mock provider. Real
-provider prices (Groq, Gemini, etc.) get added to this same file once
-Phase 12 (M9) wires up real providers - the price table's shape does not
-need to change, only its contents.
+provider prices (Gemini, OpenAI, etc.) live in this same file alongside
+them - the shipped `cost-model.yaml` already carries a few, priced at
+each vendor's published rates at the time of writing. Check current
+pricing before relying on them.
 
 Embedding models (`POST /v1/embeddings`) use the same entry shape with
 `outputPricePerMillion: 0.0`, since an embedding has no completion
@@ -59,7 +59,7 @@ response path:
 - **Non-streaming, served by a real provider call**: the actual
   `prompt_tokens`/`completion_tokens` the provider reported
   (`ChatCompletionResponse.usage()`), the same usage figures already
-  used for quota reconciliation (Phase 06/M3).
+  used for quota reconciliation.
 - **Streaming, served by a real provider call**: the usage the provider
   reports at the end of the stream, which each adapter puts on the
   stream's last chunk (`ProviderResponse.StreamChunk.usage()`):
@@ -73,9 +73,9 @@ response path:
   stream (F1.5), it failed mid-way, or the provider simply reports
   none - the request's pessimistic pre-request estimate is used
   instead, all of it counted as output tokens, as before.
-  The controller does not yet know which chain member served a stream,
-  so a streamed request is priced at the route's primary member, the
-  same stand-in a cache hit uses (below).
+  A streamed request is priced at the chain member that actually
+  served it, including after a failover before the first chunk, the
+  same as a non-streaming request.
 - **A cache hit (exact or semantic)**: `cost_usd` is always exactly
   `0` - nothing was paid, because no provider call happened. This is
   what makes `cache_savings_usd` meaningful as a genuine cost
@@ -85,7 +85,7 @@ response path:
 
 Same `CostCalculator.costUsd(...)` function, applied to the cached
 response's own recorded `usage` (prompt/completion tokens from when it
-was originally generated and stored, per Phase 07/M4's cache write
+was originally generated and stored by the cache write
 path), for a cache hit specifically. It answers "what would this exact
 response have cost if it had gone to the provider instead." A response
 cached from a stream records the usage the provider reported for that
@@ -94,7 +94,7 @@ stream, or zero if it reported none.
 **Attribution for a cache hit.** A cache hit, by definition, did not
 call any provider, so there is no `servedByProvider` value the way a
 real completion has one - the stored response DTO carries no provider
-attribution (Phase 07/M4 never modelled that field, since the cache
+attribution (the cache never modelled that field, since it
 itself doesn't care who originally generated a response, only that it
 did). To still produce a meaningful dollar figure and a meaningful
 `provider` tag on the `X-Aether-*` metrics/log for a hit, `cost_usd`/
@@ -110,14 +110,14 @@ metrics values, so the three surfaces never disagree with each other.
 
 ## Where these numbers surface
 
-- **Response headers** (PRD section 13.1): `X-Aether-Cost-USD` on every
-  response (`0` for a cache hit). `X-Aether-Provider` and
-  `X-Aether-Attempts` also added in this phase, carrying the same
-  `servedByProvider`/`attemptCount` attribution `ResilientRouter` now
-  threads back through `ProviderResponse.Completion`/`ProviderError`
-  (previously untracked entirely - Phase 05/M2 resolved failover
-  correctly but never surfaced *which* provider won or how many
-  attempts it took).
+- **Response headers**: `X-Aether-Cost-USD` on every response
+  except a streamed miss, whose cost is only known once the stream
+  ends (`0` for a cache hit). `X-Aether-Provider`,
+  `X-Aether-Attempts` and `X-Aether-Failover-Chain` carry the
+  `servedByProvider`/`attemptCount` attribution `ResilientRouter`
+  threads back through `ProviderResponse.Completion`/`ProviderError`,
+  so a client can see *which* provider won and how many attempts it
+  took.
 - **`request_log`** (F6.2): `cost_usd` and `saved_usd` columns, written
   asynchronously on every request regardless of outcome (quota-rejected,
   cache hit, provider success, provider failure, or a streamed request
@@ -133,15 +133,11 @@ metrics values, so the three surfaces never disagree with each other.
 - A streamed response that is cancelled, fails mid-way, or comes from
   a provider that reports no streaming usage is costed at the
   pre-request estimate rather than a measured count (see above).
-- A streamed response is priced at the route's primary member, not
-  necessarily the provider that served it, since that is not yet
-  known for streams.
 - A cache hit's cost/savings estimate is attributed to the route's
   primary provider's price, not the provider that actually generated
   the originally-cached response (not tracked). If a route's providers
   have meaningfully different prices for the same model, this
   understates or overstates savings depending on which provider
-  actually served the original request. Acceptable for this phase;
-  worth revisiting if per-provider price divergence becomes large
-  enough to matter (e.g. once real, differently-priced providers are
-  wired up in Phase 12/M9).
+  actually served the original request. Worth revisiting if
+  per-provider price divergence within one route becomes large enough
+  to matter.
