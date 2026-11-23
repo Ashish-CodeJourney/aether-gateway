@@ -69,11 +69,12 @@ def main():
          f"{ac2['hit_p95_ms']} ms (n={ac2['samples']}, confirmed EXACT_HIT via X-Aether-Cache)",
          "MET" if ac2["meets_target"] else "NOT MET"),
         ("AC3", "Semantic cache hit rate on the benchmark corpus", "≥ 35% at chosen threshold",
-         "13.16% guarded hit rate at threshold 0.94 (experiment 2, full corpus)",
-         "NOT MET (documented gap, same finding as Phase 07/M4)"),
+         "14.47% guarded hit rate (11 of 76 near-duplicate pairs) at threshold 0.94 (experiment 2, full corpus)",
+         "NOT MET (documented gap)"),
         ("AC4", "Semantic cache false-hit rate", "≤ 5%, hand-labelled, documented",
-         "8.0% guarded false-hit rate at threshold 0.94 (experiment 2, full corpus)",
-         "NOT MET (documented gap, same finding as Phase 07/M4)"),
+         "0.0% guarded false-hit rate (0 of 50 adversarial pairs) at threshold 0.94 (experiment 2, full corpus); "
+         "in-sample only - the guard's heuristics were designed against these pairs",
+         "MET in-sample only (not counted; see note)"),
         ("AC5", "Concurrent streaming connections on 2 vCPU / 4 GB", "≥ 2,000",
          f"37.1% request failure rate at 2,000 concurrent VUs; p95/p99 already in the tens of "
          f"seconds at 1,200 concurrent VUs (0% hard failures there, but severe queueing) - see "
@@ -121,15 +122,17 @@ below with the real measured number and, where applicable, why.
 
 {chr(10).join(table)}
 
-**AC3/AC4** (cache hit rate / false-hit rate) are the two criteria this
-phase's own data least flatters: the corpus was hand-labelled and the
-threshold was chosen from a real measured sweep (experiments 1/2), but
-the resulting hit rate is well below the 35% target and the false-hit
-rate is above the 5% target, at the threshold that best balances the
-two. `docs/design/cache-correctness.md` (Phase 07) already documents
-why: the entity/numeric guard has no concept of negation or polarity,
-so several adversarial pairs that flip meaning through negation alone
-pass through as false hits regardless of threshold.
+**AC3/AC4** (cache hit rate / false-hit rate): the corpus is
+hand-labelled and the 0.94 threshold was chosen from a real measured
+sweep (experiments 1/2). The hit rate is well below the 35% target.
+The guarded false-hit rate is 0 of 50 after the entity guard learned
+negation, spelled-out numbers, units, time of day and a short
+opposition lexicon - but those heuristics were written by reading the
+corpus's own residual false hits, so this is an in-sample result and is
+not counted as MET. On 20 fresh adversarial pairs written after the
+guard was frozen, it caught 6 (the previous guard caught 1);
+`docs/design/cache-correctness.md` lists them and the guard's remaining
+blind spots.
 
 **AC5** is a genuine, newly-measured gap this phase: the gateway does
 not cleanly sustain 2,000 concurrent streaming connections on a

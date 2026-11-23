@@ -17,13 +17,13 @@ Raw data: `experiment-8-cost-simulation.csv`.
 | Scenario | Total requests | Total spend |
 |---|---|---|
 | No cache | 502 | $0.2392065 |
-| With cache | 502 | $0.2388750 |
+| With cache | 502 | $0.2389425 |
 
-**Spend reduction: 0.1%** ($0.0003315 saved) by enabling the semantic cache
+**Spend reduction: 0.1%** ($0.0002640 saved) by enabling the semantic cache
 across this corpus, at the same 0.94 threshold experiments 1/2 chose.
 
-Of the 76 near-duplicate pairs, 10 hit the cache (cost avoided,
-correctly). Of the 50 adversarial pairs, 4 were guarded false hits
+Of the 76 near-duplicate pairs, 11 hit the cache (cost avoided,
+correctly). Of the 50 adversarial pairs, 0 were guarded false hits
 (cost avoided, *incorrectly* - a wrong cached answer was served). Both
 figures match experiment 2's measured guard-ablation rates at this
 threshold; false hits genuinely do reduce simulated spend even though
@@ -40,8 +40,8 @@ average roughly 400x the character count of every other bucket, and
 none of them are cache-eligible in this simulation (the corpus design
 intentionally does not pair them for near-duplicate testing; PRD
 section 16.1 scopes that bucket to "latency and embedding-cost
-behaviour," not cache hit-rate). The cache genuinely avoided 14 of
-126 requests (11.1% of request *count*) in the cacheable buckets, but
+behaviour," not cache hit-rate). The cache genuinely avoided 11 of
+126 requests (8.7% of request *count*) in the cacheable buckets, but
 those buckets are cheap individually, so their dollar contribution to
 the total is small next to the long-context bucket's. A corpus (or a
 real production traffic mix) with a higher proportion of short,

@@ -9,6 +9,8 @@ Semantic caching sounds like an easy win. You embed each prompt, store the respo
 
 I built one into [Aether Gateway](https://github.com/Ashish-CodeJourney/aether-gateway), a self-hosted, OpenAI-compatible LLM gateway in Java. Then I measured it against a labelled corpus. At the operating point I picked, it serves a wrong cached answer for **8% of the prompt pairs designed to trip it up**, and it catches only about 13% of the genuine paraphrases it exists to catch.
 
+*Update: after the guard learned negation, units and spelled-out numbers, the same corpus measures 0 of 50 false hits and a 14.5% hit rate. I explain [at the end](#update-working-through-the-to-do-list) why I don't trust that 0%.*
+
 This post covers how I measured that, why it happens, and what I changed because of it. Every number comes from the project's [`BENCHMARKS.md`](https://github.com/Ashish-CodeJourney/aether-gateway/blob/trunk/BENCHMARKS.md) and the [cache correctness design doc](https://ashish-codejourney.github.io/aether-gateway/docs/design/cache-correctness). The raw CSVs are committed alongside them.
 
 First, a precise definition, because the headline needs one. "8%" is **not** 8% of all traffic. It is the share of *adversarial* pairs (two prompts that look alike but need different answers) where the second prompt received the first prompt's cached answer. How often that happens in production depends on how many near-miss prompts your real traffic contains. The rate per near-miss is what the cache controls, so that's the rate I measured.
@@ -131,6 +133,31 @@ The total is also skewed by the corpus. The long-context bucket accounts for 96.
 **The guard has a clear to-do list.** Negation is the largest contributor and probably the cheapest to address: a small check for "not", "no", "never" and antonym pairs near the matched span. Spelled-out numbers need a word-to-number lookup before fingerprinting. Common nouns that carry the fact are harder, and that's where a real NER model or a small cross-encoder re-ranker would start to pay for itself.
 
 **The corpus stays in the repo.** Each of those changes will be judged by the same experiment, and "the false-hit rate went down" will be a number in a CSV, not a claim.
+
+## Update: working through the to-do list
+
+I worked through the guard's to-do list and re-ran experiment 2 against the same corpus.
+
+First I read the four false hits that got through at 0.94. They weren't the ones I expected. Only one was negation ("Is aspirin safe" vs "Is aspirin not safe"). One was a time of day ("6:45pm" vs "6:45am"), one a unit ("60 minutes" vs "60 seconds") and one a common noun ("weekdays" vs "weekends"). None was a spelled-out number. "Two doses" vs "three doses" scores 0.91 similarity, so it never reached the guard at 0.94.
+
+The guard's fingerprint now also records:
+
+- whether the prompt is negated at all
+- spelled-out numbers converted to digits ("twenty-one" becomes 21)
+- the unit, currency or am/pm attached to a number
+- which side of a short list of common opposites the prompt takes ("open"/"closed", "rose"/"fell", "weekdays"/"weekends")
+
+It also stopped treating "Write" and "In" at the start of a sentence as named entities. That bug was the cause of the one paraphrase hit the old guard had blocked. It's still a word-list heuristic with no model behind it, and it costs tens of microseconds per prompt.
+
+| At 0.94 | Hit rate | False-hit rate |
+|---|---|---|
+| No guard | 14.5% | 28.0% |
+| Old guard | 13.2% | 8.0% |
+| New guard | **14.5%** | **0.0%** (0 of 50) |
+
+**I don't trust that 0%.** I wrote the new checks after reading exactly which pairs got through, so the guard fits this corpus by construction. To get a less flattering number, I then wrote 20 new adversarial pairs and 10 new paraphrase pairs, and checked them against the frozen guard. The new guard rejected **6 of the 20** adversarial pairs, where the old one rejected 1. It let 8 of the 10 paraphrases through, where the old one let 9 through. Faster vs slower, fixed vs variable rate, tenant vs landlord, penicillin vs amoxicillin and left vs right all still pass. A word list can't cover them, and that's where a small NER model or a cross-encoder re-ranker would start to earn its place.
+
+The sweep now shows a 0% false-hit rate on this corpus from 0.81 upward, so lowering the threshold looks tempting: 0.90 gives a 43% hit rate. I left the default at 0.94, and semantic matching stays opt-in, because the out-of-sample check says the 0% wouldn't hold up on real traffic.
 
 ## What I'd tell someone adding a semantic cache
 

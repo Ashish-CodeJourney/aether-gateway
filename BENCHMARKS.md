@@ -7,9 +7,13 @@ produced them is `gateway-bench` (Java) plus `benchmark/scripts/`
 (k6/Python for the load-generation experiments).
 
 **Headline**: at a 0.94 cosine threshold with the entity guard active,
-semantic caching measured a 13.16% hit rate and 8.0% false-hit rate
-against the 502-prompt hand-labelled corpus (below the PRD's 35%/5%
-targets - see the AC scorecard and experiment 2 below for why),
+semantic caching measured a 14.47% hit rate and a 0.0% false-hit rate
+(0 of 50 adversarial pairs) against the 502-prompt hand-labelled corpus.
+The hit rate is below the PRD's 35% target, and the false-hit figure is
+in-sample: the guard's heuristics were written against these same
+pairs, and it caught only 6 of 20 fresh adversarial pairs written
+afterwards (see experiment 2, the AC scorecard and
+docs/design/cache-correctness.md),
 cutting simulated spend 0.1% across that same corpus (dwarfed by the
 long-context bucket's token volume - see experiment 8) and reducing
 cache-hit end-to-end latency to a measured 8.9ms p95 (AC2, well under
@@ -52,8 +56,24 @@ Raw data: `benchmark/results/experiment-2-guard-ablation.csv`.
 
 ## Guard effect at threshold 0.94
 
-- False-hit rate reduction: 20.0% (28.0% -> 8.0%)
-- Recall cost: 1.3% (14.5% -> 13.2%)
+- False-hit rate reduction: 28.0% (28.0% -> 0.0%)
+- Recall cost: 0.0% (14.5% -> 14.5%)
+
+## Adversarial pairs the guard still allows at threshold 0.94
+
+None.
+
+## Guard cost
+
+`EntityNumericGuard.fingerprint` runs once per semantic lookup (the
+stored side is persisted at write time). Mean wall-clock time per
+call, single thread, after warm-up, on this run's machine:
+
+- Short prompts (402 near-duplicate, adversarial and unrelated prompts): 61.3 us
+- Long-context prompts (100 prompts, ~4-5k tokens each): 13.71 ms
+
+Embedding the same prompt with all-MiniLM-L6-v2 is the dominant
+per-lookup cost (see experiment 3).
 
 The guard only ever *rejects* candidate hits (it adds no new
 similarity-based hits), so at every threshold `hit_rate_guarded <=
@@ -320,13 +340,13 @@ Raw data: `benchmark/results/experiment-8-cost-simulation.csv`.
 | Scenario | Total requests | Total spend |
 |---|---|---|
 | No cache | 502 | $0.2392065 |
-| With cache | 502 | $0.2388750 |
+| With cache | 502 | $0.2389425 |
 
-**Spend reduction: 0.1%** ($0.0003315 saved) by enabling the semantic cache
+**Spend reduction: 0.1%** ($0.0002640 saved) by enabling the semantic cache
 across this corpus, at the same 0.94 threshold experiments 1/2 chose.
 
-Of the 76 near-duplicate pairs, 10 hit the cache (cost avoided,
-correctly). Of the 50 adversarial pairs, 4 were guarded false hits
+Of the 76 near-duplicate pairs, 11 hit the cache (cost avoided,
+correctly). Of the 50 adversarial pairs, 0 were guarded false hits
 (cost avoided, *incorrectly* - a wrong cached answer was served). Both
 figures match experiment 2's measured guard-ablation rates at this
 threshold; false hits genuinely do reduce simulated spend even though
@@ -343,8 +363,8 @@ average roughly 400x the character count of every other bucket, and
 none of them are cache-eligible in this simulation (the corpus design
 intentionally does not pair them for near-duplicate testing; PRD
 section 16.1 scopes that bucket to "latency and embedding-cost
-behaviour," not cache hit-rate). The cache genuinely avoided 14 of
-126 requests (11.1% of request *count*) in the cacheable buckets, but
+behaviour," not cache hit-rate). The cache genuinely avoided 11 of
+126 requests (8.7% of request *count*) in the cacheable buckets, but
 those buckets are cheap individually, so their dollar contribution to
 the total is small next to the long-context bucket's. A corpus (or a
 real production traffic mix) with a higher proportion of short,
@@ -366,23 +386,25 @@ below with the real measured number and, where applicable, why.
 |---|---|---|---|---|
 | AC1 | Gateway overhead on a cache-miss passthrough | p95 < 15 ms above upstream latency | 6.24 ms (7.78 ms gateway p95 - 1.54 ms upstream p95, n=100) | MET |
 | AC2 | Cache-hit end-to-end latency | p95 < 50 ms | 8.9 ms (n=100, confirmed EXACT_HIT via X-Aether-Cache) | MET |
-| AC3 | Semantic cache hit rate on the benchmark corpus | ≥ 35% at chosen threshold | 13.16% guarded hit rate at threshold 0.94 (experiment 2, full corpus) | NOT MET (documented gap, same finding as Phase 07/M4) |
-| AC4 | Semantic cache false-hit rate | ≤ 5%, hand-labelled, documented | 8.0% guarded false-hit rate at threshold 0.94 (experiment 2, full corpus) | NOT MET (documented gap, same finding as Phase 07/M4) |
+| AC3 | Semantic cache hit rate on the benchmark corpus | ≥ 35% at chosen threshold | 14.47% guarded hit rate (11 of 76 near-duplicate pairs) at threshold 0.94 (experiment 2, full corpus) | NOT MET (documented gap) |
+| AC4 | Semantic cache false-hit rate | ≤ 5%, hand-labelled, documented | 0.0% guarded false-hit rate (0 of 50 adversarial pairs) at threshold 0.94 (experiment 2, full corpus); in-sample only - the guard's heuristics were designed against these pairs | MET in-sample only (not counted; see note) |
 | AC5 | Concurrent streaming connections on 2 vCPU / 4 GB | ≥ 2,000 | 37.1% request failure rate at 2,000 concurrent VUs; p95/p99 already in the tens of seconds at 1,200 concurrent VUs (0% hard failures there, but severe queueing) - see ac5-concurrency.json for the caveat about shared test-host confounds | NOT MET |
 | AC6 | Failover time from provider outage detection | < 500 ms | p50 38.70 ms, p95 66.89 ms, p99 67.92 ms, max 70.10 ms over 100 independent trials (experiment 7) | MET |
 | AC7 | Broken streams during rolling K8s deploy | 0 out of ≥ 500 in-flight | 0 broken out of 1000 in-flight SSE streams across 2 rollout(s) - run 1: 500/500 ok, 0 broken, rollout 53s; run 2: 500/500 ok, 0 broken, rollout 37s (in-cluster client against the real Service; see ac7-rolling-update.json and docs/design/kubernetes-deployment.md) | MET |
 | AC8 | Quota accuracy under 100 concurrent requests | 0 over-issue | Exactly 50 Allowed / 50 Rejected against a 50-token budget under 100 concurrent requests, 0 over-issue, 0 under-issue (Phase 06/M3, RedisQuotaAdapterConcurrencyIntegrationTest, Testcontainers-Redis) | MET |
 | AC9 | Line coverage on core modules | ≥ 75% | gateway-core 75.7%, gateway-router 76.5%, gateway-quota 73.9%, gateway-cache 81.3% (aggregate 76.8%, 482/628 lines, JaCoCo, unit + integration test execution data merged) | MET in aggregate; gateway-quota individually below target (73.9%) |
 
-**AC3/AC4** (cache hit rate / false-hit rate) are the two criteria this
-phase's own data least flatters: the corpus was hand-labelled and the
-threshold was chosen from a real measured sweep (experiments 1/2), but
-the resulting hit rate is well below the 35% target and the false-hit
-rate is above the 5% target, at the threshold that best balances the
-two. `docs/design/cache-correctness.md` (Phase 07) already documents
-why: the entity/numeric guard has no concept of negation or polarity,
-so several adversarial pairs that flip meaning through negation alone
-pass through as false hits regardless of threshold.
+**AC3/AC4** (cache hit rate / false-hit rate): the corpus is
+hand-labelled and the 0.94 threshold was chosen from a real measured
+sweep (experiments 1/2). The hit rate is well below the 35% target.
+The guarded false-hit rate is 0 of 50 after the entity guard learned
+negation, spelled-out numbers, units, time of day and a short
+opposition lexicon - but those heuristics were written by reading the
+corpus's own residual false hits, so this is an in-sample result and is
+not counted as MET. On 20 fresh adversarial pairs written after the
+guard was frozen, it caught 6 (the previous guard caught 1);
+`docs/design/cache-correctness.md` lists them and the guard's remaining
+blind spots.
 
 **AC5** is a genuine, newly-measured gap this phase: the gateway does
 not cleanly sustain 2,000 concurrent streaming connections on a
