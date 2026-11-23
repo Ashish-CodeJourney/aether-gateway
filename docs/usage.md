@@ -110,6 +110,7 @@ Every `/admin/**` endpoint requires `X-Aether-Admin-Key: <key>` (fail-closed - a
 | `POST /admin/api-keys` · `GET /admin/api-keys` · `DELETE /admin/api-keys/{id}` | Create, list, revoke API keys |
 | `POST /admin/prompts` · `POST /admin/prompts/{name}/versions` · `PUT /admin/prompts/{name}/aliases/{alias}` | Create a prompt, add a version, repoint an alias |
 | `GET /admin/routes` · `POST /admin/routes/reload` | Inspect the live routing policy; hot-reload `routing.yaml` |
+| `POST /admin/cost-model/reload` | Hot-reload `cost-model.yaml` (an invalid file is rejected with 400 and the old prices stay in force) |
 | `GET /admin/providers/health` · `GET /admin/providers/{name}/breaker` | Provider health and circuit breaker state |
 | `GET /admin/cache/stats` · `DELETE /admin/cache` | Cache hit-rate stats; invalidate the whole cache |
 | `GET /admin/usage` | Aggregated token/cost usage |

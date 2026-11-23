@@ -20,3 +20,14 @@ Feature: Prompt version rollback with no restart
   Scenario: The correct admin key can access admin endpoints
     When the correct admin key is used to call an admin endpoint
     Then the admin call succeeds
+
+  @m7 @F6.3
+  Scenario: The cost model can be reloaded without a restart
+    When the correct admin key is used to reload the cost model
+    Then the admin call succeeds
+
+  @m7 @F8.5
+  Scenario: Gateway API keys cannot reload the cost model
+    Given a valid gateway API key with no admin privileges
+    When that key is used to reload the cost model
+    Then the response status is 401 or 403

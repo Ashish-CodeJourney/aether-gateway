@@ -38,6 +38,19 @@ public class AdminAuthSteps {
                 Map.of("X-Aether-Admin-Key", AcceptanceEnvironment.adminApiKey()));
     }
 
+    @When("the correct admin key is used to reload the cost model")
+    public void theCorrectAdminKeyIsUsedToReloadTheCostModel() throws Exception {
+        lastResponse = client.postJson(
+                AcceptanceEnvironment.gatewayBaseUrl() + "/admin/cost-model/reload", "", null,
+                Map.of("X-Aether-Admin-Key", AcceptanceEnvironment.adminApiKey()));
+    }
+
+    @When("that key is used to reload the cost model")
+    public void thatKeyIsUsedToReloadTheCostModel() throws Exception {
+        lastResponse = client.postJson(
+                AcceptanceEnvironment.gatewayBaseUrl() + "/admin/cost-model/reload", "", gatewayApiKey);
+    }
+
     @Then("the response status is 401 or 403")
     public void theResponseStatusIs401Or403() {
         assertThat(lastResponse.statusCode()).isIn(401, 403);

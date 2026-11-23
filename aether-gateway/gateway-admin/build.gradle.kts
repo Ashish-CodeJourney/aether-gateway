@@ -4,6 +4,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webflux")
     implementation("tools.jackson.core:jackson-databind")
 
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

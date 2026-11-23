@@ -57,6 +57,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -324,7 +325,10 @@ public class GatewayConfig {
         return new JdbcRequestLogQueryRepository(jdbcClient);
     }
 
+    // Primary because the same repository also backs the costModelPort
+    // bean; it is the one CostModelReloadUseCase injection should use.
     @Bean
+    @Primary
     public CostModelRepository costModelRepository(@Value("${aether.cost-model.config-path}") String costModelConfigPath) {
         return new CostModelRepository(Path.of(costModelConfigPath), new CostModelYamlParser());
     }

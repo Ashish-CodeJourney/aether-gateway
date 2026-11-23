@@ -126,6 +126,8 @@ DELETE /admin/api-keys/{id}
 GET    /admin/routes
 POST   /admin/routes/reload
 
+POST   /admin/cost-model/reload
+
 GET    /admin/providers/health
 GET    /admin/providers/{name}/breaker
 

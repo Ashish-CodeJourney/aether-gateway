@@ -20,13 +20,11 @@ models:
     outputPricePerMillion: 1.50
 ```
 
-Loaded once at startup by `CostModelRepository`
-(`gateway-observability`), matching `RoutingPolicyRepository`'s F2.7
-hot-reload shape (a config change should never require a redeploy):
-`reload()` re-reads the file from disk. Unlike routing, there is
-currently no `POST /admin/cost-model/reload` endpoint wired up to
-trigger it from outside the process, so the mechanism exists but isn't
-exposed over HTTP; restart the gateway to pick up a price change.
+Loaded at startup by `CostModelRepository` (`gateway-observability`)
+and hot-reloadable, like `routing.yaml`: edit the file and call
+`POST /admin/cost-model/reload` (admin key required). A missing or
+invalid file is rejected with `400` and the previous prices stay in
+force until a reload succeeds, so a typo can't zero out cost tracking.
 
 Prices for `mock-primary`/`mock-fallback` are illustrative, chosen to be
 easy to hand-verify ($0.50 input / $1.50 output per 1M tokens), since
