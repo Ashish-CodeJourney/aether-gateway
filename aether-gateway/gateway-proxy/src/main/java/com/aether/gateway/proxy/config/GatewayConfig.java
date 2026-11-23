@@ -1,15 +1,8 @@
 package com.aether.gateway.proxy.config;
 
-import com.aether.gateway.cache.CacheAdapter;
-import com.aether.gateway.cache.EmbeddingGenerator;
-import com.aether.gateway.cache.PgVectorCacheStore;
-import com.aether.gateway.cache.RedisExactMatchStore;
 import com.aether.gateway.core.domain.RetryBackoff;
 import com.aether.gateway.core.domain.TokenEstimator;
-import com.aether.gateway.core.port.ApiKeyAdminPort;
-import com.aether.gateway.core.port.ApiKeyLookupPort;
 import com.aether.gateway.core.port.BreakerStatusUseCase;
-import com.aether.gateway.core.port.CachePort;
 import com.aether.gateway.core.port.ChatCompletionUseCase;
 import com.aether.gateway.core.port.ChatStreamUseCase;
 import com.aether.gateway.core.port.CostModelPort;
@@ -17,36 +10,18 @@ import com.aether.gateway.core.port.EmbeddingUseCase;
 import com.aether.gateway.core.port.MetricsPort;
 import com.aether.gateway.core.port.ModelCatalogUseCase;
 import com.aether.gateway.core.port.ProviderAdapter;
-import com.aether.gateway.core.port.PromptRegistryPort;
-import com.aether.gateway.core.port.IpRateLimitPort;
-import com.aether.gateway.core.port.QuotaPort;
-import com.aether.gateway.core.port.RequestLogPort;
-import com.aether.gateway.core.port.RequestLogQueryPort;
-import com.aether.gateway.core.port.UsageQueryPort;
 import com.aether.gateway.observability.CostModelRepository;
 import com.aether.gateway.observability.CostModelYamlParser;
-import com.aether.gateway.observability.JdbcRequestLogQueryRepository;
-import com.aether.gateway.observability.JdbcRequestLogWriter;
 import com.aether.gateway.providers.anthropic.AnthropicAdapter;
-import com.aether.gateway.observability.RequestLogPartitionMaintainer;
-import com.aether.gateway.observability.JdbcUsageQueryRepository;
+import com.aether.gateway.providers.echo.EchoProviderAdapter;
 import com.aether.gateway.observability.MicrometerMetricsAdapter;
 import com.aether.gateway.providers.gemini.GeminiAdapter;
 import com.aether.gateway.providers.mock.MockProviderAdapter;
 import com.aether.gateway.providers.ollama.OllamaAdapter;
 import com.aether.gateway.providers.openai.OpenAiCompatibleAdapter;
-import com.aether.gateway.quota.JdbcApiKeyAdminRepository;
-import com.aether.gateway.quota.JdbcApiKeyRepository;
-import com.aether.gateway.quota.RedisConcurrencyCap;
-import com.aether.gateway.quota.RedisMonthlyBudget;
-import com.aether.gateway.quota.RedisQuotaAdapter;
-import com.aether.gateway.quota.RedisIpRateLimitAdapter;
-import com.aether.gateway.quota.RedisTokenBucket;
-import com.aether.gateway.registry.JdbcPromptRegistry;
 import com.aether.gateway.router.RouterBreakerStatus;
 import com.aether.gateway.router.RouterModelCatalog;
 import com.aether.gateway.router.resilience.BreakerHintGateway;
-import com.aether.gateway.router.resilience.RedisBreakerHintGateway;
 import com.aether.gateway.router.resilience.ResilientEmbeddingRouter;
 import com.aether.gateway.router.resilience.ResilientRouter;
 import com.aether.gateway.router.routing.RoutingPolicyRepository;
@@ -55,11 +30,11 @@ import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.actuate.info.InfoContributor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsWebFilter;
@@ -71,8 +46,16 @@ import reactor.core.scheduler.Schedulers;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 
+/**
+ * Wiring shared by both infrastructure modes (ADR-010): routing,
+ * resilience, provider adapters, metrics, cost model and CORS. Which
+ * stores sit behind the quota, cache, key, prompt and request-log ports
+ * is decided by {@link FullModeInfrastructureConfig} or
+ * {@link LiteModeInfrastructureConfig}.
+ */
 @Configuration
 public class GatewayConfig {
 
@@ -114,11 +97,6 @@ public class GatewayConfig {
         return new RetryBackoff(30, 2000);
     }
 
-    @Bean
-    public BreakerHintGateway breakerHintGateway(StringRedisTemplate redisTemplate) {
-        return new RedisBreakerHintGateway(redisTemplate);
-    }
-
     // Anthropic's Messages API requires max_tokens on every request and
     // the domain ChatCompletionRequest has nowhere to carry a
     // caller-supplied one, so the adapter needs a configured default.
@@ -143,6 +121,7 @@ public class GatewayConfig {
     private ProviderAdapter buildProviderAdapter(com.aether.gateway.router.routing.ProviderConfig providerConfig) {
         String apiKey = providerConfig.apiKeyEnvVar() != null ? System.getenv(providerConfig.apiKeyEnvVar()) : null;
         return switch (providerConfig.type()) {
+            case "echo" -> new EchoProviderAdapter(providerConfig.name());
             case "ollama" -> new OllamaAdapter(
                     providerConfig.name(), providerConfig.baseUrl(), apiKey, RestClient.builder(), WebClient.builder());
             case "gemini" -> new GeminiAdapter(
@@ -161,13 +140,16 @@ public class GatewayConfig {
         };
     }
 
+    // ADR-004 / ADR-010: the cross-replica breaker hint only exists in
+    // full mode; with a single lite replica there is nobody to share
+    // breaker state with, and ResilientRouter treats null as "no hints".
     @Bean
     public ResilientRouter resilientRouter(
             RoutingPolicyRepository routingPolicyRepository,
             CircuitBreakerRegistry circuitBreakerRegistry,
             BulkheadRegistry bulkheadRegistry,
             RetryBackoff retryBackoff,
-            BreakerHintGateway breakerHintGateway) {
+            ObjectProvider<BreakerHintGateway> breakerHintGateway) {
         return new ResilientRouter(
                 routingPolicyRepository,
                 circuitBreakerRegistry,
@@ -175,7 +157,7 @@ public class GatewayConfig {
                 retryBackoff,
                 1,
                 Duration.ofSeconds(10),
-                breakerHintGateway);
+                breakerHintGateway.getIfAvailable());
     }
 
     @Bean
@@ -196,7 +178,7 @@ public class GatewayConfig {
             CircuitBreakerRegistry circuitBreakerRegistry,
             BulkheadRegistry bulkheadRegistry,
             RetryBackoff retryBackoff,
-            BreakerHintGateway breakerHintGateway) {
+            ObjectProvider<BreakerHintGateway> breakerHintGateway) {
         return new ResilientEmbeddingRouter(
                 routingPolicyRepository,
                 circuitBreakerRegistry,
@@ -204,7 +186,7 @@ public class GatewayConfig {
                 retryBackoff,
                 1,
                 Duration.ofSeconds(10),
-                breakerHintGateway);
+                breakerHintGateway.getIfAvailable());
     }
 
     @Bean
@@ -224,104 +206,18 @@ public class GatewayConfig {
     // returning the same instance creates two candidate beans of the
     // same type and breaks single-bean autowiring (RoutesController).
 
-    // Phase 06 (M3): F5 quota enforcement. gateway-router/gateway-proxy
-    // only ever see QuotaPort/ApiKeyLookupPort (ADR-009's hexagonal
-    // boundary); gateway-quota's Redis/JDBC specifics stay behind them.
-    @Bean
-    public ApiKeyLookupPort apiKeyLookupPort(JdbcClient jdbcClient) {
-        return new JdbcApiKeyRepository(jdbcClient);
-    }
-
-    @Bean
-    public ApiKeyAdminPort apiKeyAdminPort(JdbcClient jdbcClient) {
-        return new JdbcApiKeyAdminRepository(jdbcClient);
-    }
-
-    @Bean
-    public QuotaPort quotaPort(StringRedisTemplate redisTemplate) {
-        return new RedisQuotaAdapter(
-                new RedisTokenBucket(redisTemplate),
-                new RedisConcurrencyCap(redisTemplate),
-                new RedisMonthlyBudget(redisTemplate));
-    }
-
-    @Bean
-    public IpRateLimitPort ipRateLimitPort(
-            StringRedisTemplate redisTemplate,
-            @Value("${aether.security.anonymous-ip-rps-limit:5}") int anonymousIpRpsLimit) {
-        return new RedisIpRateLimitAdapter(redisTemplate, anonymousIpRpsLimit);
-    }
-
     @Bean
     public TokenEstimator tokenEstimator(
             @Value("${aether.quota.assumed-max-output-tokens:500}") long assumedMaxOutputTokens) {
         return new TokenEstimator(assumedMaxOutputTokens);
     }
 
-    // Phase 07 (M4): F4 semantic cache. ADR-007: Spring AI usage is
-    // scoped to exactly the embedding model; the vector store and Redis
-    // exact-match layer are hand-built. warmUp() runs at startup
-    // deliberately, so the one-time ONNX model download/load happens
-    // during application boot rather than stalling the first real
-    // request.
-    @Bean
-    public EmbeddingGenerator embeddingGenerator(
-            @Value("${aether.cache.onnx-resource-cache-dir:/tmp/aether-onnx-cache}") String resourceCacheDirectory) {
-        EmbeddingGenerator generator = new EmbeddingGenerator(resourceCacheDirectory);
-        generator.warmUp();
-        return generator;
-    }
-
-    @Bean
-    public CachePort cachePort(
-            StringRedisTemplate redisTemplate,
-            JdbcClient jdbcClient,
-            EmbeddingGenerator embeddingGenerator) {
-        return new CacheAdapter(
-                new RedisExactMatchStore(redisTemplate),
-                new PgVectorCacheStore(jdbcClient),
-                embeddingGenerator);
-    }
-
     // Phase 08 (M5): F6.1-F6.4 observability. MeterRegistry is
     // auto-configured by spring-boot-starter-actuator +
-    // micrometer-registry-prometheus (exposed at /actuator/prometheus);
-    // JdbcRequestLogWriter owns its own background thread so RequestLogPort.log
-    // never blocks the caller (F6.2's core correctness requirement).
+    // micrometer-registry-prometheus (exposed at /actuator/prometheus).
     @Bean
     public MetricsPort metricsPort(MeterRegistry meterRegistry) {
         return new MicrometerMetricsAdapter(meterRegistry);
-    }
-
-    @Bean(destroyMethod = "shutdown")
-    public JdbcRequestLogWriter jdbcRequestLogWriter(JdbcClient jdbcClient) {
-        return new JdbcRequestLogWriter(jdbcClient);
-    }
-
-    @Bean
-    public RequestLogPort requestLogPort(JdbcRequestLogWriter jdbcRequestLogWriter) {
-        return jdbcRequestLogWriter;
-    }
-
-    // request_log is RANGE-partitioned with no DEFAULT partition, so
-    // writes stop dead the moment the calendar runs past the last
-    // partition. The maintainer keeps a rolling window open ahead of
-    // now; see RequestLogPartitionScheduler for when it runs.
-    @Bean
-    public RequestLogPartitionMaintainer requestLogPartitionMaintainer(
-            JdbcClient jdbcClient,
-            @Value("${aether.request-log.partition-months-ahead}") int partitionMonthsAhead) {
-        return new RequestLogPartitionMaintainer(jdbcClient, partitionMonthsAhead);
-    }
-
-    @Bean
-    public UsageQueryPort usageQueryPort(JdbcClient jdbcClient) {
-        return new JdbcUsageQueryRepository(jdbcClient);
-    }
-
-    @Bean
-    public RequestLogQueryPort requestLogQueryPort(JdbcClient jdbcClient) {
-        return new JdbcRequestLogQueryRepository(jdbcClient);
     }
 
     @Bean
@@ -347,12 +243,10 @@ public class GatewayConfig {
         return new CorsWebFilter(source);
     }
 
-    // Phase 10 (M7): F7.1-F7.4 prompt registry. gateway-router/gateway-proxy
-    // only ever see PromptRegistryPort; gateway-registry's JDBC specifics
-    // stay behind it, same boundary discipline as QuotaPort/CachePort above.
+    /** ADR-010: {@code GET /actuator/info} says which infrastructure mode this process is running in. */
     @Bean
-    public PromptRegistryPort promptRegistryPort(JdbcClient jdbcClient) {
-        return new JdbcPromptRegistry(jdbcClient);
+    public InfoContributor aetherModeInfoContributor(@Value("${aether.mode:full}") String mode) {
+        return builder -> builder.withDetail("aether", Map.of("mode", mode));
     }
 
     @Bean

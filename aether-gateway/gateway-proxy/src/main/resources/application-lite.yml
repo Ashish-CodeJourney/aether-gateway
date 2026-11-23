@@ -1,0 +1,41 @@
+# ADR-010 lite mode: SPRING_PROFILES_ACTIVE=lite runs the whole gateway
+# as one process with every store in memory - no Postgres, no Redis, no
+# ONNX embedding model. Single replica only, and nothing survives a
+# restart; see docs/design/lite-mode.md for the support matrix.
+
+spring:
+  autoconfigure:
+    # The JDBC, Flyway and Redis starters stay on the classpath (the same
+    # jar runs full mode), so their auto-configuration is switched off
+    # here rather than left to fail looking for a database and a Redis.
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceInitializationAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.JdbcClientAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.health.DataSourceHealthContributorAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.metrics.DataSourcePoolMetricsAutoConfiguration
+      - org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisReactiveAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.health.DataRedisHealthContributorAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.health.DataRedisReactiveHealthContributorAutoConfiguration
+  flyway:
+    enabled: false
+
+aether:
+  mode: lite
+  lite:
+    # Registered at startup as a working API key, since keys created
+    # through the admin API are lost on every restart.
+    bootstrap-api-key: ${AETHER_LITE_BOOTSTRAP_API_KEY:}
+    request-log:
+      # The request explorer and /admin/usage only ever see this many of
+      # the most recent requests.
+      capacity: ${AETHER_LITE_REQUEST_LOG_CAPACITY:10000}
+    cache:
+      max-entries: ${AETHER_LITE_CACHE_MAX_ENTRIES:10000}
+      max-bytes: ${AETHER_LITE_CACHE_MAX_BYTES:67108864}
+    max-tracked-ips: ${AETHER_LITE_MAX_TRACKED_IPS:100000}
