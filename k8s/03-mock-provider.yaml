@@ -1,7 +1,8 @@
-# PRD section 14: real providers cannot be made to fail on command, so
-# this cluster's proof test (500 concurrent streams through a rolling
-# update, AC7) runs against the same mock-provider used by every other
-# phase's resilience proof, not a real LLM provider.
+# Real providers cannot be made to fail on command, so this cluster's
+# proof test (500 concurrent streams through a rolling update) runs
+# against the same mock provider used by every other resilience proof,
+# not a real LLM provider. Both instances run the same pinned image;
+# they only differ in name, which is what the routing chain uses.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,7 +20,7 @@ spec:
     spec:
       containers:
         - name: mock-provider
-          image: aether-gateway-mock-primary:local
+          image: ashishvaghelaa/aether-mock-provider:1.1.0
           imagePullPolicy: IfNotPresent
           env:
             - name: MOCK_PROVIDER_PORT
@@ -62,7 +63,7 @@ spec:
     spec:
       containers:
         - name: mock-provider
-          image: aether-gateway-mock-fallback:local
+          image: ashishvaghelaa/aether-mock-provider:1.1.0
           imagePullPolicy: IfNotPresent
           env:
             - name: MOCK_PROVIDER_PORT

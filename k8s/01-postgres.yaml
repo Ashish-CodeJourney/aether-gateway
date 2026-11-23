@@ -1,7 +1,7 @@
 # Dev/proof-test dependency, not a production Postgres deployment (no
 # persistence, no HA, no backups) - the same scope docker-compose.yml's
 # postgres service has, just running in-cluster so the gateway's own
-# manifests can be proven under real orchestration (PRD section 17.2).
+# manifests can be proven under real orchestration.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

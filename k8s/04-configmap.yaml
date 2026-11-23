@@ -5,13 +5,31 @@ metadata:
   namespace: aether-gateway
 data:
   routing.yaml: |
-    # Same shape as routing.yaml/routing.docker.yaml, using this
-    # cluster's Service DNS names.
+    # Same shape as aether-gateway/routing.yaml and routing.docker.yaml
+    # (see docs/design/routing-policy.md), using this cluster's Service
+    # DNS names. Edit, `kubectl apply`, then POST /admin/routes/reload on
+    # each replica (or roll the Deployment) to pick up a change.
     providers:
       mock-primary:
         baseUrl: http://mock-primary:8081
       mock-fallback:
         baseUrl: http://mock-fallback:8081
+      # Real providers: uncomment, add the named key to the
+      # gateway-secrets Secret, and expose it to the gateway container as
+      # an env var of the same name (k8s/10-gateway-deployment.yaml).
+      # `apiKeyEnvVar` names the variable, never the credential itself,
+      # so this ConfigMap stays safe to commit. Base URLs that resolve to
+      # private or internal addresses are rejected (SSRF protection).
+      #
+      # gemini-main:
+      #   baseUrl: https://generativelanguage.googleapis.com
+      #   type: gemini
+      #   apiKeyEnvVar: GEMINI_API_KEY
+      #
+      # openai:
+      #   baseUrl: https://api.openai.com/v1
+      #   type: openai
+      #   apiKeyEnvVar: OPENAI_API_KEY
 
     routes:
       - alias: mock
@@ -23,9 +41,34 @@ data:
             model: mock
         cache:
           enabled: true
+          # Exact-match only. Semantic matching (similar-but-not-identical
+          # prompts served from cache) is opt-in: set semantic: true, and
+          # see docs/design/cache-correctness.md for its measured
+          # false-hit rate.
+          semantic: false
           threshold: 0.94
           ttl: 6h
+      # Two real, independent providers behind one alias, OpenAI first
+      # and Gemini as the fallback. Needs both providers above enabled.
+      #
+      # - alias: gpt
+      #   chain:
+      #     - provider: openai
+      #       model: gpt-4o-mini
+      #     - provider: gemini-main
+      #       model: gemini-flash-latest
+      #   cache:
+      #     enabled: true
+      #     semantic: false
+      #     threshold: 0.94
+      #     ttl: 6h
   cost-model.yaml: |
+    # Per-(provider, model) price per 1,000,000 tokens, kept in step with
+    # aether-gateway/cost-model.yaml (see docs/design/cost-model.md).
+    # Mock prices are illustrative; real prices are each vendor's
+    # published rates at the time of writing - check current pricing
+    # before relying on them. Read at startup: roll the Deployment after
+    # changing a price.
     models:
       - provider: mock-primary
         model: mock
@@ -35,3 +78,22 @@ data:
         model: mock
         inputPricePerMillion: 0.50
         outputPricePerMillion: 1.50
+      - provider: gemini-main
+        model: gemini-flash-latest
+        inputPricePerMillion: 0.075
+        outputPricePerMillion: 0.30
+      - provider: openai
+        model: gpt-4o-mini
+        inputPricePerMillion: 0.15
+        outputPricePerMillion: 0.60
+      # Embedding models: input price only, an embedding has no
+      # completion tokens. The provider name must match a provider in
+      # routing.yaml above.
+      - provider: openai
+        model: text-embedding-3-small
+        inputPricePerMillion: 0.02
+        outputPricePerMillion: 0.0
+      - provider: openai
+        model: text-embedding-3-large
+        inputPricePerMillion: 0.13
+        outputPricePerMillion: 0.0

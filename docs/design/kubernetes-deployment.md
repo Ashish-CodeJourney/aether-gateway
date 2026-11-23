@@ -10,6 +10,32 @@ a rolling deploy, and that the HPA scales on in-flight streams rather
 than CPU. Written alongside the rolling-update proof test; see `benchmark/results/ac7-rolling-update.json` and this
 document's "Proof test results" section for the actual numbers.
 
+## Applying the manifests
+
+```bash
+kubectl apply -f k8s/
+```
+
+The manifests pull pinned release images from Docker Hub:
+`ashishvaghelaa/aether-gateway-proxy:1.1.0` for the gateway and
+`ashishvaghelaa/aether-mock-provider:1.1.0` for both mock providers.
+Releases are also tagged `1.1` (latest patch), `latest` (latest release)
+and `edge` (latest `trunk` build); the manifests stay on an exact version
+so every replica, and every rollback, runs the same build. To run a
+local build instead, build the image, load it into the cluster (for kind,
+`kind load docker-image <tag>`), and change the `image:` lines.
+
+Routing and prices come from the `gateway-config` ConfigMap
+(`k8s/04-configmap.yaml`), which follows the same conventions as the
+shipped `routing.yaml`: the mock route caches exact matches only
+(`cache.semantic: false`), and real providers are commented-out examples
+whose API keys are read from environment variables, never from the
+ConfigMap itself. Admin and database credentials come from the
+`gateway-secrets` Secret (`k8s/05-secret.yaml`), which holds dev values
+only; replace it with one managed by your secrets tooling. Anonymous
+access stays off (`AETHER_SECURITY_ALLOW_ANONYMOUS` is not set), so
+requests need an API key created through the admin API.
+
 ## The graceful-drain chain
 
 Four pieces have to work together, in this order, for a rolling update
