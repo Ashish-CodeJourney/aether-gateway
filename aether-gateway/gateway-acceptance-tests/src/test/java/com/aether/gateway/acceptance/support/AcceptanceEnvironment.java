@@ -3,6 +3,8 @@ package com.aether.gateway.acceptance.support;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -10,22 +12,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Optional;
 
 /**
  * Per TESTING-STRATEGY.md and ADR-009: the system under test runs as
@@ -52,6 +46,8 @@ public final class AcceptanceEnvironment {
     private static int mockFallbackPort;
     private static int gatewayPort;
     private static boolean started = false;
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final GatewayClient ADMIN_CLIENT = new GatewayClient();
 
     private AcceptanceEnvironment() {
     }
@@ -204,103 +200,53 @@ public final class AcceptanceEnvironment {
     }
 
     /**
-     * Phase 06 (M3): inserts a test {@code api_key} row directly via JDBC
-     * against the same Postgres the gateway process reads from, so
-     * scenarios can exercise real quota enforcement end-to-end without
-     * the (out-of-scope-for-M3) admin key-creation API. Hashes the raw
-     * key with the same SHA-256 scheme as {@code ApiKeyHasher} in
-     * gateway-quota; duplicated here rather than depending on that
-     * module, per this module's black-box-only design.
+     * Creates an API key through the admin API, exactly as an operator
+     * would, and returns its raw key. Black-box on purpose: the suite
+     * never reaches into the gateway's own store, so it runs unchanged
+     * against whichever store the gateway is configured with.
      */
-    public static void seedApiKey(String rawKey, Integer rpsLimit, Integer concurrencyLimit, Long monthlyTokenBudget) {
-        String hash = sha256Hex(rawKey);
-        String jdbcUrl = "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether";
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, "postgres", "postgres");
-             PreparedStatement statement = connection.prepareStatement("""
-                     INSERT INTO api_key (id, name, key_hash, key_prefix, rps_limit, concurrency_limit, monthly_token_budget, enabled)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
-                     ON CONFLICT (key_hash) DO UPDATE SET
-                         rps_limit = EXCLUDED.rps_limit,
-                         concurrency_limit = EXCLUDED.concurrency_limit,
-                         monthly_token_budget = EXCLUDED.monthly_token_budget
-                     """)) {
-            statement.setObject(1, UUID.randomUUID());
-            statement.setString(2, "acceptance-test key");
-            statement.setString(3, hash);
-            statement.setString(4, rawKey.length() > 8 ? rawKey.substring(0, 8) : rawKey);
-            setNullableInt(statement, 5, rpsLimit);
-            setNullableInt(statement, 6, concurrencyLimit);
-            setNullableLong(statement, 7, monthlyTokenBudget);
-            statement.executeUpdate();
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to seed api_key row", e);
+    public static String createApiKey(Integer rpsLimit, Integer concurrencyLimit, Long monthlyTokenBudget) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", "acceptance-test key");
+        body.put("rps_limit", rpsLimit);
+        body.put("concurrency_limit", concurrencyLimit);
+        body.put("monthly_token_budget", monthlyTokenBudget);
+        HttpResponse<String> response = adminCall(() -> ADMIN_CLIENT.postJson(
+                gatewayBaseUrl() + "/admin/api-keys", JSON.writeValueAsString(body), null, adminHeaders()));
+        if (response.statusCode() != 201) {
+            throw new IllegalStateException("Creating an API key failed: " + response.statusCode() + " " + response.body());
         }
-    }
-
-    private static void setNullableInt(PreparedStatement statement, int index, Integer value) throws SQLException {
-        if (value == null) {
-            statement.setNull(index, java.sql.Types.INTEGER);
-        } else {
-            statement.setInt(index, value);
-        }
-    }
-
-    private static void setNullableLong(PreparedStatement statement, int index, Long value) throws SQLException {
-        if (value == null) {
-            statement.setNull(index, java.sql.Types.BIGINT);
-        } else {
-            statement.setLong(index, value);
-        }
-    }
-
-    private static String sha256Hex(String rawKey) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(rawKey.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
-        }
+        return JSON.readTree(response.body()).get("raw_key").asText();
     }
 
     /**
-     * Phase 08 (M5) / F6.2: request_log is written asynchronously by
+     * Phase 08 (M5) / F6.2: the request log is written asynchronously by
      * design (never blocking the response path), so scenarios must poll
-     * rather than assume the row is already there the instant the HTTP
-     * response comes back. Returns the single most recently created row
-     * - correct as long as a scenario sends requests one at a time and
-     * checks the log immediately after each, which is how every M5
-     * scenario here is written.
+     * rather than assume the entry is already there the instant the HTTP
+     * response comes back. Returns the most recent entry, read through
+     * {@code GET /admin/requests} - correct as long as a scenario sends
+     * requests one at a time and checks the log immediately after each,
+     * which is how every M5 scenario here is written. Keys are the API's
+     * snake_case field names, which match the request_log columns.
      */
     public static Map<String, Object> mostRecentRequestLogEntry() {
         return mostRecentRequestLogEntryCreatedAfter(Instant.EPOCH);
     }
 
     /**
-     * As {@link #mostRecentRequestLogEntry()}, but waits for a row
-     * written after {@code since}: a streamed request's row is written
+     * As {@link #mostRecentRequestLogEntry()}, but waits for an entry
+     * written after {@code since}: a streamed request's entry is written
      * when the stream ends, which can be just after the client has read
-     * it, so the newest row at that moment may still be the previous
+     * it, so the newest entry at that moment may still be the previous
      * scenario's.
      */
     public static Map<String, Object> mostRecentRequestLogEntryCreatedAfter(Instant since) {
-        String jdbcUrl = "jdbc:postgresql://localhost:" + postgres.getMappedPort(5432) + "/aether";
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline) {
-            try (Connection connection = DriverManager.getConnection(jdbcUrl, "postgres", "postgres");
-                 PreparedStatement statement = connection.prepareStatement(
-                         "SELECT * FROM request_log WHERE created_at > ? ORDER BY created_at DESC LIMIT 1")) {
-                statement.setTimestamp(1, Timestamp.from(since));
-                var resultSet = statement.executeQuery();
-                if (resultSet.next()) {
-                    Map<String, Object> row = new HashMap<>();
-                    var metaData = resultSet.getMetaData();
-                    for (int i = 1; i <= metaData.getColumnCount(); i++) {
-                        row.put(metaData.getColumnLabel(i), resultSet.getObject(i));
-                    }
-                    return row;
-                }
-            } catch (SQLException e) {
-                throw new IllegalStateException("Failed to query request_log", e);
+            Optional<Map<String, Object>> newest = newestRequestLogEntry()
+                    .filter(entry -> Instant.parse((String) entry.get("created_at")).isAfter(since));
+            if (newest.isPresent()) {
+                return newest.get();
             }
             try {
                 Thread.sleep(200);
@@ -309,7 +255,36 @@ public final class AcceptanceEnvironment {
                 break;
             }
         }
-        throw new IllegalStateException("No request_log row appeared within 5 seconds");
+        throw new IllegalStateException("No request log entry appeared within 5 seconds");
+    }
+
+    private static Optional<Map<String, Object>> newestRequestLogEntry() {
+        HttpResponse<String> response = adminCall(() -> ADMIN_CLIENT.get(gatewayBaseUrl() + "/admin/requests?limit=1", adminHeaders()));
+        if (response.statusCode() != 200) {
+            throw new IllegalStateException("Reading the request log failed: " + response.statusCode() + " " + response.body());
+        }
+        List<Map<String, Object>> entries = JSON.readValue(response.body(), new TypeReference<>() {
+        });
+        return entries.stream().findFirst();
+    }
+
+    private interface AdminCall {
+        HttpResponse<String> send() throws Exception;
+    }
+
+    private static HttpResponse<String> adminCall(AdminCall call) {
+        try {
+            return call.send();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted calling the admin API", e);
+        } catch (Exception e) {
+            throw new IllegalStateException("Calling the admin API failed", e);
+        }
+    }
+
+    private static Map<String, String> adminHeaders() {
+        return Map.of("X-Aether-Admin-Key", ADMIN_API_KEY);
     }
 
     private static Path writeRoutingConfig() throws IOException {

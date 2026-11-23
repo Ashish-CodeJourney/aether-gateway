@@ -62,10 +62,15 @@ public class GatewayClient {
     }
 
     public HttpResponse<String> get(String url) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(10))
-                .GET()
-                .build();
-        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        return get(url, null);
+    }
+
+    public HttpResponse<String> get(String url, Map<String, String> extraHeaders) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(10));
+        if (extraHeaders != null) {
+            extraHeaders.forEach(builder::header);
+        }
+        return httpClient.send(builder.GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 }

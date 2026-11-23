@@ -8,7 +8,6 @@ import io.cucumber.java.en.When;
 
 import java.net.http.HttpResponse;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,8 +20,7 @@ public class AdminAuthSteps {
 
     @Given("a valid gateway API key with no admin privileges")
     public void aValidGatewayApiKeyWithNoAdminPrivileges() {
-        gatewayApiKey = "gw-key-" + UUID.randomUUID();
-        AcceptanceEnvironment.seedApiKey(gatewayApiKey, 100, 100, 1_000_000L);
+        gatewayApiKey = AcceptanceEnvironment.createApiKey(100, 100, 1_000_000L);
     }
 
     @When("that key is used to call an admin endpoint")
