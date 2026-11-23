@@ -83,7 +83,7 @@ Every response carries headers describing exactly what happened, useful for debu
 
 ## Controlling the cache per request
 
-- `X-Aether-No-Cache: true` - bypass the cache entirely for this one request (still writes the result back for future requests).
+- `X-Aether-No-Cache: true` - bypass the cache entirely for this one request: it is never answered from the cache, and its response is not written back either. The header's presence is what counts, whatever its value.
 - `X-Aether-Cache-Threshold: 0.97` - require a *stricter* similarity for a semantic hit on this one request, without touching `routing.yaml`. The value must be between the route's configured threshold (its `cache.threshold`, else the global `AETHER_CACHE_DEFAULT_THRESHOLD`, default `0.94`) and `1.0`; anything looser, or not a number, is rejected with `400 invalid_request`. Clients can never loosen matching, because anonymous callers share one cache namespace.
 
 Whether a route caches at all, and whether it matches semantically or only exactly, is per-route configuration: `cache.semantic: false` in `routing.yaml` makes a route exact-only (identical requests only, no embeddings). See [Routing policy](./design/routing-policy.md).
