@@ -2,8 +2,8 @@
 title: "Routing policy (routing.yaml)"
 ---
 
-Reference for the YAML schema `RoutingYamlParser` (gateway-router) reads,
-per PRD section 7 (F2). Loaded once at startup and on every
+Reference for the YAML schema `RoutingYamlParser` (gateway-router) reads
+(requirements F2). Loaded once at startup and on every
 `POST /admin/routes/reload` (F2.7), from the filesystem path configured
 via `aether.routing.config-path` (env var `ROUTING_CONFIG_PATH`, default
 `routing.yaml` relative to the working directory) — a real file on disk,
@@ -96,7 +96,7 @@ routes:
     unused.
   - **`ttl`** bounds how long an entry is served.
 
-## Example: the local dev / M2 default (`routing.yaml` at repo root)
+## Example: the local dev default (`routing.yaml` at repo root)
 
 ```yaml
 providers:

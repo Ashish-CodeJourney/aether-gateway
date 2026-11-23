@@ -3,7 +3,7 @@ title: "Module boundaries"
 ---
 
 Gradle multi-module layout and dependency direction, per ADR-001. This is
-what Phase 03's ArchUnit rules encode mechanically.
+what the ArchUnit rules in the build encode mechanically.
 
 ```
 aether-gateway/
@@ -16,7 +16,7 @@ aether-gateway/
 ├── gateway-registry/       driven adapter: PromptRegistryPort against Postgres. Depends on: gateway-core.
 ├── gateway-observability/  driven adapter: RequestLogPort, metrics port. Depends on: gateway-core.
 ├── gateway-admin/          HTTP driving adapter, control plane. Depends on: gateway-core, gateway-router.
-├── gateway-bench/          driving adapter: load generator, eval harness (Phase 09). Depends on: gateway-core (request/response shapes only, for building realistic load).
+├── gateway-bench/          driving adapter: load generator, eval harness (see BENCHMARKS.md). Depends on: gateway-core (request/response shapes only, for building realistic load).
 ├── mock-provider/          standalone Spring Boot app, NOT part of the hexagon. Depends on: nothing internal.
 └── gateway-acceptance-tests/  Cucumber-JVM suite, driving adapter. Depends on: an HTTP test client only. MUST NOT depend on gateway-core or any other internal module.
 ```
@@ -58,12 +58,12 @@ behavior, defeating its purpose as a driving adapter.
 
 ## Verification
 
-Every item in this list is checked against PRD section 6's module list
-line by line before Phase 02 is marked done: `gateway-core`,
+Every item in this list was checked line by line against the original
+design's module list when the layout was first set up: `gateway-core`,
 `gateway-proxy`, `gateway-router`, `gateway-providers`, `gateway-cache`,
 `gateway-quota`, `gateway-registry`, `gateway-observability`,
-`gateway-admin`, `gateway-bench`, `mock-provider` all present, matching
-PRD section 6 exactly. `gateway-acceptance-tests` is an addition beyond
-the PRD's module list, justified by ADR-009 as the home for the
+`gateway-admin`, `gateway-bench`, `mock-provider` all present.
+`gateway-acceptance-tests` is an addition beyond that original list,
+justified by ADR-009 as the home for the
 Cucumber-JVM behavioral test suite; it introduces no production
 dependency and does not change the hexagon itself.

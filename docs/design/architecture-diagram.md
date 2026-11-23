@@ -2,8 +2,9 @@
 title: "Architecture diagram"
 ---
 
-Rendered form of PRD section 6's ASCII diagram, for use in the README
-(PRD section 20, item 3).
+Rendered architecture diagrams for the README and the docs: how a
+request flows through the gateway, and how the modules depend on each
+other.
 
 ```mermaid
 flowchart TB
@@ -77,4 +78,4 @@ flowchart LR
     Acceptance["gateway-acceptance-tests<br/>Cucumber-JVM"] -. HTTP only .-> Proxy
 ```
 
-Both diagrams source from PRD section 6 and `docs/design/module-boundaries.md`; if either changes, update both this file and the source document in the same change.
+Both diagrams follow `docs/design/module-boundaries.md`; if the module layout changes, update both this file and that document in the same change.
