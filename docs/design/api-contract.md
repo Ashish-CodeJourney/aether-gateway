@@ -2,117 +2,118 @@
 title: "API contract"
 ---
 
-Covers every endpoint, header, and error envelope shape from PRD section
-13. This is the contract Phase 03 (M0) through Phase 10 (M7) implement
-against, and the contract Phase 03's mock provider must speak on its own
-side (mock provider speaks the same OpenAI wire format the gateway's
-`/v1/chat/completions` speaks, one layer further out).
+Covers every endpoint, header, and error envelope shape the gateway
+exposes. The mock provider speaks the same OpenAI wire format on its own
+side, one layer further out, so the gateway can be exercised end to end
+without a real provider. For worked examples, see the
+[Usage guide](../usage.md).
 
 ## Authentication
 
-Every gateway (`/v1/*`) and admin (`/admin/*`) request carries
-`Authorization: Bearer <key>`. Gateway keys are `aeth_...`-prefixed
-tenant keys (F9.1: stored as salted hashes, `key_prefix` is the only
-plaintext fragment retained for display). Admin auth is a separate key
-space from gateway API keys (F8.5); admin endpoints reject a gateway key
-and vice versa.
+Gateway requests (`/v1/*`) carry `Authorization: Bearer <key>`. Gateway
+keys are `aeth_...`-prefixed tenant keys (F9.1: stored as salted hashes,
+`key_prefix` is the only plaintext fragment retained for display). A
+request without a valid key is rejected with `401` unless the operator
+sets `AETHER_SECURITY_ALLOW_ANONYMOUS=true`.
+
+Admin requests (`/admin/*`) carry `X-Aether-Admin-Key: <key>` instead, a
+separate key space from gateway API keys (F8.5). Admin auth is
+fail-closed: if no admin key is configured, every admin request is
+rejected.
 
 ## Gateway endpoints (OpenAI-compatible)
 
 ### `POST /v1/chat/completions`
 
 Request body: OpenAI chat completions shape (`model`, `messages`,
-standard sampling parameters) plus two gateway-specific optional fields:
-
-- `routing_policy`: `"cost_optimized"` | `"latency_optimized"` | a
-  specific provider name, to bypass automatic routing (introduced Phase
-  05).
-- `cache_bypass`: boolean, skips semantic cache lookup entirely
-  (introduced Phase 07; accepted and ignored before then).
+standard sampling parameters, `tools` / `tool_choice` for tool calling)
+plus one gateway-specific optional field, `variables`, used to fill in a
+prompt referenced through `X-Aether-Prompt`. `model` is a route alias
+from `routing.yaml`.
 
 `stream: true` returns `text/event-stream`, chunk-relayed with no
-intermediate buffering (F1.3, Phase 04). `stream: false` (or omitted)
-returns a single JSON response (Phase 03).
+intermediate buffering (F1.3); a client disconnect cancels the upstream
+call. `stream: false` (or omitted) returns a single JSON response.
+Tool calls come back in OpenAI's `tool_calls` shape, streamed or not.
 
 A stream fails over like a non-streaming request until its first chunk
 (see [Routing policy](./routing-policy.md)), so its response status and
-`X-Aether-Provider` / `X-Aether-Attempts` headers are only sent once a
-provider has produced a chunk or every attempt has failed. A failure
-before the first chunk is answered with the usual error envelope (`502
-no_healthy_provider` when every chain member failed); a failure after
-it ends the stream with a final `data: {"error": {...}}` event and no
-`[DONE]`.
-
-Introduced by phase: non-streaming happy path and basic error envelope,
-Phase 03 (M0). Streaming, cancellation, per-chunk relay, Phase 04 (M1).
-Routing headers and failover, Phase 05 (M2). Quota headers and 429s,
-Phase 06 (M3). Cache headers, Phase 07 (M4). Cost header backed by a real
-cost model, Phase 08 (M5).
+`X-Aether-Provider` / `X-Aether-Attempts` / `X-Aether-Failover-Chain`
+headers are only sent once a provider has produced a chunk or every
+attempt has failed. A failure before the first chunk is answered with the
+usual error envelope (`502 no_healthy_provider` when every chain member
+failed); a failure after it ends the stream with a final
+`data: {"error": {...}}` event and no `[DONE]`. Token usage for a stream
+is the usage the provider reports at the end of it.
 
 ### `GET /v1/models`
 
-Returns models aggregated across configured providers. Introduced Phase
-04 (M1), mock-provider only; real providers added Phase 12 (M9). Each
-entry includes a `status` field, `"healthy"` or `"degraded"`, reflecting
-current provider adapter/breaker health (degraded status meaningful from
-Phase 05 onward).
+Returns models aggregated across configured providers. Each entry
+includes a `status` field, `"healthy"` or `"degraded"`, reflecting
+current provider adapter/breaker health.
 
 ### `POST /v1/embeddings`
 
-Passthrough to the configured embedding-capable provider. P2 priority
-(F1.8); deferred, earliest Phase 07, only if time allows.
+OpenAI embeddings shape (`model`, `input`, `encoding_format`,
+`dimensions`), routed through the same authentication, quota and
+failover chain as chat. Embeddings are never cached. Responses carry
+`X-Aether-Provider`, `X-Aether-Attempts`, `X-Aether-Cost-USD` and
+`X-Aether-Quota-Remaining`. See the
+[Usage guide](../usage.md) for the supported providers.
 
 ## Custom request headers
 
-| Header | Effect | Introduced |
-|---|---|---|
-| `X-Aether-Route` | Force a specific route alias, bypassing automatic model-based resolution | Phase 05 |
-| `X-Aether-No-Cache` | Bypass cache for this request | Phase 07 |
-| `X-Aether-Cache-Threshold` | Per-request stricter similarity threshold (between the route's threshold and 1.0, else `400 invalid_request`) | Phase 07 |
-| `X-Aether-Prompt` | `name@alias` or `name@version` from the prompt registry | Phase 10 |
+| Header | Effect |
+|---|---|
+| `X-Aether-No-Cache` | Skip the cache for this request: no lookup and no write-back. Presence is what counts, whatever the value |
+| `X-Aether-Cache-Threshold` | Per-request stricter similarity threshold (between the route's threshold and 1.0, else `400 invalid_request`) |
+| `X-Aether-Prompt` | `name@alias` or `name@version` from the prompt registry |
 
 ## Response headers
 
-Present on every gateway response once the corresponding phase lands:
-
-| Header | Meaning | Introduced |
-|---|---|---|
-| `X-Aether-Cache` | `MISS` \| `EXACT_HIT` \| `SEMANTIC_HIT` \| `BYPASS` | Phase 07 |
-| `X-Aether-Similarity` | Cosine score when semantically hit | Phase 07 |
-| `X-Aether-Provider` | Provider that actually served the request | Phase 05 |
-| `X-Aether-Attempts` | Tries made on the provider that answered (retries included) | Phase 05 |
-| `X-Aether-Failover-Chain` | Every provider tried, in order, comma-separated (absent when there is nothing to report) | v1.2 |
-| `X-Aether-Cost-USD` | Estimated cost of this request | Phase 08 |
-| `X-Aether-Quota-Remaining` | Tokens remaining this budget period | Phase 06 |
+| Header | Meaning |
+|---|---|
+| `X-Aether-Cache` | `MISS` \| `EXACT_HIT` \| `SEMANTIC_HIT` \| `BYPASS` |
+| `X-Aether-Similarity` | Cosine score when semantically hit |
+| `X-Aether-Provider` | Provider that actually served the request |
+| `X-Aether-Attempts` | Tries made on the provider that answered (retries included) |
+| `X-Aether-Failover-Chain` | Every provider tried, in order, comma-separated (absent when there is nothing to report) |
+| `X-Aether-Cost-USD` | Cost of this request; `0` for a cache hit, absent on a streamed miss |
+| `X-Aether-Quota-Remaining` | Tokens remaining this budget period |
+| `X-Aether-Prompt-Version` | Prompt version that served the request, when one was referenced |
 
 ## Error envelope
 
-All error responses follow RFC 9457 problem-details shape:
+Error responses follow the RFC 9457 problem-details shape:
 
 ```json
 {
-  "type": "https://aether.dev/problems/quota-exceeded",
-  "title": "Monthly token budget exceeded",
+  "type": "https://aether.dev/problems/quota_exceeded",
+  "title": "budget_exceeded",
   "status": 429,
-  "detail": "Key aeth_7f3a has consumed 1,000,000 of 1,000,000 monthly tokens.",
+  "detail": "Quota exceeded: budget_exceeded",
   "instance": "/v1/chat/completions"
 }
 ```
 
-| Status | Condition | Introduced |
-|---|---|---|
-| 400 | Malformed request body (empty `messages`, unsupported `role`) | Phase 03 |
-| 401 | Missing or invalid API key | Phase 03 (basic), hardened Phase 06 |
-| 403 | Valid key not authorized for the requested model | Phase 10 |
-| 404 | Reference to a non-existent `model_id` / `entry_id` (admin endpoints) | Phase 10 |
-| 429 | Rate limit or budget exceeded; always includes `Retry-After` and `X-Aether-Quota-*` headers | Phase 06 |
-| 502 | Every provider in the requested model's chain is currently unavailable | Phase 05 |
-| 504 | Gateway's own timeout budget exceeded waiting on an upstream provider | Phase 05 |
+`/v1/embeddings` errors keep these fields and add OpenAI's `error` object
+(`message`, `type`, `param`, `code`), so SDKs surface a real message.
 
-429 responses distinguish `rate-limit-exceeded` (RPS token bucket, retry
-shortly) from `budget-exceeded` (monthly budget, will keep failing until
-next period) via the `type` field, since clients should treat these
-differently.
+| Status | Condition |
+|---|---|
+| 400 | Malformed request (empty `messages`, unsupported `role`, invalid `X-Aether-Cache-Threshold`, prompt variable validation failure) |
+| 401 | Missing or invalid API key (gateway) or admin key (admin endpoints) |
+| 404 | Reference to a prompt, version or alias that does not exist |
+| 429 | Rate limit or budget exceeded |
+| 502 | Every provider in the requested model's chain is currently unavailable |
+| 504 | Gateway's own timeout budget exceeded waiting on an upstream provider |
+
+A per-key 429 has `type` `.../quota_exceeded` and names the reason in
+`title`: `rps_exceeded` or `concurrency_exceeded` (retry shortly),
+`budget_exceeded` (monthly budget, will keep failing until the next
+period) or `quota_store_unavailable` (quota is fail-closed when Redis is
+unreachable). It also carries `X-Aether-Quota-Remaining`. An anonymous
+request over its per-IP limit gets `type` `.../ip_rate_limited`.
 
 ## Admin endpoints
 
@@ -132,14 +133,11 @@ GET    /admin/cache/stats
 DELETE /admin/cache?namespace=&prefix=
 
 GET    /admin/usage?from=&to=&groupBy=key|provider|model|route
+GET    /admin/requests
 
 POST   /admin/prompts
 POST   /admin/prompts/{name}/versions
 PUT    /admin/prompts/{name}/aliases/{alias}
 ```
 
-Full CRUD (`/admin/api-keys/*`, prompt registry, usage query) is Phase
-10. Two endpoints are pulled forward because earlier milestones need
-them to prove their own exit criteria: `POST /admin/routes/reload` (M2,
-hot-reload) and `GET /admin/providers/{name}/breaker` (M2, breaker state
-observability, F3.8).
+The operator console (`console/`) is a UI over these same endpoints.

@@ -6,10 +6,11 @@ sidebar:
 
 **Aether Gateway is a self-hosted control plane that sits between your applications and LLM providers.** Point an existing OpenAI-compatible SDK at it instead of at a provider directly, and it transparently handles:
 
-- **Routing and failover** across multiple providers (Ollama, Groq, Gemini, or any OpenAI-compatible endpoint), with circuit breakers, retries, and bulkheads so a failing provider doesn't take your application down with it.
-- **Semantic caching** - near-duplicate prompts are served from a vector cache (Postgres + pgvector) instead of hitting a provider again, cutting both latency and cost, with a guard against false hits (see [Semantic cache correctness](/docs/design/cache-correctness)).
+- **Routing and failover** across multiple providers (OpenAI, Anthropic, Gemini, Groq, Ollama, or any OpenAI-compatible endpoint), with circuit breakers, retries, and bulkheads so a failing provider doesn't take your application down with it. Streaming requests fail over too, up to their first chunk, and `X-Aether-Failover-Chain` shows every provider that was tried.
+- **Response caching** - identical requests are answered from Redis (with Postgres behind it) instead of hitting a provider again, cutting both latency and cost. Semantic matching of near-duplicate prompts (Postgres + pgvector, with a guard against false hits) is an opt-in per route; the shipped configs set `cache.semantic: false` for exact-only caching (see [Semantic cache correctness](/docs/design/cache-correctness)).
+- **Tool calling and embeddings** - OpenAI-format `tools` and `tool_calls` pass through, streaming included, and `POST /v1/embeddings` gets the same authentication, quotas, failover and cost headers as chat.
 - **Quota enforcement** - per-API-key rate limits, concurrency caps, and monthly token budgets, enforced atomically before a request is ever dispatched.
-- **Cost accounting** - every request's real (or avoided, on a cache hit) cost is computed from a configurable per-model price sheet and exposed in response headers, logs, and a Grafana dashboard.
+- **Cost accounting** - every request's real (or avoided, on a cache hit) cost is computed from the token usage the provider reports (streams included) and a configurable per-model price sheet, and exposed in response headers, logs, and a Grafana dashboard.
 - **A versioned prompt registry** - name a prompt, version it, and roll a production alias back to a previous version instantly, with no gateway restart.
 - **An operator console** - a small internal UI for API keys, the prompt registry, cache stats, and a request log explorer.
 

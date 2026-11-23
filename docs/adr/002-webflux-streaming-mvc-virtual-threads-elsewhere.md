@@ -33,8 +33,7 @@ Virtual threads solve *scalability*, not *cancellation semantics*.
 Detecting client disconnect on a blocking servlet stream means writing
 and checking for `IOException` on write, which is workable but coarse
 compared to a first-class cancellation signal. This is the answer to
-"why not just virtual threads everywhere," and it is worth being able to
-say plainly (PRD section 21, item 8).
+"why not just virtual threads everywhere."
 
 ## Consequences
 

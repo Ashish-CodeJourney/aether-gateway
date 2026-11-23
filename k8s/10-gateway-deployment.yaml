@@ -1,5 +1,7 @@
-# Phase 11 (M8): the graceful-SSE-drain wiring is the phase's single
-# highest-value piece (AC7). Sequence on a rolling update / scale-down:
+# Graceful SSE drain: in-flight streams must survive a rolling update
+# (proven with 500 concurrent streams, zero broken - see
+# docs/design/kubernetes-deployment.md). Sequence on a rolling update /
+# scale-down:
 #   1. Pod marked Terminating; readiness immediately reports DOWN
 #      (server.shutdown=graceful + management.health.readiness-state,
 #      gateway-proxy/application.yml) so the Service's endpoint
@@ -9,11 +11,11 @@
 #      connection pool before SIGTERM is sent. Without this, SIGTERM can
 #      arrive before in-flight requests believe the pod is still
 #      routable, which is a classic source of the "rolling update breaks
-#      streams" bug this whole phase exists to prevent.
+#      streams" bug this wiring exists to prevent.
 #   3. SIGTERM triggers Spring's graceful shutdown: stop accepting new
 #      connections, let in-flight streams finish naturally (F1.4's real
-#      cancellation guarantee, from Phase 04, is what makes "finish
-#      naturally" safe at all), up to timeout-per-shutdown-phase (30s,
+#      cancellation guarantee is what makes "finish naturally" safe
+#      at all), up to timeout-per-shutdown-phase (30s,
 #      application.yml).
 #   4. terminationGracePeriodSeconds (50s) is preStop-sleep +
 #      timeout-per-shutdown-phase + a 10s buffer - if a stream is still
@@ -29,12 +31,9 @@ spec:
   replicas: 3
   # F3.9/ADR-004: multiple replicas means multiple independent local
   # circuit breakers, each learning about a failing provider from its
-  # own traffic only - the Redis advisory hint (already built in Phase
-  # 05) is what keeps them from being wildly inconsistent with each
-  # other, not a shared/synchronized breaker state. No new design here;
-  # replicas: 3 is what actually exercises that existing design under
-  # real multi-replica conditions instead of just Phase 05's
-  # single-process proof.
+  # own traffic only - the Redis advisory hint is what keeps them
+  # from being wildly inconsistent with each other, not a
+  # shared/synchronized breaker state.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -51,7 +50,11 @@ spec:
       terminationGracePeriodSeconds: 50
       containers:
         - name: gateway
-          image: aether-gateway-gateway:local
+          # Pinned release from Docker Hub, so every replica (and every
+          # rollback) runs the same build. To test a local build instead,
+          # `docker build` it, `kind load docker-image` it, and point this
+          # at that tag.
+          image: ashishvaghelaa/aether-gateway-proxy:1.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -103,15 +106,15 @@ spec:
               mountPath: /config
             - name: onnx-cache
               mountPath: /onnx-cache
-          # Found live, during this phase's own proof-test setup: a 2Gi
+          # Found live, while setting up the rolling-update proof test: a 2Gi
           # limit OOMKilled the container (exit code 137) reliably.
           # docker-compose.yml never set an explicit memory limit, so
           # this never surfaced there - the JVM's -XX:MaxRAMPercentage=75
           # (baked into the image) sizes its heap off the *container's*
           # memory limit, and the ONNX/PyTorch native memory the
-          # embedding model (Phase 07/M4) needs on top of that heap
+          # embedding model needs on top of that heap
           # pushed the total past 2Gi during model load. Same class of
-          # bug as Phase 08 (M5)'s Dockerfile/Alpine findings: only
+          # bug as the earlier Dockerfile/Alpine findings: only
           # caught by actually running under the real target
           # orchestration, never by `java -jar` or docker-compose
           # (which has no equivalent cgroup memory ceiling here).
@@ -126,7 +129,7 @@ spec:
               exec:
                 command: ["sh", "-c", "sleep 10"]
           # First boot needs to download the ~90MB ONNX embedding model
-          # (Phase 07/M4) into the emptyDir onnx-cache volume, which can
+          # into the onnx-cache volume, which can
           # comfortably exceed a normal liveness window - without a
           # startupProbe, the liveness probe below would kill the
           # container mid-download on every cold start, restart it, and
@@ -155,13 +158,13 @@ spec:
           configMap:
             name: gateway-config
         - name: onnx-cache
-          # hostPath, not emptyDir: this is a single-node kind cluster
-          # (PRD section 9.5), so every replica lands on the same node
+          # hostPath, not emptyDir: these manifests target a single-node
+          # kind cluster, so every replica lands on the same node
           # and can share one cached ~90MB ONNX model download instead
           # of each independently re-downloading it from GitHub on
-          # every cold start - found live, during this phase's own
-          # proof-test setup, when 3-4 replicas downloading
-          # simultaneously against this sandbox's occasionally flaky
+          # every cold start - found live, while setting up the
+          # proof test, when 3-4 replicas downloading
+          # simultaneously over an occasionally flaky
           # network turned a normally-quick cold start into repeated
           # startupProbe timeouts and restarts. A real multi-node
           # cluster would need a ReadWriteMany-capable shared volume

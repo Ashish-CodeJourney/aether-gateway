@@ -57,14 +57,14 @@ providers:
     apiKeyEnvVar: GROQ_API_KEY    # the *name* of an env var, never the key itself
 ```
 
-Then reference it from a route's `chain:`, same as the mock providers already are. `apiKeyEnvVar` is resolved from the real environment only where the adapter is actually constructed (F9.2) - `routing.yaml` itself never contains a real credential, so it's safe to commit even with real providers configured. Set the named environment variable (`GROQ_API_KEY` in this example) on the gateway process and reload the policy with no restart:
+Then reference it from a route's `chain:`, same as the mock providers already are. `apiKeyEnvVar` is resolved from the real environment only where the adapter is actually constructed - `routing.yaml` itself never contains a real credential, so it's safe to commit even with real providers configured. Set the named environment variable (`GROQ_API_KEY` in this example) on the gateway process and reload the policy with no restart:
 
 ```bash
 curl -X POST http://localhost:8080/admin/routes/reload \
   -H "X-Aether-Admin-Key: dev-admin-key-do-not-use-in-production"
 ```
 
-A base URL that resolves to a private/internal address is rejected outright (SSRF protection, F9.3) - the reload call above returns `400` and the previous, already-validated routing policy keeps serving.
+A base URL that resolves to a private/internal address is rejected outright (SSRF protection) - the reload call above returns `400` and the previous, already-validated routing policy keeps serving.
 
 ## The admin console
 

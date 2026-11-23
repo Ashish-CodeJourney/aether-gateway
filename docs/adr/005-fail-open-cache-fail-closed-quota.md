@@ -35,5 +35,5 @@ for the two subsystems, chosen deliberately, not by oversight.
 - `CachePort` implementations must catch backend unavailability and
   return a miss/bypass outcome rather than propagating an error that
   would fail the whole request, once cache logic exists in Phase 07.
-- This asymmetry is a named interview talking point (PRD section 21, item
-  7) and must not be "simplified" away later for uniformity.
+- This asymmetry is deliberate and must not be "simplified" away later
+  for uniformity.
