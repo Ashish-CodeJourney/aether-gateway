@@ -6,19 +6,15 @@ import com.aether.gateway.core.port.ApiKeyAdminPort;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.math.BigDecimal;
-import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 /** F8.1: full API key CRUD (create/list/update/delete), separate from {@link JdbcApiKeyRepository}'s read-only quota-lookup slice. */
 public class JdbcApiKeyAdminRepository implements ApiKeyAdminPort {
-
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final JdbcClient jdbcClient;
 
@@ -28,9 +24,9 @@ public class JdbcApiKeyAdminRepository implements ApiKeyAdminPort {
 
     @Override
     public CreatedApiKey create(String name, List<String> tags, Integer rpsLimit, Integer concurrencyLimit, Long monthlyTokenBudget) {
-        String rawKey = generateRawKey();
+        String rawKey = ApiKeyGenerator.generateRawKey();
         String hash = ApiKeyHasher.hash(rawKey);
-        String keyPrefix = rawKey.substring(0, Math.min(12, rawKey.length()));
+        String keyPrefix = ApiKeyGenerator.prefixOf(rawKey);
         UUID id = UUID.randomUUID();
 
         jdbcClient.sql("""
@@ -117,11 +113,5 @@ public class JdbcApiKeyAdminRepository implements ApiKeyAdminPort {
                 rs.getBigDecimal("monthly_usd_budget"),
                 rs.getBoolean("enabled"),
                 createdAt);
-    }
-
-    private static String generateRawKey() {
-        byte[] bytes = new byte[24];
-        RANDOM.nextBytes(bytes);
-        return "aeth_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

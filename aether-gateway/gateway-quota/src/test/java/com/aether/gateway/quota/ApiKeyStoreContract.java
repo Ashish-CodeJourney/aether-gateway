@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class ApiKeyStoreContract {
 
-    protected record ApiKeyStore(ApiKeyLookupPort lookup, ApiKeyAdminPort admin) {
+    public record ApiKeyStore(ApiKeyLookupPort lookup, ApiKeyAdminPort admin) {
     }
 
     protected abstract ApiKeyStore store();

@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class RequestLogContract {
 
-    protected record RequestLogStore(RequestLogPort writer, RequestLogQueryPort query, UsageQueryPort usage) {
+    public record RequestLogStore(RequestLogPort writer, RequestLogQueryPort query, UsageQueryPort usage) {
     }
 
     /** A store with no entries in it. */
