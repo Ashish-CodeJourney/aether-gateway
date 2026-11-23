@@ -150,4 +150,18 @@ public abstract class ExactMatchCacheContract {
         assertThat(removed).isEqualTo(2);
         assertThat(cache().countEntries(namespace)).isEqualTo(1);
     }
+
+    @Test
+    void anInvalidatedEntryIsNoLongerServed() {
+        String namespace = freshNamespace();
+        var invalidated = requestFor("gpt-4o-mini", "one");
+        var kept = requestFor("gemini-flash", "three");
+        cache().store(namespace, invalidated, "{}", TTL, EXACT_ONLY);
+        cache().store(namespace, kept, "{}", TTL, EXACT_ONLY);
+
+        cache().invalidateByPrefix(namespace, "gpt-");
+
+        assertThat(cache().lookup(namespace, invalidated, EXACT_ONLY, false)).isInstanceOf(CacheDecision.Miss.class);
+        assertThat(cache().lookup(namespace, kept, EXACT_ONLY, false)).isInstanceOf(CacheDecision.ExactHit.class);
+    }
 }

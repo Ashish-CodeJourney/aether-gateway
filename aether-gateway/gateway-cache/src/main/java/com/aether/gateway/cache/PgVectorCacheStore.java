@@ -116,14 +116,17 @@ public class PgVectorCacheStore {
     }
 
     /** F4.7: manual invalidation. {@code modelPrefix} matches the start of the stored {@code model} column. */
-    public long deleteByNamespaceAndModelPrefix(String namespace, String modelPrefix) {
+    /** Deletes the matching entries and returns their exact hashes, so the Redis copies can be evicted too. */
+    public List<String> deleteByNamespaceAndModelPrefix(String namespace, String modelPrefix) {
         return jdbcClient.sql("""
                         DELETE FROM cache_entry
                         WHERE namespace = :namespace AND model LIKE :modelPrefix
+                        RETURNING exact_hash
                         """)
                 .param("namespace", namespace)
                 .param("modelPrefix", modelPrefix + "%")
-                .update();
+                .query(String.class)
+                .list();
     }
 
     private static String toVectorLiteral(float[] embedding) {

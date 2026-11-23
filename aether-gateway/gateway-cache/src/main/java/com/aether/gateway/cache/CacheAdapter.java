@@ -131,7 +131,11 @@ public class CacheAdapter implements CachePort {
     @Override
     public long invalidateByPrefix(String namespace, String keyPrefix) {
         try {
-            return pgStore.deleteByNamespaceAndModelPrefix(namespace, keyPrefix);
+            // Exact-match lookups read Redis first, so a deleted row's Redis
+            // copy must go too - otherwise it keeps being served until its TTL.
+            List<String> deletedHashes = pgStore.deleteByNamespaceAndModelPrefix(namespace, keyPrefix);
+            deletedHashes.forEach(exactHash -> redisStore.evict(namespace, exactHash));
+            return deletedHashes.size();
         } catch (RuntimeException e) {
             return 0;
         }
