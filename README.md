@@ -33,6 +33,26 @@ Free and open source (MIT). Java 25 / Spring Boot 4.1.
 
 ## Quickstart
 
+### Try it in one container
+
+Lite mode runs the whole gateway in a single container: no Postgres, no Redis, no model download.
+
+```bash
+docker run -p 8080:8080 -e AETHER_LITE_BOOTSTRAP_API_KEY=aeth_try_me ashishvaghelaa/aether-gateway-proxy:lite
+# or, from a checkout: docker compose -f docker-compose.lite.yml up --build   (key: aeth_lite_local_dev_key)
+
+curl -sS -D - http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer aeth_try_me" -H "Content-Type: application/json" \
+  -d '{"model":"echo","messages":[{"role":"user","content":"hello"}]}'
+# "Echo: hello" with X-Aether-Cache: MISS. Send it again: X-Aether-Cache: EXACT_HIT
+```
+
+The `echo` model answers in-process, so you need no provider key. Add `-e OPENAI_API_KEY=...` (or `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) and use the `gpt`, `gemini` or `claude` model aliases for real providers.
+
+Lite mode is single-replica and **not durable**: API keys, prompts, the request log and budgets reset on restart, and caching is exact-match only. See [lite mode](https://ashish-codejourney.github.io/aether-gateway/docs/design/lite-mode) for the full support matrix. `:lite` is published with each release; `:edge-lite` tracks trunk.
+
+### The full stack
+
 ```bash
 docker compose up -d
 # First run builds the images and downloads the embedding model; give it a minute, then:
@@ -217,7 +237,6 @@ All ADRs are on the [docs site](https://ashish-codejourney.github.io/aether-gate
 Planned:
 
 - **Tool calling on Gemini and Ollama** (it already works on OpenAI-compatible providers and Anthropic).
-- **Lightweight single-container mode** for trying the gateway without the full Compose stack.
 - **Spring Boot starter** for embedding the gateway in an existing Spring application.
 - **Entity guard improvements** for negation and spelled-out numbers.
 
@@ -236,6 +255,7 @@ Planned:
 cd aether-gateway
 ./gradlew test integrationTest            # unit + Testcontainers integration tests
 ./gradlew :gateway-acceptance-tests:test  # Cucumber acceptance suite
+./gradlew :gateway-acceptance-tests:acceptanceTestLite  # same suite against a lite-mode gateway
 ```
 
 To find where a new provider adapter or route type belongs, see [module boundaries](https://ashish-codejourney.github.io/aether-gateway/docs/design/module-boundaries).

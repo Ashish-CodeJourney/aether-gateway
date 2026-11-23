@@ -70,7 +70,13 @@ Run the full suite before opening a PR:
 cd aether-gateway
 ./gradlew test integrationTest
 ./gradlew :gateway-acceptance-tests:test
+./gradlew :gateway-acceptance-tests:acceptanceTestLite   # the same suite against lite mode (ADR-010)
 ```
+
+A change to a port that has an in-memory lite-mode adapter (see
+[lite mode](https://ashish-codejourney.github.io/aether-gateway/docs/design/lite-mode))
+goes into that port's contract test suite, so the Postgres/Redis adapter
+and the in-memory one keep the same behaviour.
 
 ## Code style
 
