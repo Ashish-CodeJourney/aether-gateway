@@ -31,9 +31,13 @@ produced them is `gateway-bench` (Java) plus `benchmark/scripts/`
 (k6/Python for the load-generation experiments).
 
 **Headline**: at a 0.94 cosine threshold with the entity guard active,
-semantic caching measured a 13.16% hit rate and 8.0% false-hit rate
-against the 502-prompt hand-labelled corpus (below the PRD's 35%/5%
-targets - see the AC scorecard and experiment 2 below for why),
+semantic caching measured a 14.47% hit rate and a 0.0% false-hit rate
+(0 of 50 adversarial pairs) against the 502-prompt hand-labelled corpus.
+The hit rate is below the PRD's 35% target, and the false-hit figure is
+in-sample: the guard's heuristics were written against these same
+pairs, and it caught only 6 of 20 fresh adversarial pairs written
+afterwards (see experiment 2, the AC scorecard and
+docs/design/cache-correctness.md),
 cutting simulated spend 0.1% across that same corpus (dwarfed by the
 long-context bucket's token volume - see experiment 8) and reducing
 cache-hit end-to-end latency to a measured 8.9ms p95 (AC2, well under
