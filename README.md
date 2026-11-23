@@ -20,7 +20,7 @@ Free and open source (MIT). Java 25 / Spring Boot 4.1.
     <img src="docs-site/public/demo/aether-demo.gif" alt="Aether Gateway demo: a real Claude request with cost headers, the same request served from cache for $0, and automatic failover" width="820">
   </a>
   <br>
-  <a href="https://ashish-codejourney.github.io/aether-gateway/#watch"><b>▶ Watch the 90-second demo</b></a>
+  <a href="https://ashish-codejourney.github.io/aether-gateway/#watch"><b>▶ Watch the 70-second demo</b></a>
 </p>
 
 **[Documentation](https://ashish-codejourney.github.io/aether-gateway/)**: setup guide, usage guide, architecture decision records and design docs.
