@@ -105,8 +105,8 @@ public class ObservabilitySteps {
                 .add(MOCK_OUTPUT_PRICE_PER_MILLION.multiply(BigDecimal.valueOf(outputTokens)))
                 .divide(BigDecimal.valueOf(1_000_000));
 
-        BigDecimal actual = (BigDecimal) lastLogEntry.get(columnName);
-        assertThat(actual.doubleValue())
+        double actual = ((Number) lastLogEntry.get(columnName)).doubleValue();
+        assertThat(actual)
                 .as("cost_usd for %d input / %d output tokens", inputTokens, outputTokens)
                 .isCloseTo(expected.doubleValue(), org.assertj.core.data.Offset.offset(0.0000001));
     }

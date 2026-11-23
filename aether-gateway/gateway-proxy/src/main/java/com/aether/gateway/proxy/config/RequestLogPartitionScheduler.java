@@ -4,7 +4,6 @@ import com.aether.gateway.observability.RequestLogPartitionMaintainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 
 /**
  * Runs {@link RequestLogPartitionMaintainer} at startup and daily
@@ -21,8 +20,10 @@ import org.springframework.stereotype.Component;
  * scheduler thread - the gateway can still serve traffic, and the next
  * pass gets another attempt. The condition surfaces as a rising
  * request-log write-failure rate rather than as an outage.
+ *
+ * <p>Full mode only (see {@link FullModeInfrastructureConfig}); lite
+ * mode's request log is an in-memory ring buffer with no partitions.
  */
-@Component
 public class RequestLogPartitionScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(RequestLogPartitionScheduler.class);

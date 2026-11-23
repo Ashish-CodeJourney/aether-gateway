@@ -12,7 +12,7 @@ TOOLS_DIR := .tools
 K6_VERSION := v2.1.0
 K6_BIN := $(TOOLS_DIR)/k6-$(K6_VERSION)-linux-amd64/k6
 
-.PHONY: bench verify-behavior experiments-corpus experiments-load ac-scorecard benchmarks-md k6-install docker-up docker-down
+.PHONY: bench verify-behavior experiments-corpus experiments-load ac-scorecard benchmarks-md k6-install docker-up docker-down lite lite-down
 
 # ---- Regression gate (task 10a) ----
 # Every prior build phase (03-08) contributed tagged Cucumber scenarios
@@ -61,6 +61,26 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+# ---- Lite mode (ADR-010) ----
+# The whole gateway as one container: no Postgres, no Redis, no ONNX
+# download. Single replica, nothing survives a restart. See
+# docs/design/lite-mode.md.
+LITE_PORT ?= 8080
+
+lite:
+	AETHER_LITE_PORT=$(LITE_PORT) docker compose -f docker-compose.lite.yml up -d --build
+	@echo "Waiting for the lite gateway to become healthy..."
+	@for i in $$(seq 1 60); do \
+		if curl -sf http://localhost:$(LITE_PORT)/healthz > /dev/null 2>&1; then \
+			echo "lite gateway healthy on http://localhost:$(LITE_PORT)"; exit 0; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "lite gateway did not become healthy in time" >&2; exit 1
+
+lite-down:
+	docker compose -f docker-compose.lite.yml down
 
 # Experiments 5-7: need the full docker compose stack, k6, and (for 6)
 # a locally-run gateway-proxy.jar with JVM flags toggled - documented

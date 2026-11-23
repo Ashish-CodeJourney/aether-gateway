@@ -1,0 +1,32 @@
+# Lite mode (ADR-010): the whole gateway as one container - no Postgres,
+# no Redis, no ONNX model download. Single replica only, and API keys,
+# prompts, the request log and monthly budgets reset on every restart.
+# See docs/design/lite-mode.md. For the full stack, use docker-compose.yml.
+#
+#   docker compose -f docker-compose.lite.yml up --build
+#
+# The project name is distinct from docker-compose.yml's, so both stacks
+# can exist side by side; they do not share containers or volumes.
+name: aether-gateway-lite
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: aether-gateway/gateway-proxy/Dockerfile
+      target: lite
+    ports:
+      - "${AETHER_LITE_PORT:-8080}:8080"
+    environment:
+      # Local-dev/demo defaults, like docker-compose.yml's - never
+      # production secrets. Lite mode registers the bootstrap key as a
+      # working API key at startup, since keys created through the admin
+      # API do not survive a restart.
+      AETHER_ADMIN_API_KEY: ${AETHER_ADMIN_API_KEY:-dev-admin-key-do-not-use-in-production}
+      AETHER_LITE_BOOTSTRAP_API_KEY: ${AETHER_LITE_BOOTSTRAP_API_KEY:-aeth_lite_local_dev_key}
+      # Real provider credentials, passed through from the host shell or
+      # a root .env file (gitignored); routes for providers without a key
+      # simply fail over or return the provider's error.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

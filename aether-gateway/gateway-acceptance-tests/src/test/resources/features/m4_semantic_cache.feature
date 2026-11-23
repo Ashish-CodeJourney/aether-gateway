@@ -4,17 +4,21 @@ Feature: Semantic cache correctness
   route's own cache.threshold, so the scenarios that probe loose
   thresholds run against a route configured with threshold 0.5.
 
+  Scenarios tagged @requires-semantic-cache expect a SEMANTIC_HIT and
+  are skipped against a lite-mode gateway, which caches exact matches
+  only (ADR-010).
+
   Background:
     Given cache requests target the "mock-lenient-cache" route
 
-  @m4 @F4.2 @AC3
+  @m4 @F4.2 @AC3 @requires-semantic-cache
   Scenario: A near-duplicate prompt is served from the semantic cache
     Given a prior request was made and cached for prompt "What is the capital of France?"
     When a client sends "Can you tell me France's capital city?" with cache threshold "0.75"
     Then the response header "X-Aether-Cache" is "SEMANTIC_HIT"
     And the response header "X-Aether-Similarity" is at least "0.75"
 
-  @m4 @F4.7
+  @m4 @F4.7 @requires-semantic-cache
   Scenario: A route's own cache threshold applies when no header is sent
     Given a prior request was made and cached for prompt "What is the capital of Italy?"
     When a client sends "Can you tell me Italy's capital city?" with no cache threshold header
@@ -59,7 +63,7 @@ Feature: Semantic cache correctness
     Then the response header "X-Aether-Cache" is not "EXACT_HIT"
     And the response header "X-Aether-Cache" is not "SEMANTIC_HIT"
 
-  @m4 @F4.5
+  @m4 @F4.5 @requires-semantic-cache
   Scenario Outline: Corpus-sampled near-duplicate pairs are served from the semantic cache
     Given a prior request was made and cached for prompt "<seed>"
     When a client sends "<variant>" with cache threshold "0.75"

@@ -83,4 +83,18 @@ class RoutingPolicyRepositoryTest {
         assertThat(repository.adapterFor("good")).isPresent();
         assertThat(repository.adapterFor("evil")).isEmpty();
     }
+
+    @Test
+    void anEchoProviderMakesNoNetworkCallsSoNeedsNoBaseUrl() throws IOException {
+        Path path = writeRoutingYaml("""
+                providers:
+                  echo:
+                    type: echo
+                routes: []
+                """);
+
+        RoutingPolicyRepository repository = new RoutingPolicyRepository(path, cfg -> STUB_ADAPTER);
+
+        assertThat(repository.adapterFor("echo")).isPresent();
+    }
 }

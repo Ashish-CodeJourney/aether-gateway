@@ -41,7 +41,7 @@ RUN java -Djarmode=tools -jar gateway-proxy/build/libs/gateway-proxy.jar extract
 # native library works with unmodified. Larger image than Alpine, but
 # correctness over image size. mock-provider has no embedding
 # dependency and stays on Alpine.
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:25-jre AS base
 # Trivy (CI) catches real, fixed-upstream HIGH/CRITICAL CVEs in the base
 # image's own OS packages that the temurin image tag hasn't picked up
 # yet - upgrading at build time pulls patched versions in without
@@ -64,3 +64,22 @@ EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
     CMD wget -q -O- http://localhost:8080/healthz || exit 1
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "gateway-proxy.jar"]
+
+# ADR-010 lite mode: the same jar with every store in memory - no
+# Postgres, no Redis, no ONNX download - so a single `docker run` is a
+# working gateway. Bundles a default routing policy (an in-process echo
+# route plus OpenAI/Gemini/Anthropic routes that light up when their key
+# is set) and the cost model; mount over /app/config/routing.yaml to use
+# your own. Single replica only, and nothing survives a restart.
+# Build with `--target lite`; published as the `:lite` tags.
+FROM base AS lite
+COPY aether-gateway/routing.lite.yaml /app/config/routing.yaml
+COPY aether-gateway/cost-model.yaml /app/config/cost-model.yaml
+ENV SPRING_PROFILES_ACTIVE=lite \
+    ROUTING_CONFIG_PATH=/app/config/routing.yaml \
+    COST_MODEL_CONFIG_PATH=/app/config/cost-model.yaml
+
+# Full mode (Postgres + Redis + semantic cache) stays the last stage, so
+# a plain `docker build` without --target - docker-compose.yml, CI, the
+# k8s manifests - keeps producing exactly the image it always did.
+FROM base AS full

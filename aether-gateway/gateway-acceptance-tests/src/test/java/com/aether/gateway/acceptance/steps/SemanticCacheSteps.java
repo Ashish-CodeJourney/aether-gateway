@@ -11,7 +11,6 @@ import tools.jackson.databind.ObjectMapper;
 import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -84,11 +83,7 @@ public class SemanticCacheSteps {
     }
 
     private String apiKeyFor(String alias) {
-        return apiKeysByAlias.computeIfAbsent(alias, a -> {
-            String rawKey = "aeth_acceptance_" + a + "_" + UUID.randomUUID();
-            AcceptanceEnvironment.seedApiKey(rawKey, null, null, null);
-            return rawKey;
-        });
+        return apiKeysByAlias.computeIfAbsent(alias, a -> AcceptanceEnvironment.createApiKey(null, null, null));
     }
 
     @Then("the request is rejected with status {int} and error {string}")

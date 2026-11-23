@@ -1,0 +1,14 @@
+providers:
+  echo:
+    type: echo
+
+routes:
+  - alias: echo
+    chain:
+      - provider: echo
+        model: echo-1
+    cache:
+      enabled: true
+      semantic: true
+      threshold: 0.5
+      ttl: 1h

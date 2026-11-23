@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -28,6 +29,8 @@ import java.util.function.Function;
  * docs/design/module-boundaries.md).
  */
 public class RoutingPolicyRepository implements RoutingSource, RoutingReloadUseCase {
+
+    private static final Set<String> NETWORKLESS_OR_LOCAL_TEST_TYPES = Set.of("mock", "echo");
 
     private final Path configPath;
     private final Function<ProviderConfig, ProviderAdapter> adapterFactory;
@@ -58,8 +61,10 @@ public class RoutingPolicyRepository implements RoutingSource, RoutingReloadUseC
             // dev/test/docker-compose/kind setup this project has, and
             // that is not the SSRF risk F9.3 exists for (an operator
             // pointing a *real* provider at their own internal network).
+            // "echo" answers in-process and never opens a connection, so
+            // it has no address to validate.
             for (ProviderConfig providerConfig : loaded.providers().values()) {
-                if (!"mock".equals(providerConfig.type())) {
+                if (!NETWORKLESS_OR_LOCAL_TEST_TYPES.contains(providerConfig.type())) {
                     baseUrlValidator.validate(providerConfig.name(), providerConfig.baseUrl());
                 }
             }

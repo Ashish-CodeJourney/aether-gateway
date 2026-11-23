@@ -7,7 +7,8 @@ name: CI
 # checkout/compile) rather than three sequential steps in one job, since
 # running them one after another in a single job was the single biggest
 # contributor to total CI wall-clock time. Everything downstream (image
-# build/scan, Compose smoke test, push) waits on all three. "Deploy on
+# build/scan, Compose smoke test, push) waits on all three, and on the
+# acceptance suite's second run against a lite-mode gateway (ADR-010). "Deploy on
 # tag" (the final PRD 17.4 stage) is intentionally not implemented yet:
 # it needs a live host, which Phase 01 task 6 (Oracle Cloud / Hetzner
 # signup) has not completed and Phase 12 (M9) is where deployment is
@@ -123,13 +124,56 @@ jobs:
             aether-gateway/gateway-acceptance-tests/build/reports/tests/**
             aether-gateway/gateway-acceptance-tests/build/test-results/**
 
+  # ADR-010: the same Cucumber suite against a lite-mode gateway (no
+  # Postgres, no Redis), skipping scenarios that need the semantic cache.
+  acceptance-tests-lite:
+    name: Acceptance tests (lite mode)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aether-gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Acceptance tests against a lite-mode gateway
+        run: ./gradlew :gateway-acceptance-tests:acceptanceTestLite
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-test-lite-reports
+          retention-days: 7
+          path: |
+            aether-gateway/gateway-acceptance-tests/build/reports/tests/acceptanceTestLite/**
+            aether-gateway/gateway-acceptance-tests/build/test-results/acceptanceTestLite/**
+
+  # gateway-proxy is built twice: the default (last) Dockerfile stage,
+  # full mode, exactly as before, and the `lite` target (ADR-010),
+  # published with a -lite tag suffix.
   docker-build-and-scan:
     name: Build and scan Docker images
-    needs: [unit-tests, integration-tests, acceptance-tests]
+    needs: [unit-tests, integration-tests, acceptance-tests, acceptance-tests-lite]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [gateway-proxy, mock-provider]
+        include:
+          - service: gateway-proxy
+            target: ""
+            suffix: ""
+          - service: gateway-proxy
+            target: lite
+            suffix: "-lite"
+          - service: mock-provider
+            target: ""
+            suffix: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -143,15 +187,16 @@ jobs:
         with:
           context: .
           file: aether-gateway/${{ matrix.service }}/Dockerfile
-          tags: aether-${{ matrix.service }}:${{ github.sha }}
+          target: ${{ matrix.target }}
+          tags: aether-${{ matrix.service }}:${{ github.sha }}${{ matrix.suffix }}
           load: true
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          cache-from: type=gha,scope=${{ matrix.service }}${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}${{ matrix.suffix }}
 
       - name: Trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: aether-${{ matrix.service }}:${{ github.sha }}
+          image-ref: aether-${{ matrix.service }}:${{ github.sha }}${{ matrix.suffix }}
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
@@ -207,16 +252,89 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  # ADR-010: the lite image on its own - one `docker run`, no other
+  # container - must serve a request and answer the repeat from cache.
+  lite-smoke-test:
+    name: Lite image smoke test
+    needs: docker-build-and-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the lite image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: aether-gateway/gateway-proxy/Dockerfile
+          target: lite
+          tags: aether-gateway-proxy:lite-smoke
+          load: true
+          cache-from: type=gha,scope=gateway-proxy-lite
+
+      - name: Start the lite container
+        run: |
+          docker run -d --name aether-lite -p 8080:8080 \
+            -e AETHER_LITE_BOOTSTRAP_API_KEY=aeth_ci_smoke_key \
+            aether-gateway-proxy:lite-smoke
+
+      - name: Wait for gateway health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/healthz > /dev/null; then
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' aether-lite)" != "true" ]; then
+              echo "lite container is no longer running" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "lite gateway did not become healthy within the timeout" >&2
+          exit 1
+
+      - name: Smoke test a chat completion and its cached repeat
+        run: |
+          request() {
+            curl -sf -D - -o /tmp/body.json -X POST http://localhost:8080/v1/chat/completions \
+              -H "Content-Type: application/json" -H "Authorization: Bearer aeth_ci_smoke_key" \
+              -d '{"model": "echo", "messages": [{"role": "user", "content": "hi"}]}'
+          }
+          request | tee /tmp/first.headers
+          grep -q '"Echo: hi"' /tmp/body.json
+          grep -qi '^x-aether-cache: MISS' /tmp/first.headers
+          request | tee /tmp/second.headers
+          grep -qi '^x-aether-cache: EXACT_HIT' /tmp/second.headers
+          curl -sf http://localhost:8080/actuator/info | grep -q '"mode":"lite"'
+
+      - name: Gateway logs (on failure)
+        if: failure()
+        run: docker logs aether-lite
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f aether-lite
+
   push-images:
     name: Push images to Docker Hub
-    needs: compose-smoke-test
+    needs: [compose-smoke-test, lite-smoke-test]
     if: >
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/trunk' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [gateway-proxy, mock-provider]
+        include:
+          - service: gateway-proxy
+            target: ""
+            suffix: ""
+          - service: gateway-proxy
+            target: lite
+            suffix: "-lite"
+          - service: mock-provider
+            target: ""
+            suffix: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -227,17 +345,21 @@ jobs:
 
       # Release tags (v1.2.3) publish :1.2.3, :1.2 and :latest; trunk
       # publishes :edge. Every build is also tagged with its commit SHA.
+      # The lite image gets the same tags with a -lite suffix, except that
+      # a release publishes plain :lite rather than :latest-lite.
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ashishvaghelaa/aether-${{ matrix.service }}
           flavor: |
             latest=false
+            suffix=${{ matrix.suffix }}
           tags: |
             type=sha,format=long,prefix=
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ matrix.suffix == '' && startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=lite,suffix=,enable=${{ matrix.suffix == '-lite' && startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=edge,enable={{is_default_branch}}
 
       - uses: docker/setup-buildx-action@v3
@@ -246,7 +368,8 @@ jobs:
         with:
           context: .
           file: aether-gateway/${{ matrix.service }}/Dockerfile
+          target: ${{ matrix.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-from: type=gha,scope=${{ matrix.service }}${{ matrix.suffix }}

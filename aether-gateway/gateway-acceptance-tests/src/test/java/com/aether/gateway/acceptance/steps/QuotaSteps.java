@@ -9,7 +9,6 @@ import io.cucumber.java.en.When;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -61,15 +60,13 @@ public class QuotaSteps {
 
     @Given("an API key with a monthly token budget allowing exactly {int} requests of the test workload")
     public void anApiKeyWithAMonthlyTokenBudgetAllowingExactlyRequestsOfTheTestWorkload(int requestCount) {
-        apiKey = "aeth_acceptance_" + UUID.randomUUID();
         long budget = (long) requestCount * TOKENS_PER_REQUEST;
-        AcceptanceEnvironment.seedApiKey(apiKey, null, null, budget);
+        apiKey = AcceptanceEnvironment.createApiKey(null, null, budget);
     }
 
     @Given("an API key with an RPS limit of {int}")
     public void anApiKeyWithAnRpsLimitOf(int rpsLimit) {
-        apiKey = "aeth_acceptance_" + UUID.randomUUID();
-        AcceptanceEnvironment.seedApiKey(apiKey, rpsLimit, null, null);
+        apiKey = AcceptanceEnvironment.createApiKey(rpsLimit, null, null);
     }
 
     @When("{int} concurrent chat completion requests are sent using that key")

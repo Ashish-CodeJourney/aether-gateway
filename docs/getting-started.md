@@ -8,7 +8,35 @@ sidebar:
 
 - Docker and Docker Compose (that's it - Java, Node, and every other build tool run *inside* containers).
 
-## Bring up the stack
+## Try it in one container (lite mode)
+
+The quickest way to try Aether is lite mode: the whole gateway in one container, with no Postgres, no Redis and no model download.
+
+```bash
+docker run -p 8080:8080 \
+  -e AETHER_LITE_BOOTSTRAP_API_KEY=aeth_try_me \
+  ashishvaghelaa/aether-gateway-proxy:lite
+```
+
+`:lite` is published with each release (`:edge-lite` tracks trunk). To build it from a checkout instead, run `docker compose -f docker-compose.lite.yml up --build` (or `make lite`) from the repository root; that compose file sets the bootstrap key to `aeth_lite_local_dev_key`.
+
+The bundled routing policy has an `echo` model that answers in-process, so this works without any provider key:
+
+```bash
+curl -sS -D - http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer aeth_try_me" -H "Content-Type: application/json" \
+  -d '{"model":"echo","messages":[{"role":"user","content":"hello"}]}'
+```
+
+The reply is `Echo: hello` with `X-Aether-Cache: MISS`. Send the same request again and you get `X-Aether-Cache: EXACT_HIT`. Add `-e OPENAI_API_KEY=...`, `-e GEMINI_API_KEY=...` or `-e ANTHROPIC_API_KEY=...` to the `docker run` and the `gpt`, `gemini` and `claude` aliases route to real providers.
+
+If you didn't set `AETHER_ADMIN_API_KEY`, lite mode generates an admin key and prints it once in the startup log. Use it as `X-Aether-Admin-Key` on `/admin/*`.
+
+Lite mode is for evaluation and small single-replica deployments. It is **not durable**: API keys, prompts, the request log and monthly budgets live in memory and reset on every restart. Run **one replica only**, since limits apply per process. There is no semantic cache (exact-match only). The full support matrix is in [Lite mode](/docs/design/lite-mode).
+
+For everything else - the semantic cache, durable state, several replicas, the Grafana dashboard - use the full stack below.
+
+## Bring up the full stack
 
 From the repository root:
 

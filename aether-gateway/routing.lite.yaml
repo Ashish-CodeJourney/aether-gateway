@@ -1,0 +1,64 @@
+# Default routing policy baked into the lite image (ADR-010), at
+# /app/config/routing.yaml. Same shape as routing.yaml - see
+# docs/design/routing-policy.md. To use your own, mount it over that
+# path (-v ./my-routing.yaml:/app/config/routing.yaml:ro) and edit it
+# freely: POST /admin/routes/reload picks changes up without a restart.
+#
+# Caching is exact-match only in lite mode, whatever `semantic` says.
+providers:
+  # Answers in-process by echoing the last user message - no network,
+  # no key. Lets you try routing, caching, quotas and the request log
+  # straight after `docker run`.
+  echo:
+    type: echo
+  openai:
+    baseUrl: https://api.openai.com/v1
+    type: openai
+    apiKeyEnvVar: OPENAI_API_KEY
+  gemini-main:
+    baseUrl: https://generativelanguage.googleapis.com
+    type: gemini
+    apiKeyEnvVar: GEMINI_API_KEY
+  anthropic:
+    baseUrl: https://api.anthropic.com/v1
+    type: anthropic
+    apiKeyEnvVar: ANTHROPIC_API_KEY
+
+routes:
+  - alias: echo
+    chain:
+      - provider: echo
+        model: echo-1
+    cache:
+      enabled: true
+      semantic: false
+      ttl: 1h
+  # Needs OPENAI_API_KEY; falls back to Gemini if GEMINI_API_KEY is set.
+  - alias: gpt
+    chain:
+      - provider: openai
+        model: gpt-4o-mini
+      - provider: gemini-main
+        model: gemini-flash-latest
+    cache:
+      enabled: true
+      semantic: false
+      ttl: 6h
+  # Needs GEMINI_API_KEY.
+  - alias: gemini
+    chain:
+      - provider: gemini-main
+        model: gemini-flash-latest
+    cache:
+      enabled: true
+      semantic: false
+      ttl: 6h
+  # Needs ANTHROPIC_API_KEY.
+  - alias: claude
+    chain:
+      - provider: anthropic
+        model: claude-haiku-4-5
+    cache:
+      enabled: true
+      semantic: false
+      ttl: 6h
